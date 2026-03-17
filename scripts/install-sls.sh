@@ -14,6 +14,7 @@ set -eu
     SLSsteamConfigDir=$HOME/.config/SLSsteam
     InstallDir=$SCRIPT_DIR/bin
     Headcrab_Downgrader_Path=$HOME/.headcrab
+    SLS_VERSION=""
 	
 	#URL'S
     Headcrab_Downgrade_URL="http://localhost:1666/"
@@ -414,11 +415,22 @@ set -eu
     downloadSLSsteam(){
         echo "Downloading Latest SLSsteam.."
         cd $SCRIPT_DIR/
-        wget -O SLSsteam-Any.7z \
-    $(curl -s "https://api.github.com/repos/AceSLS/SLSsteam/releases/latest" \
-    | grep "browser_download_url" \
-    | grep "SLSsteam-Any.7z" \
-    | cut -d '"' -f 4) &> /dev/null
+        local release_json
+        release_json=$(curl -s "https://api.github.com/repos/AceSLS/SLSsteam/releases/latest")
+        SLS_VERSION=$(printf '%s' "$release_json" | grep '"tag_name"' | head -1 | cut -d '"' -f 4)
+        local download_url
+        download_url=$(printf '%s' "$release_json" | grep 'browser_download_url' | grep 'SLSsteam-Any.7z' | cut -d '"' -f 4)
+        wget -O SLSsteam-Any.7z "$download_url" &> /dev/null
+    }
+
+    saveVersion(){
+        [ -z "${SLS_VERSION:-}" ] && return
+        if [ -d "$FlatpakSteamInstallDir" ]; then
+            printf '%s' "$SLS_VERSION" > "$FlatpakSLSsteamInstallDir/VERSION"
+        else
+            printf '%s' "$SLS_VERSION" > "$SLSsteamInstallDir/VERSION"
+        fi
+        echo "SLSsteam Version Saved: $SLS_VERSION"
     }
     
     export_sls(){
@@ -451,12 +463,9 @@ set -eu
 
     InstallSLSsteam(){
         echo "Installing SLSsteam..."
-        if [ -d "$SLSsteamInstallDir" ]; then
-          copySLSsteam
-        else
-            copySLSsteam
-        fi
-            backupconfig
+        copySLSsteam
+        saveVersion
+        backupconfig
         }
 
     plsdontbreakthingsthatwork(){
