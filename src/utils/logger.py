@@ -1,6 +1,5 @@
 import logging
 import os
-import platform
 import sys
 import re
 import subprocess
@@ -53,7 +52,6 @@ def setup_logging():
 
     # Get the timestamped log path
     log_path = get_log_path()
-    system = platform.system()
 
     formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
@@ -117,7 +115,6 @@ def setup_logging():
 
     # Log configuration details
     logger.info("Logging Initialized")
-    logger.info("Platform: %s", system)
     logger.info("Python: %s", sys.version)
     logger.info("Log file: %s", log_path)
     logger.info("File level: DEBUG")
@@ -132,13 +129,7 @@ def open_log_directory():
     global log_dir
 
     try:
-        system = platform.system().lower()
-        if system == "windows":
-            subprocess.run(['explorer', str(log_dir)], check=False)
-        elif system == "darwin":  # macOS
-            subprocess.run(['open', str(log_dir)], check=False)
-        else:  # Linux and other Unix-like
-            subprocess.run(['xdg-open', str(log_dir)], check=False)
+        subprocess.run(["xdg-open", str(log_dir)], check=False)
         return True
     except Exception as e:
         logger = logging.getLogger(__name__)

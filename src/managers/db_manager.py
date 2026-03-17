@@ -49,7 +49,7 @@ class DatabaseManager:
 
     def _setup_database_path(self):
         """
-        Ensures the database exists in a writable user location (%APPDATA%).
+        Ensures the database exists in a writable user location.
         If missing, copies the seed DB from the internal PyInstaller bundle.
         """
         # 1. Writable location (e.g. %APPDATA%/ACCELA/steam_headers.db)

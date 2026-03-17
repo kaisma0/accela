@@ -1,5 +1,4 @@
 import logging
-import sys
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QCursor
 from PyQt6.QtWidgets import (
@@ -18,12 +17,7 @@ logger = logging.getLogger(__name__)
 class DlcSelectionDialog(QDialog):
     def __init__(self, dlcs, parent=None):
         super().__init__(parent)
-        # Platform-specific title
-        if sys.platform == "linux":
-            title = "Select DLC for SLSsteam Wrapper"
-        else:
-            title = "Select DLC for GreenLuma Wrapper"
-        self.setWindowTitle(title)
+        self.setWindowTitle("Select DLC for SLSsteam Wrapper")
         self.dlcs = dlcs
         self.setMinimumWidth(600)
         self.setMinimumHeight(400)

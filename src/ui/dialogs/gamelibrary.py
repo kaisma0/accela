@@ -1,6 +1,5 @@
 import logging
 import os
-import platform
 import sys
 import subprocess
 from pathlib import Path
@@ -703,10 +702,10 @@ class GameLibraryDialog(QDialog):
 
         overview_layout.addSpacing(15)
 
-        # FakeAppId controls - only show if config management is enabled and on Linux
+        # FakeAppId controls - show if config management is enabled
         self.fake_appid_checkbox = None
         self.fake_appid_input = None
-        if platform.system() == "Linux" and is_slssteam_config_management_enabled():
+        if is_slssteam_config_management_enabled():
             fake_appid_layout = QHBoxLayout()
 
             self.fake_appid_checkbox = QCheckBox("Add to SLSonline as:")
@@ -798,14 +797,7 @@ class GameLibraryDialog(QDialog):
                 return
             try:
                 path = os.path.normpath(os.path.abspath(str(path)))
-                current_os = platform.system().lower()
-
-                if current_os == "windows":
-                    subprocess.run(["explorer", path], check=False)
-                elif current_os == "darwin":  # macOS
-                    subprocess.run(['open', path], check=False)
-                else:  # Linux and other Unix-like
-                    subprocess.run(['xdg-open', path], check=False)
+                subprocess.run(["xdg-open", path], check=False)
                     
             except Exception as e:
                 QMessageBox.warning(
@@ -842,67 +834,66 @@ class GameLibraryDialog(QDialog):
         self.remove_from_library_checkbox = None
         self.remove_shortcuts_checkbox = None
 
-        if platform.system() == "Linux":
-            appid_is_valid = appid and appid not in ("0", "N/A", "unknown")
+        appid_is_valid = appid and appid not in ("0", "N/A", "unknown")
 
-            linux_options_label = QLabel("Linux Options")
-            linux_options_label.setStyleSheet(f"""
-                font-weight: bold;
-                color: {self.accent_color};
-            """)
-            uninstall_layout.addWidget(linux_options_label)
+        linux_options_label = QLabel("Linux Options")
+        linux_options_label.setStyleSheet(f"""
+            font-weight: bold;
+            color: {self.accent_color};
+        """)
+        uninstall_layout.addWidget(linux_options_label)
 
-            self.remove_compatdata_checkbox = QCheckBox(
-                "Remove Proton/Wine compatibility data"
+        self.remove_compatdata_checkbox = QCheckBox(
+            "Remove Proton/Wine compatibility data"
+        )
+        if appid_is_valid:
+            self.remove_compatdata_checkbox.setToolTip(
+                "Removes the Proton/Wine prefix which contains game configuration and may contain saves"
             )
-            if appid_is_valid:
-                self.remove_compatdata_checkbox.setToolTip(
-                    "Removes the Proton/Wine prefix which contains game configuration and may contain saves"
-                )
-            else:
-                self.remove_compatdata_checkbox.setEnabled(False)
-                self.remove_compatdata_checkbox.setToolTip(
-                    "Disabled: App ID is unknown or invalid"
-                )
-            uninstall_layout.addWidget(self.remove_compatdata_checkbox)
+        else:
+            self.remove_compatdata_checkbox.setEnabled(False)
+            self.remove_compatdata_checkbox.setToolTip(
+                "Disabled: App ID is unknown or invalid"
+            )
+        uninstall_layout.addWidget(self.remove_compatdata_checkbox)
 
-            self.remove_saves_checkbox = QCheckBox("Remove Steam Cloud saves")
-            if appid_is_valid:
-                self.remove_saves_checkbox.setToolTip(
-                    "Removes saved games stored in Steam's cloud sync folder"
-                )
-            else:
-                self.remove_saves_checkbox.setEnabled(False)
-                self.remove_saves_checkbox.setToolTip(
-                    "Disabled: App ID is unknown or invalid"
-                )
-            uninstall_layout.addWidget(self.remove_saves_checkbox)
+        self.remove_saves_checkbox = QCheckBox("Remove Steam Cloud saves")
+        if appid_is_valid:
+            self.remove_saves_checkbox.setToolTip(
+                "Removes saved games stored in Steam's cloud sync folder"
+            )
+        else:
+            self.remove_saves_checkbox.setEnabled(False)
+            self.remove_saves_checkbox.setToolTip(
+                "Disabled: App ID is unknown or invalid"
+            )
+        uninstall_layout.addWidget(self.remove_saves_checkbox)
 
-            self.remove_from_library_checkbox = QCheckBox("Remove from Steam library")
-            if appid_is_valid:
-                self.remove_from_library_checkbox.setToolTip(
-                    "Removes this game from SLSstean's AdditionalApps list in config.yaml"
-                )
-            else:
-                self.remove_from_library_checkbox.setEnabled(False)
-                self.remove_from_library_checkbox.setToolTip(
-                    "Disabled: App ID is unknown or invalid"
-                )
-            uninstall_layout.addWidget(self.remove_from_library_checkbox)
+        self.remove_from_library_checkbox = QCheckBox("Remove from Steam library")
+        if appid_is_valid:
+            self.remove_from_library_checkbox.setToolTip(
+                "Removes this game from SLSstean's AdditionalApps list in config.yaml"
+            )
+        else:
+            self.remove_from_library_checkbox.setEnabled(False)
+            self.remove_from_library_checkbox.setToolTip(
+                "Disabled: App ID is unknown or invalid"
+            )
+        uninstall_layout.addWidget(self.remove_from_library_checkbox)
 
-            self.remove_shortcuts_checkbox = QCheckBox("Remove desktop shortcuts")
-            if appid_is_valid:
-                self.remove_shortcuts_checkbox.setToolTip(
-                    "Removes desktop shortcuts and icons created for this game"
-                )
-            else:
-                self.remove_shortcuts_checkbox.setEnabled(False)
-                self.remove_shortcuts_checkbox.setToolTip(
-                    "Disabled: App ID is unknown or invalid"
-                )
-            uninstall_layout.addWidget(self.remove_shortcuts_checkbox)
+        self.remove_shortcuts_checkbox = QCheckBox("Remove desktop shortcuts")
+        if appid_is_valid:
+            self.remove_shortcuts_checkbox.setToolTip(
+                "Removes desktop shortcuts and icons created for this game"
+            )
+        else:
+            self.remove_shortcuts_checkbox.setEnabled(False)
+            self.remove_shortcuts_checkbox.setToolTip(
+                "Disabled: App ID is unknown or invalid"
+            )
+        uninstall_layout.addWidget(self.remove_shortcuts_checkbox)
 
-            uninstall_layout.addSpacing(20)
+        uninstall_layout.addSpacing(20)
 
         uninstall_desc = QLabel(
             "Remove this game from your system. This will delete all game files."
@@ -949,20 +940,19 @@ class GameLibraryDialog(QDialog):
         )
         tools_layout.addWidget(steamless_btn)
 
-        # Make Executable button (Linux only)
-        if platform.system() == "Linux":
-            chmod_btn = QPushButton("Make Executable")
-            chmod_btn.setToolTip(
-                "Make all executables and scripts in the game folder runnable"
-            )
-            chmod_btn.clicked.connect(
-                lambda checked, dir=install_path, name=game_data.get("game_name", "Unknown"):
-                    self.main_window.task_manager.run_chmod_for_game(dir, name, show_dialog=True)
-            )
-            tools_layout.addWidget(chmod_btn)
+        # Make Executable button
+        chmod_btn = QPushButton("Make Executable")
+        chmod_btn.setToolTip(
+            "Make all executables and scripts in the game folder runnable"
+        )
+        chmod_btn.clicked.connect(
+            lambda checked, dir=install_path, name=game_data.get("game_name", "Unknown"):
+                self.main_window.task_manager.run_chmod_for_game(dir, name, show_dialog=True)
+        )
+        tools_layout.addWidget(chmod_btn)
 
         sgdb_api_key = self.settings.value("sgdb_api_key", "", type=str)
-        if sgdb_api_key and platform.system() == "Linux" and is_slssteam_mode_enabled():
+        if sgdb_api_key and is_slssteam_mode_enabled():
             shortcuts_btn = QPushButton("Create Shortcuts")
             shortcuts_btn.setToolTip(
                 "Create desktop shortcuts and icons from Steam Grid DB"
@@ -1144,33 +1134,32 @@ class GameLibraryDialog(QDialog):
 
     def _uninstall_game(self, game_data, dialog):
         """Uninstall the game by removing folder and ACF file"""
-        # Check additional removal options (Linux only)
+        # Check additional removal options
         remove_compatdata = False
         remove_saves = False
         remove_from_library = False
         remove_shortcuts = False
 
-        if platform.system() == "Linux":
-            remove_compatdata = (
-                self.remove_compatdata_checkbox.isChecked()
-                if self.remove_compatdata_checkbox
-                else False
-            )
-            remove_saves = (
-                self.remove_saves_checkbox.isChecked()
-                if self.remove_saves_checkbox
-                else False
-            )
-            remove_from_library = (
-                self.remove_from_library_checkbox.isChecked()
-                if self.remove_from_library_checkbox
-                else False
-            )
-            remove_shortcuts = (
-                self.remove_shortcuts_checkbox.isChecked()
-                if self.remove_shortcuts_checkbox
-                else False
-            )
+        remove_compatdata = (
+            self.remove_compatdata_checkbox.isChecked()
+            if self.remove_compatdata_checkbox
+            else False
+        )
+        remove_saves = (
+            self.remove_saves_checkbox.isChecked()
+            if self.remove_saves_checkbox
+            else False
+        )
+        remove_from_library = (
+            self.remove_from_library_checkbox.isChecked()
+            if self.remove_from_library_checkbox
+            else False
+        )
+        remove_shortcuts = (
+            self.remove_shortcuts_checkbox.isChecked()
+            if self.remove_shortcuts_checkbox
+            else False
+        )
 
         # Get confirmation message from GameManager
         confirm_msg = self.game_manager.get_uninstall_confirmation_message(game_data)
@@ -1347,10 +1336,9 @@ class GameLibraryDialog(QDialog):
                 os.remove(acf_path)
                 logger.info(f"Removed ACF file: {acf_path}")
 
-                # On Linux, try to trigger reinstall via SLSsteam API
-                if sys.platform == "linux":
-                    command = f"install|{appid}|{library_index}"
-                    slssteam_api_send(command)
+                # Try to trigger reinstall via SLSsteam API
+                command = f"install|{appid}|{library_index}"
+                slssteam_api_send(command)
 
                 # Show success dialog
                 QMessageBox.information(

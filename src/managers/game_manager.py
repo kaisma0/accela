@@ -755,7 +755,6 @@ class GameManager(QObject):
         appid = game_data.get("appid", "0")
 
         import os
-        import platform
 
         from core.steam_helpers import find_steam_install, get_steam_libraries
 
@@ -764,10 +763,7 @@ class GameManager(QObject):
         # Warn if appid is unknown
         if not appid or appid in ("0", "N/A", "unknown"):
             confirm_msg += "⚠️ WARNING: AppID is unknown for this game.\n"
-            if platform.system() == "Linux":
-                confirm_msg += "Compatdata and saves WILL NOT be removed.\n"
-            elif platform.system() == "Windows":
-                confirm_msg += "GreenLuma AppList files WILL NOT be removed.\n"
+            confirm_msg += "Compatdata and saves WILL NOT be removed.\n"
             confirm_msg += "\n"
 
         confirm_msg += "This will permanently delete:\n"
@@ -779,8 +775,7 @@ class GameManager(QObject):
 
         # Check for additional items that would be removed
         if (
-            platform.system() == "Linux"
-            and appid
+            appid
             and appid not in ("0", "N/A", "unknown")
         ):
             steam_libraries = get_steam_libraries()
@@ -813,34 +808,6 @@ class GameManager(QObject):
 
                     if has_saves:
                         confirm_msg += "• Steam Cloud saves from userdata folders\n"
-        elif (
-            platform.system() == "Windows"
-            and appid
-            and appid not in ("0", "N/A", "unknown")
-        ):
-            # Check for GreenLuma AppList files
-            steam_path = find_steam_install()
-            if steam_path:
-                app_list_dir = os.path.join(steam_path, "AppList")
-                if os.path.exists(app_list_dir):
-                    try:
-                        found_appid_files = []
-                        for filename in os.listdir(app_list_dir):
-                            if filename.lower().endswith(".txt"):
-                                filepath = os.path.join(app_list_dir, filename)
-                                try:
-                                    with open(filepath, "r", encoding="utf-8") as f:
-                                        content = f.read().strip()
-                                        if content == str(appid):
-                                            found_appid_files.append(filename)
-                                except Exception as e:
-                                    logger.debug(
-                                        f"Failed reading AppList file '{filepath}': {e}"
-                                    )
-                        if found_appid_files:
-                            confirm_msg += f"• GreenLuma AppList file(s): {', '.join(found_appid_files)}\n"
-                    except Exception as e:
-                        logger.debug(f"Failed scanning AppList directory '{app_list_dir}': {e}")
 
         confirm_msg += "\nThis action cannot be undone!"
         return confirm_msg
@@ -856,7 +823,6 @@ class GameManager(QObject):
         appid = game_data.get("appid", "0")
 
         import os
-        import platform
 
         try:
             # Remove game folder
@@ -888,20 +854,17 @@ class GameManager(QObject):
                     )
 
             # Remove platform-specific data
-            if platform.system() == "Linux":
-                self._remove_linux_game_data(appid, remove_compatdata, remove_saves)
+            self._remove_linux_game_data(appid, remove_compatdata, remove_saves)
 
-                # Remove shortcuts only if explicitly requested
-                if remove_shortcuts:
-                    self._remove_linux_shortcuts_and_icons(appid, game_name)
+            # Remove shortcuts only if explicitly requested
+            if remove_shortcuts:
+                self._remove_linux_shortcuts_and_icons(appid, game_name)
 
-                # Remove from SLSsteam config.yaml AdditionalApps list
-                if remove_from_library and appid and appid not in ("0", "N/A", "unknown"):
-                    config_path = get_user_config_path()
-                    if config_path.exists():
-                        remove_additional_app(config_path, str(appid))
-            elif platform.system() == "Windows":
-                self._remove_windows_game_data(appid)
+            # Remove from SLSsteam config.yaml AdditionalApps list
+            if remove_from_library and appid and appid not in ("0", "N/A", "unknown"):
+                config_path = get_user_config_path()
+                if config_path.exists():
+                    remove_additional_app(config_path, str(appid))
 
             # Remove from game manager
             self.remove_game(appid)
@@ -1050,119 +1013,4 @@ class GameManager(QObject):
                 f"Failed to remove Linux shortcuts and icons for AppID {appid}: {e}"
             )
 
-    def _remove_windows_game_data(self, appid):
-        """
-        Remove Windows-specific game data (GreenLuma AppList files).
-        """
-        import os
-        import shutil
 
-        from core.steam_helpers import find_steam_install
-        from utils.yaml_config_manager import is_slssteam_config_management_enabled
-
-        # Check if config management is enabled
-        if not is_slssteam_config_management_enabled():
-            logger.debug("GreenLuma config management is disabled, skipping AppList cleanup")
-            return
-
-        # CRITICAL SAFETY CHECK: Never remove AppList files for invalid appids
-        if not appid or appid in ("0", "N/A", "unknown"):
-            logger.warning(
-                f"Skipping GreenLuma AppList cleanup for invalid appid: {appid}"
-            )
-            return
-
-        # Validate appid is numeric
-        if not str(appid).isdigit():
-            logger.error(
-                f"Invalid appid format: {appid}. Must be numeric. Skipping GreenLuma cleanup."
-            )
-            return
-
-        # Find Steam installation path
-        steam_path = find_steam_install()
-        if not steam_path:
-            logger.warning(
-                "Could not find Steam installation path. Skipping GreenLuma AppList cleanup."
-            )
-            return
-
-        # Locate AppList directory
-        app_list_dir = os.path.join(steam_path, "AppList")
-        if not os.path.exists(app_list_dir):
-            logger.info(
-                "AppList directory does not exist. No GreenLuma files to clean up."
-            )
-            return
-
-        logger.info(f"Scanning GreenLuma AppList directory: {app_list_dir}")
-
-        # Step 1: Find all .txt files that contain this appid
-        files_to_delete = []
-        all_files_data = []  # List of tuples (filename, filepath, appid_content)
-
-        try:
-            for filename in os.listdir(app_list_dir):
-                if filename.lower().endswith(".txt"):
-                    filepath = os.path.join(app_list_dir, filename)
-                    try:
-                        with open(filepath, "r", encoding="utf-8") as f:
-                            content = f.read().strip()
-                            # Store all files for later renumbering
-                            all_files_data.append((filename, filepath, content))
-
-                            # Check if this file contains our appid
-                            if content == str(appid):
-                                files_to_delete.append((filename, filepath))
-                                logger.info(
-                                    f"Found GreenLuma file to delete: {filename} (contains AppID {appid})"
-                                )
-                    except Exception as e:
-                        logger.warning(f"Error reading AppList file {filepath}: {e}")
-        except Exception as e:
-            logger.error(f"Error scanning AppList directory {app_list_dir}: {e}")
-            return
-
-        # Step 2: Delete files containing this appid
-        for filename, filepath in files_to_delete:
-            try:
-                os.remove(filepath)
-                logger.info(f"Deleted GreenLuma file: {filepath}")
-            except Exception as e:
-                logger.warning(f"Failed to delete GreenLuma file {filepath}: {e}")
-
-        # Step 3: Renumber remaining files to maintain sequential numbering
-        # Build list of remaining files (those that don't contain our appid)
-        remaining_files = [
-            (filename, filepath, content)
-            for filename, filepath, content in all_files_data
-            if filepath not in [f[1] for f in files_to_delete]
-        ]
-
-        # Sort remaining files by their current number
-        def extract_number(filename):
-            match = re.match(r"^(\d+)\.txt$", filename)
-            return int(match.group(1)) if match else 0
-
-        remaining_files.sort(key=lambda x: extract_number(x[0]))
-
-        # Renumber all remaining files sequentially starting from 0
-        for index, (old_filename, old_filepath, content) in enumerate(remaining_files):
-            new_filename = f"{index}.txt"
-            new_filepath = os.path.join(app_list_dir, new_filename)
-
-            # Only rename if the filename will change
-            if old_filename != new_filename:
-                try:
-                    os.rename(old_filepath, new_filepath)
-                    logger.debug(
-                        f"Renamed GreenLuma file: {old_filename} -> {new_filename}"
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to rename {old_filename} to {new_filename}: {e}"
-                    )
-
-        logger.info(
-            f"GreenLuma AppList cleanup complete. Removed {len(files_to_delete)} file(s)."
-        )

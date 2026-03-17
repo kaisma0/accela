@@ -1,6 +1,5 @@
 import logging
 import os
-import platform
 import re
 import subprocess
 import sys
@@ -101,9 +100,6 @@ class GenerateAchievementsTask(QObject):
                 encoding="utf-8",
                 cwd=self.slscheevo_path.parent,
                 bufsize=1,  # Line buffered
-                creationflags=subprocess.CREATE_NO_WINDOW
-                if sys.platform == "win32"
-                else 0,
             )
 
             self.process_pid = self.process.pid

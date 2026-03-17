@@ -12,29 +12,7 @@ _library_inject_so_path_cache = None
 
 
 def find_steam_install():
-    if sys.platform == "win32":
-        return _find_steam_windows()
-    elif sys.platform == "linux":
-        return _find_steam_linux()
-    else:
-        logger.warning(
-            f"Automatic Steam path detection is not supported on this OS: {sys.platform}."
-        )
-        return None
-
-
-def _find_steam_windows():
-    try:
-        import winreg
-
-        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam")
-        steam_path, _ = winreg.QueryValueEx(key, "SteamPath")
-        winreg.CloseKey(key)
-        logger.info(f"Found Steam installation at: {steam_path}")
-        return os.path.normpath(steam_path)
-    except Exception:
-        logger.error("Failed to read Steam path from registry.")
-        return None
+    return _find_steam_linux()
 
 
 def _find_steam_linux():
@@ -92,7 +70,7 @@ def kill_steam_process():
     _slssteam_so_path_cache = None
     _library_inject_so_path_cache = None
 
-    process_name = "steam.exe" if sys.platform == "win32" else "steam"
+    process_name = "steam"
     steam_proc = next(
         (
             p
@@ -106,28 +84,27 @@ def kill_steam_process():
         logger.warning(f"{process_name} process not found.")
         return False
 
-    if sys.platform == "linux":
-        pid = steam_proc.pid
-        maps_file = f"/proc/{pid}/maps"
-        try:
-            with open(maps_file, "r") as f:
-                for line in f:
-                    if "SLSsteam.so" in line:
-                        parts = line.split()
-                        if len(parts) > 5 and os.path.exists(parts[-1]):
-                            _slssteam_so_path_cache = parts[-1]
-                            logger.info(
-                                f"Found and cached SLSsteam.so path: {_slssteam_so_path_cache}"
-                            )
-                    elif "library-inject.so" in line or "libSLS-library-inject.so" in line:
-                        parts = line.split()
-                        if len(parts) > 5 and os.path.exists(parts[-1]):
-                            _library_inject_so_path_cache = parts[-1]
-                            logger.info(
-                                f"Found and cached library-inject.so path: {_library_inject_so_path_cache}"
-                            )
-        except Exception as e:
-            logger.error(f"Error reading process maps for library paths: {e}")
+    pid = steam_proc.pid
+    maps_file = f"/proc/{pid}/maps"
+    try:
+        with open(maps_file, "r") as f:
+            for line in f:
+                if "SLSsteam.so" in line:
+                    parts = line.split()
+                    if len(parts) > 5 and os.path.exists(parts[-1]):
+                        _slssteam_so_path_cache = parts[-1]
+                        logger.info(
+                            f"Found and cached SLSsteam.so path: {_slssteam_so_path_cache}"
+                        )
+                elif "library-inject.so" in line or "libSLS-library-inject.so" in line:
+                    parts = line.split()
+                    if len(parts) > 5 and os.path.exists(parts[-1]):
+                        _library_inject_so_path_cache = parts[-1]
+                        logger.info(
+                            f"Found and cached library-inject.so path: {_library_inject_so_path_cache}"
+                        )
+    except Exception as e:
+        logger.error(f"Error reading process maps for library paths: {e}")
 
     try:
         steam_proc.kill()
@@ -140,77 +117,65 @@ def kill_steam_process():
 
 
 def start_steam():
-    """Start Steam on Windows, or attempt to start Steam with SLSsteam integration on Linux
+    """Attempt to start Steam with SLSsteam integration on Linux.
     Returns: "SUCCESS", "FAILED", or "NEEDS_USER_PATH"
     """
     global _slssteam_so_path_cache, _library_inject_so_path_cache
     logger.info("Attempting to start Steam...")
 
     try:
-        if sys.platform == "win32":
-            steam_path = find_steam_install()
-            if not steam_path:
-                return "FAILED"
-            exe_path = os.path.join(steam_path, "steam.exe")
-            if not os.path.exists(exe_path):
-                return "FAILED"
-            subprocess.Popen([exe_path])
-            return "SUCCESS"
+        # Handle both SLSsteam.so and library-inject.so
+        slssteam_path = _slssteam_so_path_cache
+        library_inject_path = _library_inject_so_path_cache
 
-        elif sys.platform == "linux":
-            # For Linux, we now need to handle SLSsteam.so AND library-inject.so
-            slssteam_path = _slssteam_so_path_cache
-            library_inject_path = _library_inject_so_path_cache
+        # Try default locations if not cached
+        if not slssteam_path:
+            default_slssteam_paths = [
+                "/usr/lib32/libSLSsteam.so",
+                os.path.expanduser("~/.local/share/SLSsteam/SLSsteam.so"),
+                os.path.expanduser("~/.var/app/com.valvesoftware.Steam/.local/share/SLSsteam/SLSsteam.so"),
+            ]
+            for path in default_slssteam_paths:
+                if os.path.exists(path):
+                    slssteam_path = path
+                    logger.info(f"Found SLSsteam.so at: {path}")
+                    break
 
-            # Try default locations if not cached
-            if not slssteam_path:
-                default_slssteam_paths = [
-                    "/usr/lib32/libSLSsteam.so",
-                    os.path.expanduser("~/.local/share/SLSsteam/SLSsteam.so"),
-                    os.path.expanduser("~/.var/app/com.valvesoftware.Steam/.local/share/SLSsteam/SLSsteam.so"),
-                ]
-                for path in default_slssteam_paths:
-                    if os.path.exists(path):
-                        slssteam_path = path
-                        logger.info(f"Found SLSsteam.so at: {path}")
-                        break
+        if not library_inject_path:
+            default_library_inject_paths = [
+                "/usr/lib32/libSLS-library-inject.so",
+                os.path.expanduser("~/.local/share/SLSsteam/library-inject.so"),
+                os.path.expanduser("~/.var/app/com.valvesoftware.Steam/.local/share/SLSsteam/library-inject.so"),
+            ]
+            for path in default_library_inject_paths:
+                if os.path.exists(path):
+                    library_inject_path = path
+                    logger.info(f"Found library-inject.so at: {path}")
+                    break
 
-            if not library_inject_path:
-                default_library_inject_paths = [
-                    "/usr/lib32/libSLS-library-inject.so",
-                    os.path.expanduser("~/.local/share/SLSsteam/library-inject.so"),
-                    os.path.expanduser("~/.var/app/com.valvesoftware.Steam/.local/share/SLSsteam/library-inject.so"),
-                ]
-                for path in default_library_inject_paths:
-                    if os.path.exists(path):
-                        library_inject_path = path
-                        logger.info(f"Found library-inject.so at: {path}")
-                        break
-
-            # If we have both libraries, start with them
-            if slssteam_path and library_inject_path:
-                if os.path.exists(slssteam_path) and os.path.exists(library_inject_path):
-                    # Start Steam with both libraries
-                    success = start_steam_with_slssteam(slssteam_path, library_inject_path)
-                    # Only clear caches if successful
-                    if success == "SUCCESS":
-                        _slssteam_so_path_cache = None
-                        _library_inject_so_path_cache = None
-                    return success
-                else:
-                    logger.warning("Cached library paths no longer exist")
-                    return "NEEDS_USER_PATH"
+        # If we have both libraries, start with them
+        if slssteam_path and library_inject_path:
+            if os.path.exists(slssteam_path) and os.path.exists(library_inject_path):
+                # Start Steam with both libraries
+                success = start_steam_with_slssteam(slssteam_path, library_inject_path)
+                # Only clear caches if successful
+                if success == "SUCCESS":
+                    _slssteam_so_path_cache = None
+                    _library_inject_so_path_cache = None
+                return success
             else:
-                # Missing one or both libraries
-                missing = []
-                if not slssteam_path:
-                    missing.append("SLSsteam.so")
-                if not library_inject_path:
-                    missing.append("library-inject.so")
-                logger.warning(f"Missing libraries: {', '.join(missing)}")
+                logger.warning("Cached library paths no longer exist")
                 return "NEEDS_USER_PATH"
         else:
-            return "FAILED"
+            # Missing one or both libraries
+            missing = []
+            if not slssteam_path:
+                missing.append("SLSsteam.so")
+            if not library_inject_path:
+                missing.append("library-inject.so")
+            logger.warning(f"Missing libraries: {', '.join(missing)}")
+            return "NEEDS_USER_PATH"
+        return "FAILED"
     except Exception as e:
         logger.error(f"Failed to execute Steam: {e}", exc_info=True)
         return "FAILED"
@@ -220,10 +185,6 @@ def start_steam_with_slssteam(slssteam_path=None, library_inject_path=None):
     """Start Steam on Linux with SLSsteam.so AND library-inject.so via LD_AUDIT
     Returns: "SUCCESS", "FAILED", or "NEEDS_USER_PATH"
     """
-
-    if sys.platform != "linux":
-        logger.error("start_steam_with_slssteam is only supported on Linux")
-        return "FAILED"
 
     # Validate paths
     if not slssteam_path or not os.path.exists(slssteam_path):
@@ -245,19 +206,6 @@ def start_steam_with_slssteam(slssteam_path=None, library_inject_path=None):
             f"Failed to execute steam with provided libraries: {e}", exc_info=True
         )
         return "FAILED"
-
-
-def run_dll_injector(steam_path):
-    if sys.platform != "win32":
-        return False
-    injector_path = os.path.join(steam_path, "DLLInjector.exe")
-    if not os.path.exists(injector_path):
-        return False
-    try:
-        subprocess.Popen([injector_path], cwd=steam_path, creationflags=subprocess.CREATE_NO_WINDOW)
-        return True
-    except Exception:
-        return False
 
 
 def get_library_index(library_path: str, steam_path: str | None = None) -> int:
@@ -311,9 +259,6 @@ def get_library_index(library_path: str, steam_path: str | None = None) -> int:
 
 def slssteam_api_send(command: str) -> bool:
     """Send a command to SLSsteam API via named pipe."""
-    if sys.platform != "linux":
-        return False
-
     pipe_path = "/tmp/SLSsteam.API"
 
     try:
@@ -327,52 +272,3 @@ def slssteam_api_send(command: str) -> bool:
         return False
 
 
-def fix_greenluma_offline_mode():
-    """Fix WantsOfflineMode in loginusers.vdf to prevent Steam breakage with GreenLuma.
-
-    When Steam is closed with Offline Mode enabled and then launched with GreenLuma,
-    it can break Steam. This function automatically changes WantsOfflineMode from 1 to 0.
-    """
-    if sys.platform != "win32":
-        return
-
-    try:
-        from utils.settings import get_settings
-    except ImportError:
-        return
-
-    settings = get_settings()
-    if not settings.value("slssteam_mode", False, type=bool):
-        return
-
-    # Check if config management is enabled
-    if not settings.value("sls_config_management", True, type=bool):
-        return
-
-    steam_path = find_steam_install()
-    if not steam_path:
-        return
-
-    login_file = os.path.join(steam_path, "config", "loginusers.vdf")
-    if not os.path.exists(login_file):
-        return
-
-    try:
-        import vdf
-        with open(login_file, "r", encoding="utf-8", errors="ignore") as f:
-            data = vdf.load(f)
-
-        fixed = False
-        for user in data.get("users", {}).values():
-            if user.get("WantsOfflineMode") == "1":
-                user["WantsOfflineMode"] = "0"
-                fixed = True
-
-        if fixed:
-            with open(login_file, "w", encoding="utf-8") as f:
-                vdf.dump(data, f)
-            logger.info("Fixed WantsOfflineMode in loginusers.vdf to prevent GreenLuma issues")
-    except ImportError:
-        logger.warning("vdf library not installed, cannot fix offline mode")
-    except Exception as e:
-        logger.error(f"Failed to fix offline mode: {e}")

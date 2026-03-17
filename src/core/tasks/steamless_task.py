@@ -27,7 +27,6 @@ class SteamlessIntegration(QObject):
     def __init__(self, steamless_path: Optional[str] = None):
         super().__init__()
         self.steamless_path = steamless_path or os.path.join(os.getcwd(), "Steamless")
-        self.is_windows = sys.platform == "win32"
         self._current_process = None
         self._process_mutex = QMutex()
 
@@ -372,7 +371,7 @@ class SteamlessIntegration(QObject):
             target_path = exe_path
 
             # Prepare command for dotnet
-            dotnet_cmd = self.dotnet_path or ("dotnet.exe" if self.is_windows else "dotnet")
+            dotnet_cmd = self.dotnet_path or "dotnet"
             cmd = [
                 dotnet_cmd,
                 steamless_dll,
@@ -381,48 +380,26 @@ class SteamlessIntegration(QObject):
                 "--quiet",
                 "--realign",
             ]
-            # Only add --recalcchecksum on Windows (imagehlp.dll is Windows-only)
-            if self.is_windows:
-                cmd.append("--recalcchecksum")
 
             self.progress.emit(f"Running Steamless: {' '.join(cmd)}")
 
             # Run Steamless CLI
-            if self.is_windows:
-                # Windows: just run directly
-                creationflags = (
-                    subprocess.CREATE_NO_WINDOW
-                    if hasattr(subprocess, "CREATE_NO_WINDOW")
-                    else 0
-                )
-                process = subprocess.Popen(
-                    cmd,
-                    cwd=self.steamless_path,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    encoding="utf-8",
-                    bufsize=0,
-                    creationflags=creationflags,
-                )
-            else:
-                # Linux: run with dotnet
-                # Set DOTNET_ROOT if using ~/.dotnet
-                env = None
-                if self.dotnet_path and self.dotnet_path.startswith(os.path.expanduser("~")):
-                    env = os.environ.copy()
-                    env["DOTNET_ROOT"] = os.path.expanduser("~/.dotnet")
+            # Set DOTNET_ROOT if using ~/.dotnet
+            env = None
+            if self.dotnet_path and self.dotnet_path.startswith(os.path.expanduser("~")):
+                env = os.environ.copy()
+                env["DOTNET_ROOT"] = os.path.expanduser("~/.dotnet")
 
-                process = subprocess.Popen(
-                    cmd,
-                    cwd=self.steamless_path,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    encoding="utf-8",
-                    bufsize=0,
-                    env=env,
-                )
+            process = subprocess.Popen(
+                cmd,
+                cwd=self.steamless_path,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                bufsize=0,
+                env=env,
+            )
 
             # Store process for cleanup
             self._process_mutex.lock()

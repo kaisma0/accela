@@ -172,10 +172,6 @@ def _find_terminal() -> Optional[list]:
 
 
 def launch_appimage_update(update_info: AppImageUpdateInfo) -> bool:
-    if os.name != "posix":
-        logger.info("AppImage updater is only supported on POSIX systems")
-        return False
-
     try:
         updater_script = _build_updater_script(update_info)
         script_cmd = ["bash", str(updater_script), str(os.getpid())]

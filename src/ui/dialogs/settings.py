@@ -397,17 +397,14 @@ class SettingsDialog(QDialog):
         )
         processing_layout.addWidget(self.auto_apply_goldberg_checkbox)
 
-        if sys.platform == "linux":
-            self.application_shortcuts_checkbox = create_checkbox_setting(
-                "Create Application Shortcuts",
-                "create_application_shortcuts",
-                False,
-                self,
-                "Create desktop shortcuts and install game icons from SteamGridDB."
-            )
-            processing_layout.addWidget(self.application_shortcuts_checkbox)
-        else:
-            self.application_shortcuts_checkbox = None
+        self.application_shortcuts_checkbox = create_checkbox_setting(
+            "Create Application Shortcuts",
+            "create_application_shortcuts",
+            False,
+            self,
+            "Create desktop shortcuts and install game icons from SteamGridDB."
+        )
+        processing_layout.addWidget(self.application_shortcuts_checkbox)
 
         processing_group.setLayout(processing_layout)
         downloads_layout.addWidget(processing_group)
@@ -432,17 +429,14 @@ class SettingsDialog(QDialog):
         )
         api_key_layout.addLayout(key_layout)
 
-        # SteamGridDB API key (Linux only)
-        if sys.platform == "linux":
-            sgdb_key_layout, self.sgdb_api_key_input = self._create_api_key_setting(
-                "SteamGridDB API Key:",
-                "Paste your SteamGridDB API key",
-                "sgdb_api_key",
-                help_url="https://www.steamgriddb.com/profile/account"
-            )
-            api_key_layout.addLayout(sgdb_key_layout)
-        else:
-            self.sgdb_api_key_input = None
+        # SteamGridDB API key
+        sgdb_key_layout, self.sgdb_api_key_input = self._create_api_key_setting(
+            "SteamGridDB API Key:",
+            "Paste your SteamGridDB API key",
+            "sgdb_api_key",
+            help_url="https://www.steamgriddb.com/profile/account"
+        )
+        api_key_layout.addLayout(sgdb_key_layout)
 
         api_key_group.setLayout(api_key_layout)
         morrenus_layout.addWidget(api_key_group)
@@ -485,21 +479,13 @@ class SettingsDialog(QDialog):
         steam_group = QGroupBox("Steam Integration")
         steam_inner_layout = QVBoxLayout()
 
-        # Platform-specific wrapper name
-        if sys.platform == "linux":
-            wrapper_name = "SLSsteam"
-            wrapper_full_name = "SLSsteam Wrapper Mode"
-            wrapper_tooltip = (
-                "Integrate downloaded games with Steam using SLSsteam.\n"
-                "Games are registered in your Steam library automatically."
-            )
-        else:
-            wrapper_name = "GreenLuma"
-            wrapper_full_name = "GreenLuma Wrapper Mode"
-            wrapper_tooltip = (
-                "Integrate downloaded games with Steam using GreenLuma.\n"
-                "Games appear in your Steam library automatically."
-            )
+        # SLSsteam integration
+        wrapper_name = "SLSsteam"
+        wrapper_full_name = "SLSsteam Wrapper Mode"
+        wrapper_tooltip = (
+            "Integrate downloaded games with Steam using SLSsteam.\n"
+            "Games are registered in your Steam library automatically."
+        )
 
         self.sls_mode_checkbox = create_checkbox_setting(
             wrapper_full_name,
@@ -586,63 +572,31 @@ class SettingsDialog(QDialog):
         )
         self.download_slssteam_button.clicked.connect(self.download_slssteam)
 
-        # Only show on Linux
-        if sys.platform == "linux":
-            tools_button_layout.addWidget(self.download_slssteam_button)
-            download_slssteam_ex = QLabel(self.download_slssteam_button.toolTip())
-            download_slssteam_ex.setStyleSheet("color: #888888; font-size: 11px;")
-            download_slssteam_ex.setWordWrap(True)
-            tools_button_layout.addWidget(download_slssteam_ex)
-            # Update status indicator
-            self.slssteam_status_label = QLabel()
-            self.slssteam_status_label.setStyleSheet(
-                f"color: {self.accent_color}; font-size: 12px;"
-            )
-            self._update_slssteam_status()
-            tools_button_layout.addWidget(self.slssteam_status_label)
+        # Show when available
+        tools_button_layout.addWidget(self.download_slssteam_button)
+        download_slssteam_ex = QLabel(self.download_slssteam_button.toolTip())
+        download_slssteam_ex.setStyleSheet("color: #888888; font-size: 11px;")
+        download_slssteam_ex.setWordWrap(True)
+        tools_button_layout.addWidget(download_slssteam_ex)
+        # Update status indicator
+        self.slssteam_status_label = QLabel()
+        self.slssteam_status_label.setStyleSheet(
+            f"color: {self.accent_color}; font-size: 12px;"
+        )
+        self._update_slssteam_status()
+        tools_button_layout.addWidget(self.slssteam_status_label)
 
-            # Steamclient.so hash warning label
-            self.slssteam_hash_warning_label = QLabel()
-            self.slssteam_hash_warning_label.setStyleSheet(
-                f"color: #C06C84; font-size: 11px;"  # Pink warning color
-            )
-            self.slssteam_hash_warning_label.setWordWrap(True)
-            self.slssteam_hash_warning_label.setMaximumWidth(300)
-            tools_button_layout.addWidget(self.slssteam_hash_warning_label)
+        # Steamclient.so hash warning label
+        self.slssteam_hash_warning_label = QLabel()
+        self.slssteam_hash_warning_label.setStyleSheet(
+            f"color: #C06C84; font-size: 11px;"  # Pink warning color
+        )
+        self.slssteam_hash_warning_label.setWordWrap(True)
+        self.slssteam_hash_warning_label.setMaximumWidth(300)
+        tools_button_layout.addWidget(self.slssteam_hash_warning_label)
 
         tools_group.setLayout(tools_button_layout)
         tools_layout.addWidget(tools_group)
-
-        # --- Windows Registry Section (Windows only) ---
-        if sys.platform == "win32":
-            registry_group = QGroupBox("Windows Registry")
-            registry_layout = QVBoxLayout()
-            
-
-            self.register_reg_button = QPushButton("Register Registry Entries")
-            self.register_reg_button.setToolTip(
-                "Register accela:// URL protocol and .zip context menu entries."
-            )
-            self.register_reg_button.clicked.connect(self.register_registry_entries)
-            registry_layout.addWidget(self.register_reg_button)
-            register_ex = QLabel(self.register_reg_button.toolTip())
-            register_ex.setStyleSheet("color: #888888; font-size: 11px;")
-            register_ex.setWordWrap(True)
-            registry_layout.addWidget(register_ex)
-
-            self.unregister_reg_button = QPushButton("Remove Registry Entries")
-            self.unregister_reg_button.setToolTip(
-                "Remove accela:// URL protocol and .zip context menu entries."
-            )
-            self.unregister_reg_button.clicked.connect(self.remove_registry_entries)
-            registry_layout.addWidget(self.unregister_reg_button)
-            unregister_ex = QLabel(self.unregister_reg_button.toolTip())
-            unregister_ex.setStyleSheet("color: #888888; font-size: 11px;")
-            unregister_ex.setWordWrap(True)
-            registry_layout.addWidget(unregister_ex)
-
-            registry_group.setLayout(registry_layout)
-            tools_layout.addWidget(registry_group)
 
         tools_layout.addStretch()
         self.tab_widget.addTab(tools_tab, "Tools")
@@ -1005,15 +959,9 @@ class SettingsDialog(QDialog):
         is_sls_mode = self.sls_mode_checkbox.isChecked()
         self.settings.setValue("slssteam_mode", is_sls_mode)
         if is_sls_mode:
-            if sys.platform == "linux":
-                logger.info("SLSsteam mode enabled - games will sync to config.yaml")
-            else:
-                logger.info("GreenLuma mode enabled - AppList files will be created")
+            logger.info("SLSsteam mode enabled - games will sync to config.yaml")
         else:
-            if sys.platform == "linux":
-                logger.info("SLSsteam mode disabled")
-            else:
-                logger.info("GreenLuma mode disabled")
+            logger.info("SLSsteam mode disabled")
 
         # SLSsteam Config Management
         sls_config_management = self.sls_config_management_checkbox.isChecked()
@@ -1047,7 +995,7 @@ class SettingsDialog(QDialog):
         self.settings.setValue("auto_apply_goldberg", auto_apply_goldberg)
         logger.info(f"Auto-apply Goldberg is set to: {auto_apply_goldberg}")
 
-        # Application Shortcuts (Linux only)
+        # Application Shortcuts
         if (
             hasattr(self, "application_shortcuts_checkbox")
             and self.application_shortcuts_checkbox
@@ -1347,14 +1295,6 @@ class SettingsDialog(QDialog):
 
     def download_slssteam(self):
         """Install or update SLSsteam using the install-sls flow."""
-        if sys.platform != "linux":
-            QMessageBox.warning(
-                self,
-                "Platform Not Supported",
-                "SLSsteam installation is only available on Linux.",
-            )
-            return
-
         try:
             if self.main_window and hasattr(self.main_window, "task_manager"):
                 self.main_window.task_manager.download_slssteam()
@@ -1390,7 +1330,7 @@ class SettingsDialog(QDialog):
                 if venv_python:
                     command.extend([venv_python])
                 else:
-                    command.extend(["python" if sys.platform == "win32" else "python3"])
+                    command.extend(["python3"])
 
             command.extend(
                 [
@@ -1407,69 +1347,35 @@ class SettingsDialog(QDialog):
 
             launched = False
 
-            if sys.platform == "win32":
-                # Use "start" to create a new visible window
-                quoted_command = " ".join(
-                    [f'"{c}"' if " " in str(c) else str(c) for c in command]
-                )
-                windows_commands = [
-                    [
-                        "cmd",
-                        "/c",
-                        "start",
-                        "",
-                        "cmd",
-                        "/k",
-                        f"cd /d {working_dir} && {quoted_command}",
-                    ],
-                    [
-                        "cmd",
-                        "/c",
-                        "start",
-                        "",
-                        "powershell",
-                        "-NoExit",
-                        "-Command",
-                        f"cd '{working_dir}'; {quoted_command}",
-                    ],
-                ]
-                for cmd in windows_commands:
-                    try:
-                        subprocess.Popen(cmd)
-                        launched = True
-                        break
-                    except (FileNotFoundError, OSError):
-                        continue
-            else:
-                linux_terminals = [
-                    ["wezterm", "start", "--always-new-process", "--"] + command,
-                    ["konsole", "-e"] + command,
-                    ["gnome-terminal", "--"] + command,
-                    ["ptyxis", "--"] + command,
-                    ["alacritty", "-e"] + command,
-                    ["tilix", "-e"] + command,
-                    ["xfce4-terminal", "-e"] + command,
-                    ["terminator", "-x"] + command,
-                    ["mate-terminal", "-e"] + command,
-                    ["lxterminal", "-e"] + command,
-                    ["xterm", "-e"] + command,
-                    ["kitty", "-e"] + command,
-                ]
-                for cmd in linux_terminals:
-                    try:
-                        logger.info(f"Trying: {cmd}")
-                        subprocess.Popen(cmd, cwd=working_dir)
-                        launched = True
-                        break
-                    except FileNotFoundError:
-                        continue
+            # Try available terminals
+            linux_terminals = [
+                ["wezterm", "start", "--always-new-process", "--"] + command,
+                ["konsole", "-e"] + command,
+                ["gnome-terminal", "--"] + command,
+                ["ptyxis", "--"] + command,
+                ["alacritty", "-e"] + command,
+                ["tilix", "-e"] + command,
+                ["xfce4-terminal", "-e"] + command,
+                ["terminator", "-x"] + command,
+                ["mate-terminal", "-e"] + command,
+                ["lxterminal", "-e"] + command,
+                ["xterm", "-e"] + command,
+                ["kitty", "-e"] + command,
+            ]
+            for cmd in linux_terminals:
+                try:
+                    logger.info(f"Trying: {cmd}")
+                    subprocess.Popen(cmd, cwd=working_dir)
+                    launched = True
+                    break
+                except FileNotFoundError:
+                    continue
 
             if not launched:
                 venv_activate = get_venv_activate()
                 if venv_activate is not None:
                     command_text = f'bash -c \'cd "{working_dir}" && source "{venv_activate}" && {" ".join(command)}\''
                 else:
-                    python_cmd = "python" if sys.platform == "win32" else "python3"
                     command_text = " ".join(command)
 
                 msg_box = QMessageBox(self)
@@ -1532,139 +1438,3 @@ class SettingsDialog(QDialog):
             logger.info("Regenerating all GIFs...")
             self.main_window.gif_manager.regenerate_anyway = True
             self.main_window.ui_state._update_gifs()
-
-    def _get_reg_file_path(self, filename):
-        """Get the path to a .reg file, handling both frozen and dev modes"""
-        if getattr(sys, "frozen", False):
-            # Running as executable - deps is a subfolder of MEIPASS
-            base_path = os.path.join(getattr(sys, "_MEIPASS", ""), "deps")
-        else:
-            # Running as script
-            base_path = os.path.dirname(os.path.abspath(__file__))
-            base_path = os.path.join(base_path, "..", "..", "deps")
-        return os.path.join(base_path, filename)
-
-    def register_registry_entries(self):
-        """Register accela:// URL scheme and .zip context menu entries"""
-        if sys.platform != "win32":
-            QMessageBox.warning(
-                self,
-                "Platform Not Supported",
-                "Registry operations are only available on Windows.",
-            )
-            return
-
-        try:
-            reg_file = self._get_reg_file_path("ACCELA.reg")
-
-            if not os.path.exists(reg_file):
-                QMessageBox.critical(
-                    self,
-                    "Error",
-                    f"Registry file not found:\n{reg_file}",
-                )
-                return
-
-            # Read the template and replace [INSTALL_PATH] with actual path
-            install_path = sys.executable
-            install_path_escaped = install_path.replace("\\", "\\\\")
-
-            with open(reg_file, "r", encoding="utf-8-sig") as f:
-                reg_content = f.read()
-
-            reg_content = reg_content.replace("[INSTALL_PATH]", install_path_escaped)
-
-            # Write the processed file to a temp location
-            import tempfile
-
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".reg", delete=False
-            ) as temp_file:
-                temp_file.write(reg_content)
-                temp_reg_path = temp_file.name
-
-            try:
-                # Run regedit silently
-                result = subprocess.run(
-                    ["regedit", "/s", temp_reg_path],
-                    capture_output=True,
-                    text=True,
-                )
-
-                if result.returncode == 0:
-                    QMessageBox.information(
-                        self,
-                        "Success",
-                        "Registry entries have been registered successfully.\n\n"
-                        "You can now use accela:// URLs and open .zip files with ACCELA.",
-                    )
-                    logger.info("Registry entries registered successfully")
-                else:
-                    QMessageBox.critical(
-                        self,
-                        "Error",
-                        f"Failed to register registry entries.\n\n"
-                        f"Error: {result.stderr or 'Unknown error'}\n\n"
-                        "You may need to run ACCELA as administrator.",
-                    )
-                    logger.error(f"Failed to register registry entries: {result.stderr}")
-            finally:
-                # Clean up temp file
-                try:
-                    os.unlink(temp_reg_path)
-                except OSError:
-                    pass
-
-        except Exception as e:
-            error_msg = f"Failed to register registry entries: {e}"
-            logger.error(error_msg, exc_info=True)
-            QMessageBox.critical(self, "Error", error_msg)
-
-    def remove_registry_entries(self):
-        """Remove accela:// URL scheme and .zip context menu entries"""
-        if sys.platform != "win32":
-            QMessageBox.warning(
-                self,
-                "Platform Not Supported",
-                "Registry operations are only available on Windows.",
-            )
-            return
-
-        try:
-            reg_file = self._get_reg_file_path("ACCELA_uninstall.reg")
-
-            if not os.path.exists(reg_file):
-                QMessageBox.critical(
-                    self,
-                    "Error",
-                    f"Uninstall registry file not found:\n{reg_file}",
-                )
-                return
-
-            # Run regedit silently
-            result = subprocess.run(
-                ["regedit", "/s", reg_file],
-                capture_output=True,
-                text=True,
-            )
-
-            if result.returncode == 0:
-                QMessageBox.information(
-                    self,
-                    "Success",
-                    "Registry entries have been removed successfully.",
-                )
-                logger.info("Registry entries removed successfully")
-            else:
-                QMessageBox.critical(
-                    self,
-                    "Error",
-                    f"Failed to remove registry entries.\n\n"
-                    f"Error: {result.stderr or 'Unknown error'}",
-                )
-                logger.error(f"Failed to remove registry entries: {result.stderr}")
-
-        except Exception as e:
-            error_msg = f"Failed to remove registry entries: {e}"
-            logger.error(error_msg, exc_info=True)
-            QMessageBox.critical(self, "Error", error_msg)

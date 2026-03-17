@@ -38,12 +38,7 @@ class ApplicationShortcutsTask(QObject):
     def run(self, appid, game_name):
         """Run the application shortcuts creation task"""
         try:
-            # Only available on Linux with SLSsteam mode enabled
-            if sys.platform != "linux":
-                logger.error("Application shortcuts are only supported on Linux")
-                self.error.emit("Application shortcuts are only supported on Linux")
-                return False
-
+            # Available with SLSsteam mode enabled
             if not is_slssteam_mode_enabled():
                 logger.error("SLSsteam mode must be enabled to create shortcuts")
                 self.error.emit("SLSsteam mode must be enabled to create shortcuts")

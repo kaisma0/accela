@@ -7,10 +7,8 @@ import shutil
 import sys
 import time
 import traceback
-import platform
 import itertools
 import base64
-import subprocess
 import getpass
 import hashlib
 import argparse
@@ -39,7 +37,6 @@ EXIT_FILE_ERROR = 7
 EXIT_STEAM_NOT_FOUND = 8
 EXIT_TOKEN_ERROR = 9
 EXIT_NO_ACTIONS = 10
-EXIT_NOT_SUPPORTED = 11
 EXIT_FAILED_TO_GET_HWID = 12
 EXIT_NO_ACCOUNT_SPECIFIED = 13
 EXIT_FAILED_TO_PARSE_ID = 14
@@ -601,60 +598,17 @@ class SteamLogin:
         )
 
     def get_hwid(self):
-        """Get Hardware ID that works on both Linux and Windows, with robust fallbacks."""
-        system = platform.system()
+        """Get Hardware ID using Linux machine-id."""
+        try:
+            with open("/etc/machine-id", "r") as f:
+                machine_id = f.read().strip()
+                if machine_id:
+                    return machine_id
+        except OSError:
+            pass
 
-        if system == "Windows":
-            wmic_path = Path(r"C:\Windows\System32\wbem\wmic.exe")
-
-            # Try WMIC if it exists
-            if wmic_path.exists():
-                try:
-                    result = subprocess.check_output(
-                        "wmic csproduct get UUID",
-                        shell=True,
-                        stderr=subprocess.DEVNULL,
-                        text=True,
-                    )
-                    lines = [
-                        line.strip() for line in result.split("\n") if line.strip()
-                    ]
-                    if len(lines) > 1 and lines[1]:
-                        return lines[1]
-                except subprocess.SubprocessError:
-                    pass  # fallback to PowerShell if WMIC fails
-
-            # Fallback: PowerShell
-            try:
-                result = subprocess.check_output(
-                    'powershell -Command "Get-CimInstance Win32_ComputerSystemProduct | Select-Object -ExpandProperty UUID"',
-                    shell=True,
-                    stderr=subprocess.DEVNULL,
-                    text=True,
-                ).strip()
-                if result:
-                    return result
-            except subprocess.SubprocessError:
-                pass
-
-            self.logger.log_error("Failed to retrieve HWID on Windows.")
-            sys.exit(EXIT_FAILED_TO_GET_HWID)
-
-        elif system == "Linux":
-            # Linux: Try machine-id first
-            try:
-                with open("/etc/machine-id", "r") as f:
-                    machine_id = f.read().strip()
-                    if machine_id:
-                        return machine_id
-            except OSError:
-                pass
-            self.logger.log_error("Failed to retrieve machine ID on Linux.")
-            sys.exit(EXIT_FAILED_TO_GET_HWID)
-
-        else:
-            self.logger.log_error(f"Unsupported platform: {system}")
-            sys.exit(EXIT_NOT_SUPPORTED)
+        self.logger.log_error("Failed to retrieve machine ID on Linux.")
+        sys.exit(EXIT_FAILED_TO_GET_HWID)
 
     def derive_key(self):
         """Derive a Fernet key for encryption"""
@@ -901,44 +855,27 @@ class SteamUtils:
         self.steam_login = main_instance.steam_login
 
     def determine_steam_directory(self):
-        if platform.system() == "Windows":
-            try:
-                import winreg
+        native_path = Path.home() / ".local/share/Steam"
+        symlink_path = Path.home() / ".steam/steam"
+        flatpak_path = Path.home() / ".var/app/com.valvesoftware.Steam/data/Steam"
 
-                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam")
-                steam_path, _ = winreg.QueryValueEx(key, "SteamPath")
-                winreg.CloseKey(key)
-                self.logger.log_info(f"Found Steam installation at: {steam_path}")
-                self.main.STEAM_DIR = Path(os.path.normpath(steam_path))
-            except OSError:
-                self.logger.log_error("Failed to read Steam path from registry.")
-                sys.exit(EXIT_STEAM_NOT_FOUND)
+        if native_path.exists():
+            self.main.STEAM_DIR = native_path
+            self.logger.log_base(f"Using native Steam installation: {native_path}")
+
+        elif symlink_path.exists():
+            self.main.STEAM_DIR = symlink_path
+            self.logger.log_base(f"Using symlink Steam installation: {symlink_path}")
+
+        elif flatpak_path.exists():
+            self.main.STEAM_DIR = flatpak_path
+            self.logger.log_base(f"Using Flatpak Steam installation: {flatpak_path}")
+
         else:
-            native_path = Path.home() / ".local/share/Steam"
-            symlink_path = Path.home() / ".steam/steam"
-            flatpak_path = Path.home() / ".var/app/com.valvesoftware.Steam/data/Steam"
-
-            if native_path.exists():
-                self.main.STEAM_DIR = native_path
-                self.logger.log_base(f"Using native Steam installation: {native_path}")
-
-            elif symlink_path.exists():
-                self.main.STEAM_DIR = symlink_path
-                self.logger.log_base(
-                    f"Using symlink Steam installation: {symlink_path}"
-                )
-
-            elif flatpak_path.exists():
-                self.main.STEAM_DIR = flatpak_path
-                self.logger.log_base(
-                    f"Using Flatpak Steam installation: {flatpak_path}"
-                )
-
-            else:
-                self.logger.log_error(
-                    "No Steam installation found in ~/.local/share/Steam, ~/.steam/steam, ~/.var/app/com.valvesoftware.Steam/data/Steam"
-                )
-                sys.exit(EXIT_STEAM_NOT_FOUND)
+            self.logger.log_error(
+                "No Steam installation found in ~/.local/share/Steam, ~/.steam/steam, ~/.var/app/com.valvesoftware.Steam/data/Steam"
+            )
+            sys.exit(EXIT_STEAM_NOT_FOUND)
 
         if not self.main.STEAM_DIR.exists():
             self.logger.log_error(
@@ -1489,10 +1426,8 @@ class Main:
         self.logger.setup_logging()
         self.logger.install_global_exception_logger()
 
-        # Clear screen based on platform
-        if not args.noclear and platform.system() == "Windows":
-            os.system("cls")
-        elif not args.noclear:
+        # Clear screen
+        if not args.noclear:
             os.system("clear")
 
         self.steam_utils.determine_steam_directory()
