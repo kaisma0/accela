@@ -2,9 +2,10 @@ import atexit
 import logging
 import os
 import sys
+import threading
 from pathlib import Path
 from collections import deque
-from PyQt6.QtCore import Qt, QUrl, QTimer
+from PyQt6.QtCore import Qt, QUrl, QTimer, pyqtSignal
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QShortcut, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
@@ -43,12 +44,19 @@ from utils.logger import qt_log_handler
 from utils.settings import get_settings
 from utils.paths import Paths
 
+from core.appimage_updater import UpdateInfo, UpdaterError, UpdateCheckWorker, UpdateDialog
+
 logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
+    _update_available = pyqtSignal(object)
+
     def __init__(self):
         super().__init__()
+        self._update_prompt_shown = False
+        self._update_check_worker: UpdateCheckWorker | None = None
+        self._update_available.connect(self._show_update_prompt)
         self._setup_window_properties()
         self._initialize_managers()
         self._setup_ui()
@@ -57,6 +65,25 @@ class MainWindow(QMainWindow):
         self._setup_audio()
         self._setup_key_sequence_detector()
         self._setup_exit_shortcut()
+    def check_for_startup_update(self, current_version: str) -> None:
+        if self._update_prompt_shown:
+            return
+        self._update_prompt_shown = True
+
+        worker = UpdateCheckWorker(current_version, parent=self)
+        worker.update_available.connect(self._show_update_prompt)
+        worker.check_failed.connect(
+            lambda err: logger.warning("Startup update check failed: %s", err)
+        )
+        worker.finished.connect(worker.deleteLater)
+
+        self._update_check_worker = worker
+        worker.start()
+
+    def _show_update_prompt(self, update_info: UpdateInfo) -> None:
+        dialog = UpdateDialog(update_info, parent=self)
+        dialog.exec()
+
 
     def _setup_window_properties(self):
         """Configure basic window properties"""
@@ -540,7 +567,6 @@ class MainWindow(QMainWindow):
         dialog = CreditsDialog(self)
         dialog.exec()
 
-    # Event handlers
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
             urls = event.mimeData().urls()

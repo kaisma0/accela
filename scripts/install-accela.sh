@@ -18,10 +18,28 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_DIR="$HOME/.config/kaisma0"
 ICON_SOURCE_PATH="$PROJECT_ROOT/src/res/logo/accela.png"
+ACCELA_RELEASES_API="https://api.github.com/repos/kaisma0/accela/releases/latest"
 
 log_info() { echo -e "${GREEN}[INFO]${NC} $*"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
+
+download_text() {
+    local url="$1"
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -L --fail --silent "$url"
+        return 0
+    fi
+
+    if command -v wget >/dev/null 2>&1; then
+        wget -qO- "$url"
+        return 0
+    fi
+
+    log_error "Need curl or wget to query GitHub releases"
+    return 1
+}
 
 download_file() {
     local url="$1"
@@ -39,6 +57,24 @@ download_file() {
 
     log_error "Need curl or wget to download AppImage override"
     return 1
+}
+
+get_latest_accela_asset_url() {
+    local release_json
+    local asset_url
+
+    if ! release_json="$(download_text "$ACCELA_RELEASES_API" 2>/dev/null)"; then
+        printf '%s' ""
+        return 0
+    fi
+
+    asset_url="$(printf '%s\n' "$release_json" | grep '"browser_download_url"' | grep -E '\.AppImage"$' | head -n1 | cut -d '"' -f 4 || true)"
+
+    if [ -z "$asset_url" ]; then
+        asset_url="$(printf '%s\n' "$release_json" | grep '"browser_download_url"' | grep -E 'linux-appimage\.tar\.gz"$' | head -n1 | cut -d '"' -f 4 || true)"
+    fi
+
+    printf '%s' "$asset_url"
 }
 
 ensure_accela_conf_general() {
@@ -267,6 +303,21 @@ install_from_override_source() {
     return 0
 }
 
+install_from_latest_release() {
+    local asset_url
+
+    log_info "Resolving latest ACCELA release from GitHub..."
+    asset_url="$(get_latest_accela_asset_url || true)"
+
+    if [ -z "$asset_url" ]; then
+        log_error "Could not find a release asset in the latest GitHub release"
+        return 1
+    fi
+
+    log_info "Latest release asset: $asset_url"
+    install_from_override_source "$asset_url"
+}
+
 install_from_built_appimage() {
     local appimage_path=""
     local payload_dir=""
@@ -316,7 +367,73 @@ install_from_built_appimage() {
     return 0
 }
 
+# Stop any running ACCELA instance before overwriting files.
+stop_running_accela() {
+    local appimage="$INSTALL_DIR/ACCELA.AppImage"
+    local STOP_TIMEOUT_SECS=10
+    local -a pids=()
+
+    [ -f "$appimage" ] || return 0
+
+    local canonical_appimage
+    canonical_appimage="$(readlink -f "$appimage" 2>/dev/null || echo "$appimage")"
+
+    # Collect matching PIDs without a subshell so the array is writable.
+    while read -r pid; do
+        local exe
+        exe="$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)"
+        if [ "$exe" = "$canonical_appimage" ]; then
+            pids+=("$pid")
+            continue
+        fi
+
+        # Fallback: match argv[0] from cmdline (covers AppImage re-exec patterns).
+        local cmd0
+        cmd0="$(tr '\0' '\n' 2>/dev/null < "/proc/$pid/cmdline" | head -n1 || true)"
+        if [ -n "$cmd0" ]; then
+            cmd0="$(readlink -f "$cmd0" 2>/dev/null || true)"
+            if [ "$cmd0" = "$canonical_appimage" ]; then
+                pids+=("$pid")
+            fi
+        fi
+    done < <(ls /proc | grep -E '^[0-9]+$' 2>/dev/null || true)
+
+    if [ "${#pids[@]}" -eq 0 ]; then
+        return 0
+    fi
+
+    log_info "Stopping running ACCELA instance(s) (PID: ${pids[*]}) before update..."
+    kill -TERM "${pids[@]}" 2>/dev/null || true
+
+    local elapsed=0
+    while [ "$elapsed" -lt "$STOP_TIMEOUT_SECS" ]; do
+        local -a still_alive=()
+        for pid in "${pids[@]}"; do
+            kill -0 "$pid" 2>/dev/null && still_alive+=("$pid")
+        done
+        if [ "${#still_alive[@]}" -eq 0 ]; then
+            log_info "ACCELA stopped cleanly"
+            return 0
+        fi
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+
+    # Escalate to SIGKILL for any survivors.
+    local -a survivors=()
+    for pid in "${pids[@]}"; do
+        kill -0 "$pid" 2>/dev/null && survivors+=("$pid")
+    done
+
+    if [ "${#survivors[@]}" -gt 0 ]; then
+        log_warn "ACCELA did not exit within ${STOP_TIMEOUT_SECS}s — force-killing PID(s): ${survivors[*]}"
+        kill -KILL "${survivors[@]}" 2>/dev/null || true
+        sleep 2
+    fi
+}
+
 cleanup_existing() {
+    stop_running_accela
     rm -rf "$INSTALL_DIR/bin" 2>/dev/null || true
     rm -rf "$INSTALL_DIR/src" 2>/dev/null || true
     rm -f "$INSTALL_DIR/run.sh" 2>/dev/null || true
@@ -357,7 +474,7 @@ EOF
         update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
     fi
     if command -v xdg-mime >/dev/null 2>&1; then
-        xdg-mime default accela.desktop x-scheme-handler/accela || true
+        xdg-mime default accela.desktop x-scheme-handler/accela 2>/dev/null || true
     fi
 }
 
@@ -396,23 +513,66 @@ install_appimage() {
     install_cli_wrapper
 }
 
+relaunch_accela() {
+    local appimage="$INSTALL_DIR/ACCELA.AppImage"
+
+    if [ ! -x "$appimage" ]; then
+        log_warn "Relaunch requested but AppImage not found at $appimage"
+        return 0
+    fi
+
+    log_info "Relaunching ACCELA..."
+
+    unset APPDIR APPIMAGE ARGV0 OWD APPIMAGE_EXTRACT_AND_RUN 2>/dev/null || true
+    unset LD_LIBRARY_PATH LD_PRELOAD 2>/dev/null || true
+
+    nohup "$appimage" </dev/null >/dev/null 2>&1 &
+    disown
+}
+
 install_accela() {
+    local do_relaunch=0
+    local filtered_args=()
+
+    # Strip --relaunch from the argument list before any other parsing.
+    for arg in "$@"; do
+        if [ "$arg" = "--relaunch" ]; then
+            do_relaunch=1
+        else
+            filtered_args+=("$arg")
+        fi
+    done
+    set -- "${filtered_args[@]+"${filtered_args[@]}"}"
+
+    # --latest: resolve and download the latest GitHub release automatically
+    if [ "$#" -eq 1 ] && [ "$1" = "--latest" ]; then
+        install_from_latest_release
+        [ "$do_relaunch" -eq 1 ] && relaunch_accela
+        return 0
+    fi
+
+    # -- <source>: install from an explicit local path or URL
     if [ "$#" -gt 0 ]; then
         if [ "$1" != "--" ] || [ "$#" -ne 2 ]; then
-            echo "Usage: $0 [-- <local-appimage|local-tar.gz|http(s)-url>]" >&2
+            echo "Usage: $0 [--relaunch] [--latest | -- <local-appimage|local-tar.gz|http(s)-url>]" >&2
             return 1
         fi
 
         install_from_override_source "$2"
+        [ "$do_relaunch" -eq 1 ] && relaunch_accela
         return 0
     fi
 
+    # No args: fall back to local build
     if ! install_from_built_appimage; then
         echo -e "${RED}Error: no built ACCELA AppImage found.${NC}"
         echo "Expected a built AppImage in $PROJECT_ROOT/build/dist"
+        echo "Or run: $0 --latest"
         echo "Or run: $0 -- <local-appimage|local-tar.gz|http(s)-url>"
         return 1
     fi
+
+    [ "$do_relaunch" -eq 1 ] && relaunch_accela
 }
 
 install_accela "$@"

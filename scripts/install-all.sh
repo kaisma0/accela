@@ -4,9 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ACCELA_RAW_BASE="https://raw.githubusercontent.com/kaisma0/accela/main"
-ACCELA_RELEASES_API="https://api.github.com/repos/kaisma0/accela/releases/latest"
 ACCELA_INSTALL_MODE=""
-ACCELA_INSTALL_SOURCE=""
 ACTIVE_SCRIPT_DIR="$SCRIPT_DIR"
 REMOTE_ROOT=""
 
@@ -29,23 +27,6 @@ cleanup_remote_root() {
 }
 
 trap cleanup_remote_root EXIT
-
-download_text() {
-    local url="$1"
-
-    if command -v curl >/dev/null 2>&1; then
-        curl -L --fail --silent "$url"
-        return 0
-    fi
-
-    if command -v wget >/dev/null 2>&1; then
-        wget -qO- "$url"
-        return 0
-    fi
-
-    echo "Need curl or wget to query GitHub releases" >&2
-    return 1
-}
 
 download_file() {
     local url="$1"
@@ -71,24 +52,6 @@ download_repo_file() {
 
     mkdir -p "$(dirname "$output_path")"
     download_file "$ACCELA_RAW_BASE/$repo_path" "$output_path"
-}
-
-get_latest_accela_asset_url() {
-    local release_json
-    local asset_url
-
-    if ! release_json="$(download_text "$ACCELA_RELEASES_API" 2>/dev/null)"; then
-        printf '%s' ""
-        return 0
-    fi
-
-    asset_url="$(printf '%s\n' "$release_json" | grep '"browser_download_url"' | grep -E '\.AppImage"$' | head -n1 | cut -d '"' -f 4 || true)"
-
-    if [ -z "$asset_url" ]; then
-        asset_url="$(printf '%s\n' "$release_json" | grep '"browser_download_url"' | grep -E 'linux-appimage\.tar\.gz"$' | head -n1 | cut -d '"' -f 4 || true)"
-    fi
-
-    printf '%s' "$asset_url"
 }
 
 find_local_built_appimage() {
@@ -123,8 +86,6 @@ prepare_remote_install_bundle() {
 }
 
 preflight_accela_source() {
-    local release_url=""
-
     if [ "$#" -gt 1 ]; then
         print_usage
         return 1
@@ -139,7 +100,6 @@ preflight_accela_source() {
         local local_path=""
         local_path="$(find_local_built_appimage)"
         ACCELA_INSTALL_MODE="local"
-        ACCELA_INSTALL_SOURCE="$local_path"
         ACTIVE_SCRIPT_DIR="$SCRIPT_DIR"
 
         if [ -n "$local_path" ]; then
@@ -151,23 +111,9 @@ preflight_accela_source() {
         return 0
     fi
 
-    echo "Resolving latest ACCELA release from GitHub..."
-    release_url="$(get_latest_accela_asset_url || true)"
-
-    if [ -n "$release_url" ]; then
-        ACCELA_INSTALL_MODE="remote"
-        ACCELA_INSTALL_SOURCE="$release_url"
-        echo "ACCELA script source: remote repo scripts from kaisma0/accela"
-        echo "ACCELA source: latest GitHub release asset found"
-        echo "ACCELA source URL: $release_url"
-        prepare_remote_install_bundle
-        return 0
-    fi
-
+    ACCELA_INSTALL_MODE="remote"
     echo "ACCELA script source: remote repo scripts from kaisma0/accela"
-    echo "ACCELA source: latest GitHub release asset not found"
-    echo "ACCELA source: remote install requested and no GitHub release asset is available"
-    return 1
+    prepare_remote_install_bundle
 }
 
 run_accela_install() {
@@ -177,7 +123,7 @@ run_accela_install() {
             return 0
             ;;
         remote)
-            "$ACTIVE_SCRIPT_DIR/install-accela.sh" -- "$ACCELA_INSTALL_SOURCE"
+            "$ACTIVE_SCRIPT_DIR/install-accela.sh" --latest
             return 0
             ;;
         *)
