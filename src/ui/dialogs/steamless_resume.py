@@ -1,3 +1,4 @@
+from ui.custom_titlebar import CustomTitleBar
 import logging
 
 from PyQt6.QtCore import Qt
@@ -19,6 +20,7 @@ class SteamlessResumeDialog(QDialog):
 
     def __init__(self, game_name, exe_count, processed_count, success, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle("Steamless Complete")
         self.setMinimumWidth(400)
         self.setMinimumHeight(300)
@@ -32,7 +34,10 @@ class SteamlessResumeDialog(QDialog):
 
     def _setup_ui(self, game_name, exe_count, processed_count, success):
         """Setup the dialog UI"""
-        layout = QVBoxLayout(self)
+        
+        CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
+        
+        layout = QVBoxLayout(self._tb_content_widget)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
 

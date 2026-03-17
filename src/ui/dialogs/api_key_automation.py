@@ -1,3 +1,5 @@
+from PyQt6.QtCore import Qt
+from ui.custom_titlebar import CustomTitleBar
 import logging
 import os
 import shutil
@@ -35,6 +37,7 @@ class ApiKeyAutomationDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle("Morrenus API Key Automation")
         self.resize(1000, 700)
 
@@ -69,7 +72,10 @@ class ApiKeyAutomationDialog(QDialog):
         return None
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
+        
+        CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
+        
+        layout = QVBoxLayout(self._tb_content_widget)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 

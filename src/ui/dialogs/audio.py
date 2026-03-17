@@ -1,3 +1,4 @@
+from ui.custom_titlebar import CustomTitleBar
 import logging
 from PyQt6.QtWidgets import (
     QDialog,
@@ -42,10 +43,14 @@ def make_volume_row(name: str, slider: QSlider, value_label: QLabel, reset_butto
 class AudioDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle("Audio Settings")
         self.settings = get_settings()
         self.setMinimumSize(400, 300)
-        self.layout = QVBoxLayout(self)
+        
+        CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
+        
+        self.layout = QVBoxLayout(self._tb_content_widget)
 
         logger.debug("Opening AudioDialog.")
 

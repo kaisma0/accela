@@ -1,3 +1,5 @@
+from PyQt6.QtCore import Qt
+from ui.custom_titlebar import CustomTitleBar
 import logging
 from PyQt6.QtWidgets import (
     QDialog,
@@ -14,10 +16,14 @@ logger = logging.getLogger(__name__)
 class SteamLibraryDialog(QDialog):
     def __init__(self, library_paths, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle("Select Steam Library")
         self.selected_path = None
         self.setMinimumWidth(500)
-        layout = QVBoxLayout(self)
+        
+        CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
+        
+        layout = QVBoxLayout(self._tb_content_widget)
 
         logger.debug(f"Opening SteamLibraryDialog with {len(library_paths)} libraries.")
 

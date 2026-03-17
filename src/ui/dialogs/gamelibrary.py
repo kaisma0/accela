@@ -1,3 +1,4 @@
+from ui.custom_titlebar import CustomTitleBar
 import logging
 import os
 import sys
@@ -93,6 +94,7 @@ class GameLibraryDialog(QDialog):
 
     def __init__(self, main_window):
         super().__init__(main_window)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.main_window = main_window
         self.game_manager = main_window.game_manager
         self.settings = main_window.settings
@@ -105,7 +107,10 @@ class GameLibraryDialog(QDialog):
         self.setMinimumWidth(800)
         self.setMinimumHeight(800)
 
-        layout = QVBoxLayout(self)
+        
+        CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
+        
+        layout = QVBoxLayout(self._tb_content_widget)
 
         # Scan button
         self.scan_button = QPushButton("Scan Libraries")

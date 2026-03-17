@@ -1,3 +1,4 @@
+from ui.custom_titlebar import CustomTitleBar
 import logging
 import re
 
@@ -52,6 +53,7 @@ class FetchManifestDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.parent_window = parent
         self.setWindowTitle("Fetch Manifest from Morrenus API")
         self.setMinimumWidth(600)
@@ -59,7 +61,10 @@ class FetchManifestDialog(QDialog):
         self.task_runner = TaskRunner()
         self._active_image_fetchers = {}  # Keep track of active fetchers to prevent GC
 
-        layout = QVBoxLayout(self)
+        
+        CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
+        
+        layout = QVBoxLayout(self._tb_content_widget)
 
         # API Status Bar
         self._create_api_status_bar(layout)

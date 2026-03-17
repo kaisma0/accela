@@ -1,3 +1,4 @@
+from ui.custom_titlebar import CustomTitleBar
 import logging
 import os
 import shutil
@@ -180,12 +181,16 @@ class SettingsDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle("Settings")
         self.setMinimumWidth(610)
         self.setMinimumHeight(700)
         self.resize(610, 700)
         self.settings = get_settings()
-        self.main_layout = QVBoxLayout(self)
+        
+        CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
+        
+        self.main_layout = QVBoxLayout(self._tb_content_widget)
         self.main_window = parent
         self.accent_color = self.settings.value("accent_color", "#C06C84")
 
@@ -1173,6 +1178,8 @@ class SettingsDialog(QDialog):
     def on_titlebar_position_changed(self, state):
         """Handle immediate titlebar position change"""
         position = "bottom" if state == 2 else "top"
+        self.settings.setValue("titlebar_position", position)
+        CustomTitleBar.reposition_dialog_titlebar(self, position)
         if self.main_window and hasattr(self.main_window, "reposition_titlebar"):
             self.main_window.reposition_titlebar(position)
 

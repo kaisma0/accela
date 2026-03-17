@@ -1,3 +1,4 @@
+from ui.custom_titlebar import CustomTitleBar
 import logging
 import os
 import shutil
@@ -300,6 +301,7 @@ class CustomGifItem(QWidget):
 class CustomGifsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.settings = get_settings()
         self.setWindowTitle("Custom Gifs")
         self.setMinimumWidth(600)
@@ -313,7 +315,10 @@ class CustomGifsDialog(QDialog):
 
     def setup_ui(self):
         """Setup the dialog UI"""
-        layout = QVBoxLayout(self)
+        
+        CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
+        
+        layout = QVBoxLayout(self._tb_content_widget)
 
         # Title and description
         title_label = QLabel("Custom GIF Management")

@@ -1,3 +1,4 @@
+from ui.custom_titlebar import CustomTitleBar
 import logging
 
 from PyQt6.QtWidgets import (
@@ -18,12 +19,16 @@ logger = logging.getLogger(__name__)
 class CreditsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle("Credits")
         self.setMinimumWidth(400)
         self.setMinimumHeight(250)
         self.resize(400, 342)  # Set exact size as requested
         self.settings = get_settings()
-        self.main_layout = QVBoxLayout(self)
+        
+        CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
+        
+        self.main_layout = QVBoxLayout(self._tb_content_widget)
         self.main_window = parent
         self.accent_color = self.settings.value("accent_color", "#C06C84")
 
