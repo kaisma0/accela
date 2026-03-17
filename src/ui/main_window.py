@@ -32,7 +32,9 @@ from managers.job_queue_manager import JobQueueManager
 from managers.task_manager import TaskManager
 from managers.ui_state_manager import UIStateManager
 from managers.gif_manager import GIFManager
+from core import morrenus_api
 from ui.bottom_titlebar import BottomTitleBar
+from ui.dialogs.api_key_automation import ApiKeyAutomationDialog
 from ui.dialogs.fetchmanifest import FetchManifestDialog
 from ui.dialogs.gamelibrary import GameLibraryDialog
 from ui.dialogs.settings import SettingsDialog
@@ -51,12 +53,18 @@ logger = logging.getLogger(__name__)
 
 class MainWindow(QMainWindow):
     _update_available = pyqtSignal(object)
+    _morrenus_key_validation_done = pyqtSignal(bool, str)
 
     def __init__(self):
         super().__init__()
         self._update_prompt_shown = False
         self._update_check_worker: UpdateCheckWorker | None = None
+        self._morrenus_refresh_started = False
+        self._morrenus_key_under_validation = ""
         self._update_available.connect(self._show_update_prompt)
+        self._morrenus_key_validation_done.connect(
+            self._on_morrenus_key_validation_done
+        )
         self._setup_window_properties()
         self._initialize_managers()
         self._setup_ui()
@@ -84,6 +92,75 @@ class MainWindow(QMainWindow):
         dialog = UpdateDialog(update_info, parent=self)
         dialog.exec()
 
+        QTimer.singleShot(1500, self._run_morrenus_api_key_startup_check)
+
+    def _run_morrenus_api_key_startup_check(self):
+        if self._morrenus_refresh_started:
+            return
+        self._morrenus_refresh_started = True
+
+        auto_refresh_enabled = self.settings.value(
+            "auto_refresh_morrenus_api_key", True, type=bool
+        )
+        if not auto_refresh_enabled:
+            logger.info("Morrenus startup auto-refresh is disabled.")
+            return
+
+        api_key = self.settings.value("morrenus_api_key", "", type=str).strip()
+        if not api_key:
+            logger.info("Skipping Morrenus startup auto-refresh because API key is empty.")
+            return
+
+        self._morrenus_key_under_validation = api_key
+        logger.info("Validating Morrenus API key at startup...")
+
+        thread = threading.Thread(
+            target=self._validate_morrenus_key_worker,
+            args=(api_key,),
+            daemon=True,
+        )
+        thread.start()
+
+    def _validate_morrenus_key_worker(self, api_key):
+        is_valid, error = morrenus_api.validate_api_key(api_key)
+        self._morrenus_key_validation_done.emit(is_valid, error or "")
+
+    def _on_morrenus_key_validation_done(self, is_valid, error):
+        current_api_key = self.settings.value("morrenus_api_key", "", type=str).strip()
+        if current_api_key != self._morrenus_key_under_validation:
+            logger.info("Morrenus API key changed during startup validation. Skipping auto-refresh.")
+            return
+
+        if is_valid:
+            logger.info("Morrenus API key is valid at startup.")
+            return
+
+        logger.warning(
+            "Morrenus API key is invalid at startup. Starting automatic refresh flow. "
+            f"Reason: {error or 'Unknown error'}"
+        )
+
+        try:
+            new_key = ApiKeyAutomationDialog.prompt_for_api_key(self)
+        except Exception as exc:
+            logger.error(f"Failed to launch Morrenus API key automation window: {exc}")
+            return
+
+        if not new_key:
+            logger.warning("Morrenus API key refresh was cancelled or no key was extracted.")
+            return
+
+        self.settings.setValue("morrenus_api_key", new_key)
+        logger.info("Morrenus API key refreshed and saved from automation flow.")
+
+        post_check_valid, post_check_error = morrenus_api.validate_api_key(new_key)
+        if post_check_valid:
+            logger.info("Refreshed Morrenus API key validated successfully.")
+        else:
+            logger.warning(
+                "Refreshed Morrenus API key did not validate successfully. "
+                f"Reason: {post_check_error or 'Unknown error'}"
+            )
 
     def _setup_window_properties(self):
         """Configure basic window properties"""

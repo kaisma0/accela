@@ -438,6 +438,15 @@ class SettingsDialog(QDialog):
         )
         api_key_layout.addLayout(sgdb_key_layout)
 
+        self.auto_refresh_morrenus_api_key_checkbox = create_checkbox_setting(
+            "Auto Refresh Morrenus API Key",
+            "auto_refresh_morrenus_api_key",
+            True,
+            self,
+            "At startup, validate your Morrenus key and automatically open login/refresh flow if it is invalid.",
+        )
+        api_key_layout.addWidget(self.auto_refresh_morrenus_api_key_checkbox)
+
         api_key_group.setLayout(api_key_layout)
         morrenus_layout.addWidget(api_key_group)
 
@@ -954,6 +963,17 @@ class SettingsDialog(QDialog):
                 logger.info("Steam Grid DB API key saved.")
             else:
                 logger.info("Steam Grid DB API key cleared.")
+
+        auto_refresh_morrenus_api_key = (
+            self.auto_refresh_morrenus_api_key_checkbox.isChecked()
+        )
+        self.settings.setValue(
+            "auto_refresh_morrenus_api_key", auto_refresh_morrenus_api_key
+        )
+        logger.info(
+            "Auto Refresh Morrenus API Key set to: "
+            f"{auto_refresh_morrenus_api_key}"
+        )
 
         # Download Settings
         is_sls_mode = self.sls_mode_checkbox.isChecked()
