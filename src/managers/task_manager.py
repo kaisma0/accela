@@ -2287,9 +2287,9 @@ class TaskManager:
         except Exception as e:
             logger.error(f"Failed during cancel cleanup: {e}", exc_info=True)
 
-    def download_slssteam(self, steam_path=None):
-        """Download and install the latest SLSsteam from GitHub releases"""
-        logger.info("Starting SLSsteam download and installation")
+    def download_slssteam(self):
+        """Install/update SLSsteam using ACCELA's install-sls flow."""
+        logger.info("Starting SLSsteam installation/update")
 
         # Check if already running
         if (
@@ -2299,11 +2299,11 @@ class TaskManager:
             QMessageBox.information(
                 self.main_window,
                 "Already Running",
-                "SLSsteam download is already in progress. Please wait for it to complete.",
+                "SLSsteam installation is already in progress. Please wait for it to complete.",
             )
             return
 
-        self.slssteam_download_task = DownloadSLSsteamTask(steam_path=steam_path)
+        self.slssteam_download_task = DownloadSLSsteamTask()
         self.slssteam_download_task.progress.connect(self._handle_slssteam_progress)
         self.slssteam_download_task.progress_percentage.connect(
             self._handle_slssteam_progress_percentage
@@ -2318,7 +2318,7 @@ class TaskManager:
         worker.error.connect(self._handle_task_error)
 
     def _handle_slssteam_progress(self, message):
-        """Handle SLSsteam download progress messages"""
+        """Handle SLSsteam install progress messages"""
         logger.info(f"SLSsteam: {message}")
 
     def _handle_slssteam_progress_percentage(self, percentage):
@@ -2326,8 +2326,8 @@ class TaskManager:
         # Silent progress updates to avoid log spam
 
     def _on_slssteam_download_complete(self, message):
-        """Handle SLSsteam download completion"""
-        logger.info(f"SLSsteam download completed: {message}")
+        """Handle SLSsteam install completion"""
+        logger.info(f"SLSsteam installation completed: {message}")
         QMessageBox.information(
             self.main_window, "SLSsteam Installation Complete", message
         )
@@ -2335,12 +2335,12 @@ class TaskManager:
         self.slssteam_download_runner = None
 
     def _handle_slssteam_download_error(self):
-        """Handle SLSsteam download errors"""
-        logger.error("SLSsteam download failed")
+        """Handle SLSsteam install errors"""
+        logger.error("SLSsteam installation failed")
         QMessageBox.critical(
             self.main_window,
             "Error",
-            "Failed to download and install SLSsteam. Please check your internet connection and try again.",
+            "Failed to install/update SLSsteam. See the progress output above for details or check application logs.",
         )
         self.slssteam_download_task = None
         self.slssteam_download_runner = None

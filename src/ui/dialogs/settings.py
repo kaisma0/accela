@@ -582,7 +582,7 @@ class SettingsDialog(QDialog):
 
         self.download_slssteam_button = QPushButton("Install SLSsteam")
         self.download_slssteam_button.setToolTip(
-            "Download and install the latest SLSsteam from GitHub."
+            "Install or update SLSsteam using the install-sls flow."
         )
         self.download_slssteam_button.clicked.connect(self.download_slssteam)
 
@@ -1246,12 +1246,16 @@ class SettingsDialog(QDialog):
 
     def _update_slssteam_status(self):
         """Check and display SLSsteam installation status"""
+        from pathlib import Path
         from core.tasks.download_slssteam_task import DownloadSLSsteamTask
-        from utils.helpers import get_base_path
 
-        # Hide label if version file doesn't exist
-        version_file = get_base_path() / "SLSsteam" / "VERSION"
-        if not version_file.exists():
+        # Check if SLSsteam is installed in either native or Flatpak path
+        xdg_data_home = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+        native_so = Path(xdg_data_home) / "SLSsteam" / "SLSsteam.so"
+        flatpak_so = Path.home() / ".var/app/com.valvesoftware.Steam/.local/share/SLSsteam/SLSsteam.so"
+        sls_installed = native_so.exists() or flatpak_so.exists()
+
+        if not sls_installed:
             if hasattr(self, "slssteam_status_label"):
                 self.slssteam_status_label.setVisible(False)
             if hasattr(self, "slssteam_hash_warning_label"):
@@ -1337,107 +1341,23 @@ class SettingsDialog(QDialog):
                 return f"Update available • Latest: {latest_version}"
             else:
                 installed_version = status.get("installed_version", "Unknown")
+                if installed_version == "Unknown":
+                    return "Installed • Version: Unknown"
                 return f"Up to date • Version: {installed_version}"
 
     def download_slssteam(self):
-        """Download and install SLSsteam from GitHub releases"""
+        """Install or update SLSsteam using the install-sls flow."""
         if sys.platform != "linux":
             QMessageBox.warning(
                 self,
                 "Platform Not Supported",
-                "SLSsteam download is only available on Linux.",
+                "SLSsteam installation is only available on Linux.",
             )
             return
-
-        # Check if 7z command is available
-        import shutil
-
-        if not shutil.which("7z") and not shutil.which("7za"):
-            QMessageBox.critical(
-                self,
-                "Missing Dependency",
-                "p7zip is not installed. Please install it first:\n\n"
-                "After installation, restart ACCELA and try again.",
-            )
-            return
-
-        # Backup steam.cfg content before removing (for restore on cancel)
-        steam_cfg_content = None
-        steam_cfg_existed = False
-
-        from core.steam_helpers import find_steam_install
-
-        steam_path = find_steam_install()
-        if not steam_path:
-            QMessageBox.critical(
-                self,
-                "Error",
-                "Could not locate Steam installation. Please install Steam and try again.",
-            )
-            return
-        if steam_path:
-            steam_cfg_path = os.path.join(steam_path, "steam.cfg")
-            if os.path.exists(steam_cfg_path):
-                steam_cfg_existed = True
-                try:
-                    with open(steam_cfg_path, "r") as f:
-                        steam_cfg_content = f.read()
-                    logger.info(f"Backed up steam.cfg from {steam_path}")
-                except Exception as e:
-                    logger.warning(f"Failed to read steam.cfg for backup: {e}")
-                finally:
-                    # Remove steam.cfg to force Steam update
-                    try:
-                        os.remove(steam_cfg_path)
-                        logger.info(f"Removed steam.cfg from {steam_path}")
-                    except Exception as e:
-                        logger.warning(f"Failed to remove steam.cfg: {e}")
-
-        if steam_cfg_existed:
-            # steam.cfg existed - ask user to update Steam
-            reply = QMessageBox.question(
-                self,
-                "Update Steam",
-                "steam.cfg has been removed from your Steam folder.\n\n"
-                "Please start Steam and let it update completely.\n"
-                "After the update finishes, click OK to continue with SLSsteam installation.",
-                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
-                QMessageBox.StandardButton.Ok,
-            )
-
-            if reply == QMessageBox.StandardButton.Cancel:
-                # Restore steam.cfg if it existed
-                if steam_cfg_existed and steam_cfg_content is not None:
-                    steam_cfg_path = os.path.join(steam_path, "steam.cfg")
-                    try:
-                        with open(steam_cfg_path, "w") as f:
-                            f.write(steam_cfg_content)
-                        logger.info(f"Restored steam.cfg to {steam_path}")
-                    except Exception as e:
-                        logger.error(f"Failed to restore steam.cfg: {e}")
-                        QMessageBox.critical(
-                            self,
-                            "Error",
-                            f"Failed to restore steam.cfg. You may need to recreate it manually:\n\n"
-                            f"Create a file at:\n{steam_cfg_path}\n\n"
-                            f"With the following content:\n"
-                            f"BootStrapperInhibitAll=enable\n"
-                            f"BootStrapperForceSelfUpdate=disable",
-                        )
-                return
-        else:
-            # No steam.cfg existed - just inform user
-            QMessageBox.information(
-                self,
-                "Continue SLSsteam Installation",
-                "SLSsteam installation will now proceed.\n\n"
-                "A steam.cfg file will be created to block Steam updates.",
-                QMessageBox.StandardButton.Ok,
-            )
 
         try:
             if self.main_window and hasattr(self.main_window, "task_manager"):
-                self.main_window.task_manager.download_slssteam(steam_path)
+                self.main_window.task_manager.download_slssteam()
                 # Dialog can close now - download runs independently
                 self.accept()
             else:
@@ -1445,7 +1365,7 @@ class SettingsDialog(QDialog):
                     self, "Error", "Could not access task manager. Please try again."
                 )
         except Exception as e:
-            error_msg = f"Failed to start SLSsteam download: {e}"
+            error_msg = f"Failed to start SLSsteam installation: {e}. Check application logs for details."
             logger.error(error_msg, exc_info=True)
             QMessageBox.critical(self, "Error", error_msg)
 
