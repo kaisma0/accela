@@ -45,6 +45,12 @@ from utils.helpers import (
 )
 from utils.paths import Paths
 from utils.settings import get_settings
+from utils.yaml_config_manager import (
+    get_user_config_path,
+    update_yaml_boolean_value,
+    update_yaml_nested_scalar_value,
+    update_yaml_scalar_value,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -175,9 +181,9 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.setMinimumWidth(580)
+        self.setMinimumWidth(610)
         self.setMinimumHeight(700)
-        self.resize(580, 700)
+        self.resize(610, 700)
         self.settings = get_settings()
         self.main_layout = QVBoxLayout(self)
         self.main_window = parent
@@ -227,10 +233,13 @@ class SettingsDialog(QDialog):
         self._create_morrenus_tab()
         self._create_steam_tab()
         self._create_tools_tab()
-        self._create_audio_tab()
+        self._create_slssteam_tab()
         self._create_style_tab()
 
         self.main_layout.addWidget(self.tab_widget)
+
+        # On opening Settings, sync YAML to stored ACCELA values.
+        self._sync_slssteam_config_from_stored_settings()
 
         # Sync audio preview values with current settings before any slider interaction
         if self.main_window and hasattr(self.main_window, "audio_manager"):
@@ -610,93 +619,254 @@ class SettingsDialog(QDialog):
         tools_layout.addStretch()
         self.tab_widget.addTab(tools_tab, "Tools")
 
-    def _create_audio_tab(self):
-        """Create the Audio settings tab"""
-        audio_tab, audio_layout = self._create_scrollable_tab()
+    def _create_slssteam_tab(self):
+        """Create SLSsteam settings tab."""
+        slssteam_tab, slssteam_layout = self._create_scrollable_tab()
 
-        # --- Audio Playback Settings ---
-        playback_group = QGroupBox("Audio Playback")
-        playback_layout = QVBoxLayout()
+        runtime_group = QGroupBox("Runtime")
+        runtime_layout = QVBoxLayout()
 
-        self.play_etw_checkbox = create_checkbox_setting(
-            'Play "Entering The Wired" on start', "play_etw", True, self,
-            "Play the 'Entering The Wired' intro audio when ACCELA starts."
+        self.sls_safe_mode_checkbox = create_checkbox_setting(
+            "Enable Safe Mode",
+            "sls_safe_mode",
+            False,
+            self,
+            "Disable SLSsteam automatically if steamclient.so hash is unknown.",
         )
-        playback_layout.addWidget(self.play_etw_checkbox)
+        runtime_layout.addWidget(self.sls_safe_mode_checkbox)
 
-        self.play_lall_checkbox = create_checkbox_setting(
-            'Play "Let\'s All Love Lain" on exit', "play_lall", True, self,
-            "Play the 'Let's All Love Lain' audio when ACCELA exits."
+        self.sls_warn_hash_missmatch_checkbox = create_checkbox_setting(
+            "Warn On Hash Missmatch",
+            "sls_warn_hash_missmatch",
+            False,
+            self,
+            "Show a warning notification when steamclient.so hash is not recognized.",
         )
-        playback_layout.addWidget(self.play_lall_checkbox)
+        runtime_layout.addWidget(self.sls_warn_hash_missmatch_checkbox)
 
-        self.play_50hz_hum_checkbox = create_checkbox_setting(
-            "Play background hum sound", "play_50hz_hum", True, self,
-            "Play a low 50Hz hum ambient sound in the background."
+        runtime_group.setLayout(runtime_layout)
+        slssteam_layout.addWidget(runtime_group)
+
+        notifications_group = QGroupBox("Notifications")
+        notifications_layout = QVBoxLayout()
+
+        self.sls_notifications_checkbox = create_checkbox_setting(
+            "Enable Notifications",
+            "sls_notifications",
+            True,
+            self,
+            "Use notify-send messages from SLSsteam.",
         )
-        playback_layout.addWidget(self.play_50hz_hum_checkbox)
+        notifications_layout.addWidget(self.sls_notifications_checkbox)
 
-        playback_group.setLayout(playback_layout)
-        audio_layout.addWidget(playback_group)
+        self.sls_notify_init_checkbox = create_checkbox_setting(
+            "Notify When Initialized",
+            "sls_notify_init",
+            True,
+            self,
+            "Send a notification when SLSsteam finishes startup.",
+        )
+        notifications_layout.addWidget(self.sls_notify_init_checkbox)
 
-        # --- Volume Settings ---
-        volume_group = QGroupBox("Volume Settings")
-        volume_layout = QVBoxLayout()
+        notifications_group.setLayout(notifications_layout)
+        slssteam_layout.addWidget(notifications_group)
 
-        # Master Volume
-        (
-            master_layout,
-            self.master_volume_slider,
-            self.master_volume_value_label,
-            self.master_volume_reset,
-        ) = create_slider_setting("Master Volume", "master_volume", 80, self)
-        volume_layout.addLayout(master_layout)
+        identity_group = QGroupBox("Client Overrides")
+        identity_layout = QFormLayout()
 
-        # Effects Volume
-        (
-            effects_layout,
-            self.effects_volume_slider,
-            self.effects_volume_value_label,
-            self.effects_volume_reset,
-        ) = create_slider_setting("Effects Volume", "effects_volume", 50, self)
-        volume_layout.addLayout(effects_layout)
+        self.sls_fake_email_input = QLineEdit()
+        self.sls_fake_email_input.setPlaceholderText("Leave empty to disable")
+        self.sls_fake_email_input.setToolTip(
+            "Override account e-mail on the client side only."
+        )
+        self.sls_fake_email_input.setText(
+            self.settings.value("sls_fake_email", "", type=str)
+        )
+        identity_layout.addRow("Fake Email:", self.sls_fake_email_input)
 
-        # Hum Volume
-        (
-            hum_layout,
-            self.hum_volume_slider,
-            self.hum_volume_value_label,
-            self.hum_volume_reset,
-        ) = create_slider_setting("Hum Volume", "hum_volume", 20, self)
-        volume_layout.addLayout(hum_layout)
+        self.sls_fake_wallet_spinbox = QSpinBox()
+        self.sls_fake_wallet_spinbox.setRange(0, 2_147_483_647)
+        self.sls_fake_wallet_spinbox.setToolTip(
+            "Client-side wallet balance override. Use 0 to disable."
+        )
+        self.sls_fake_wallet_spinbox.setValue(
+            self.settings.value("sls_fake_wallet_balance", 0, type=int)
+        )
+        identity_layout.addRow("Fake Wallet Balance:", self.sls_fake_wallet_spinbox)
 
-        volume_group.setLayout(volume_layout)
-        audio_layout.addWidget(volume_group)
+        identity_group.setLayout(identity_layout)
+        slssteam_layout.addWidget(identity_group)
 
-        # --- Test Section ---
-        test_group = QGroupBox("Test Sounds")
-        test_layout = QVBoxLayout()
+        status_group = QGroupBox("Custom In-Game Status")
+        status_layout = QFormLayout()
 
-        button_layout = QHBoxLayout()
-        
-        self.test_etw_button = QPushButton("Test ETW Sound")
-        self.test_lall_button = QPushButton("Test LALL Sound")
-        self.test_etw_button.clicked.connect(self.test_etw_sound)
-        self.test_lall_button.clicked.connect(self.test_lall_sound)
-        button_layout.addWidget(self.test_etw_button)
-        button_layout.addWidget(self.test_lall_button)
-        test_layout.addLayout(button_layout)
+        self.sls_idle_status_appid_spinbox = QSpinBox()
+        self.sls_idle_status_appid_spinbox.setRange(0, 2_147_483_647)
+        self.sls_idle_status_appid_spinbox.setToolTip(
+            "Idle status AppId override. Use 0 to disable."
+        )
+        self.sls_idle_status_appid_spinbox.setValue(
+            self.settings.value("sls_idle_status_appid", 0, type=int)
+        )
+        status_layout.addRow("Idle Status AppId:", self.sls_idle_status_appid_spinbox)
 
-        test_group.setLayout(test_layout)
-        audio_layout.addWidget(test_group)
+        self.sls_idle_status_title_input = QLineEdit()
+        self.sls_idle_status_title_input.setPlaceholderText("Leave empty to disable")
+        self.sls_idle_status_title_input.setToolTip(
+            "Idle status title override."
+        )
+        self.sls_idle_status_title_input.setText(
+            self.settings.value("sls_idle_status_title", "", type=str)
+        )
+        status_layout.addRow("Idle Status Title:", self.sls_idle_status_title_input)
 
-        audio_layout.addStretch()
-        self.tab_widget.addTab(audio_tab, "Audio")
+        self.sls_unowned_status_appid_spinbox = QSpinBox()
+        self.sls_unowned_status_appid_spinbox.setRange(0, 2_147_483_647)
+        self.sls_unowned_status_appid_spinbox.setToolTip(
+            "Unowned status AppId override. Use 0 to disable."
+        )
+        self.sls_unowned_status_appid_spinbox.setValue(
+            self.settings.value("sls_unowned_status_appid", 0, type=int)
+        )
+        status_layout.addRow(
+            "Unowned Status AppId:", self.sls_unowned_status_appid_spinbox
+        )
 
-    def _create_style_tab(self):
-        """Create the Style settings tab"""
-        style_tab, style_layout = self._create_scrollable_tab()
+        self.sls_unowned_status_title_input = QLineEdit()
+        self.sls_unowned_status_title_input.setPlaceholderText("Leave empty to disable")
+        self.sls_unowned_status_title_input.setToolTip(
+            "Unowned status title override."
+        )
+        self.sls_unowned_status_title_input.setText(
+            self.settings.value("sls_unowned_status_title", "", type=str)
+        )
+        status_layout.addRow(
+            "Unowned Status Title:", self.sls_unowned_status_title_input
+        )
 
+        status_group.setLayout(status_layout)
+        slssteam_layout.addWidget(status_group)
+
+        slssteam_layout.addStretch()
+        self.tab_widget.addTab(slssteam_tab, "SLSsteam")
+
+    def _sync_slssteam_config_from_stored_settings(self):
+        """Sync YAML from stored ACCELA settings when SLSsteam management is enabled."""
+        try:
+            sls_mode = self.settings.value("slssteam_mode", False, type=bool)
+            sls_config_management = self.settings.value(
+                "sls_config_management", True, type=bool
+            )
+
+            if not sls_mode or not sls_config_management:
+                return
+
+            config_path = get_user_config_path()
+            if not config_path.exists():
+                return
+
+            safe_mode = self.settings.value("sls_safe_mode", False, type=bool)
+            notifications = self.settings.value("sls_notifications", True, type=bool)
+            warn_hash_missmatch = self.settings.value(
+                "sls_warn_hash_missmatch", False, type=bool
+            )
+            notify_init = self.settings.value("sls_notify_init", True, type=bool)
+            fake_email = self.settings.value("sls_fake_email", "", type=str).strip()
+
+            try:
+                fake_wallet_balance = int(
+                    self.settings.value("sls_fake_wallet_balance", 0, type=int)
+                )
+            except Exception:
+                fake_wallet_balance = 0
+
+            try:
+                idle_status_appid = int(
+                    self.settings.value("sls_idle_status_appid", 0, type=int)
+                )
+            except Exception:
+                idle_status_appid = 0
+
+            idle_status_title = self.settings.value(
+                "sls_idle_status_title", "", type=str
+            ).strip()
+
+            try:
+                unowned_status_appid = int(
+                    self.settings.value("sls_unowned_status_appid", 0, type=int)
+                )
+            except Exception:
+                unowned_status_appid = 0
+
+            unowned_status_title = self.settings.value(
+                "sls_unowned_status_title", "", type=str
+            ).strip()
+
+            changed = 0
+            changed += int(update_yaml_boolean_value(config_path, "SafeMode", safe_mode))
+            changed += int(
+                update_yaml_boolean_value(config_path, "Notifications", notifications)
+            )
+            changed += int(
+                update_yaml_boolean_value(
+                    config_path,
+                    "WarnHashMissmatch",
+                    warn_hash_missmatch,
+                )
+            )
+            changed += int(update_yaml_boolean_value(config_path, "NotifyInit", notify_init))
+            changed += int(update_yaml_scalar_value(config_path, "FakeEmail", fake_email))
+            changed += int(
+                update_yaml_scalar_value(
+                    config_path,
+                    "FakeWalletBalance",
+                    fake_wallet_balance,
+                )
+            )
+            changed += int(
+                update_yaml_nested_scalar_value(
+                    config_path,
+                    "IdleStatus",
+                    "AppId",
+                    idle_status_appid,
+                )
+            )
+            changed += int(
+                update_yaml_nested_scalar_value(
+                    config_path,
+                    "IdleStatus",
+                    "Title",
+                    idle_status_title,
+                )
+            )
+            changed += int(
+                update_yaml_nested_scalar_value(
+                    config_path,
+                    "UnownedStatus",
+                    "AppId",
+                    unowned_status_appid,
+                )
+            )
+            changed += int(
+                update_yaml_nested_scalar_value(
+                    config_path,
+                    "UnownedStatus",
+                    "Title",
+                    unowned_status_title,
+                )
+            )
+
+            if changed > 0:
+                logger.info(f"Synced {changed} SLSsteam setting(s) to config.yaml")
+
+        except Exception as e:
+            logger.warning(
+                f"Failed to sync stored SLSsteam settings to config.yaml: {e}",
+                exc_info=True,
+            )
+
+    def _add_style_sections(self, style_layout):
+        """Add style settings sections into an existing layout."""
         # --- Color Settings ---
         color_group = QGroupBox("Color Settings")
         color_layout = QVBoxLayout()
@@ -812,7 +982,7 @@ class SettingsDialog(QDialog):
         # Custom GIFs button
         # Clear GIF Cache button
         gif_buttons_layout = QHBoxLayout()
-        
+
         custom_gifs_button = QPushButton("Custom Gifs")
         custom_gifs_button.clicked.connect(self.open_custom_gifs_dialog)
         gif_buttons_layout.addWidget(custom_gifs_button)
@@ -823,6 +993,90 @@ class SettingsDialog(QDialog):
         )
         gif_buttons_layout.addWidget(clear_cache_button)
         style_layout.addLayout(gif_buttons_layout)
+
+    def _add_audio_sections(self, style_layout):
+        """Add audio settings sections into an existing layout."""
+        # --- Audio Playback Settings ---
+        playback_group = QGroupBox("Audio Playback")
+        playback_layout = QVBoxLayout()
+
+        self.play_etw_checkbox = create_checkbox_setting(
+            'Play "Entering The Wired" on start', "play_etw", True, self,
+            "Play the 'Entering The Wired' intro audio when ACCELA starts."
+        )
+        playback_layout.addWidget(self.play_etw_checkbox)
+
+        self.play_lall_checkbox = create_checkbox_setting(
+            'Play "Let\'s All Love Lain" on exit', "play_lall", True, self,
+            "Play the 'Let's All Love Lain' audio when ACCELA exits."
+        )
+        playback_layout.addWidget(self.play_lall_checkbox)
+
+        self.play_50hz_hum_checkbox = create_checkbox_setting(
+            "Play background hum sound", "play_50hz_hum", True, self,
+            "Play a low 50Hz hum ambient sound in the background."
+        )
+        playback_layout.addWidget(self.play_50hz_hum_checkbox)
+
+        playback_group.setLayout(playback_layout)
+        style_layout.addWidget(playback_group)
+
+        # --- Volume Settings ---
+        volume_group = QGroupBox("Volume Settings")
+        volume_layout = QVBoxLayout()
+
+        # Master Volume
+        (
+            master_layout,
+            self.master_volume_slider,
+            self.master_volume_value_label,
+            self.master_volume_reset,
+        ) = create_slider_setting("Master Volume", "master_volume", 80, self)
+        volume_layout.addLayout(master_layout)
+
+        # Effects Volume
+        (
+            effects_layout,
+            self.effects_volume_slider,
+            self.effects_volume_value_label,
+            self.effects_volume_reset,
+        ) = create_slider_setting("Effects Volume", "effects_volume", 50, self)
+        volume_layout.addLayout(effects_layout)
+
+        # Hum Volume
+        (
+            hum_layout,
+            self.hum_volume_slider,
+            self.hum_volume_value_label,
+            self.hum_volume_reset,
+        ) = create_slider_setting("Hum Volume", "hum_volume", 20, self)
+        volume_layout.addLayout(hum_layout)
+
+        volume_group.setLayout(volume_layout)
+        style_layout.addWidget(volume_group)
+
+        # --- Test Section ---
+        test_group = QGroupBox("Test Sounds")
+        test_layout = QVBoxLayout()
+
+        button_layout = QHBoxLayout()
+
+        self.test_etw_button = QPushButton("Test ETW Sound")
+        self.test_lall_button = QPushButton("Test LALL Sound")
+        self.test_etw_button.clicked.connect(self.test_etw_sound)
+        self.test_lall_button.clicked.connect(self.test_lall_sound)
+        button_layout.addWidget(self.test_etw_button)
+        button_layout.addWidget(self.test_lall_button)
+        test_layout.addLayout(button_layout)
+
+        test_group.setLayout(test_layout)
+        style_layout.addWidget(test_group)
+
+    def _create_style_tab(self):
+        """Create the Style settings tab with appearance first, audio below."""
+        style_tab, style_layout = self._create_scrollable_tab()
+        self._add_style_sections(style_layout)
+        self._add_audio_sections(style_layout)
 
         style_layout.addStretch()
         self.tab_widget.addTab(style_tab, "Style")
@@ -988,6 +1242,37 @@ class SettingsDialog(QDialog):
         self.settings.setValue("sls_config_management", sls_config_management)
         logger.info(f"SLSsteam Config Management set to: {sls_config_management}")
 
+        # SLSsteam Config Options
+        sls_safe_mode = self.sls_safe_mode_checkbox.isChecked()
+        self.settings.setValue("sls_safe_mode", sls_safe_mode)
+
+        sls_notifications = self.sls_notifications_checkbox.isChecked()
+        self.settings.setValue("sls_notifications", sls_notifications)
+
+        sls_warn_hash_missmatch = self.sls_warn_hash_missmatch_checkbox.isChecked()
+        self.settings.setValue("sls_warn_hash_missmatch", sls_warn_hash_missmatch)
+
+        sls_notify_init = self.sls_notify_init_checkbox.isChecked()
+        self.settings.setValue("sls_notify_init", sls_notify_init)
+
+        sls_fake_email = self.sls_fake_email_input.text().strip()
+        self.settings.setValue("sls_fake_email", sls_fake_email)
+
+        sls_fake_wallet_balance = int(self.sls_fake_wallet_spinbox.value())
+        self.settings.setValue("sls_fake_wallet_balance", sls_fake_wallet_balance)
+
+        sls_idle_status_appid = int(self.sls_idle_status_appid_spinbox.value())
+        self.settings.setValue("sls_idle_status_appid", sls_idle_status_appid)
+
+        sls_idle_status_title = self.sls_idle_status_title_input.text().strip()
+        self.settings.setValue("sls_idle_status_title", sls_idle_status_title)
+
+        sls_unowned_status_appid = int(self.sls_unowned_status_appid_spinbox.value())
+        self.settings.setValue("sls_unowned_status_appid", sls_unowned_status_appid)
+
+        sls_unowned_status_title = self.sls_unowned_status_title_input.text().strip()
+        self.settings.setValue("sls_unowned_status_title", sls_unowned_status_title)
+
         library_mode_enabled = self.library_mode_checkbox.isChecked()
         self.settings.setValue("library_mode", library_mode_enabled)
         logger.info(f"Library mode setting changed to: {library_mode_enabled}")
@@ -1134,6 +1419,9 @@ class SettingsDialog(QDialog):
                 val = 255
             val = max(0, min(255, val))
             self.settings.setValue("max_downloads", val)
+
+        # Sync SLSsteam config only after all validations pass.
+        self._sync_slssteam_config_from_stored_settings()
 
         logger.info("All settings saved.")
         super().accept()

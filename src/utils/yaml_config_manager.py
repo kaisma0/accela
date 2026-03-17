@@ -230,6 +230,188 @@ def update_yaml_boolean_value(config_path: Path, key: str, value: bool) -> bool:
         return False
 
 
+def update_yaml_scalar_value(config_path: Path, key: str, value) -> bool:
+    """
+    Update a scalar value in YAML config while preserving comments and indentation.
+
+    Supports boolean, numeric, and string values:
+        - bool -> yes/no
+        - int/float -> numeric literal
+        - str/other -> double-quoted string
+
+    Args:
+        config_path: Path to the YAML config file
+        key: The YAML key to update
+        value: New scalar value
+
+    Returns:
+        True if the file was updated, False otherwise
+    """
+    try:
+        if not config_path.exists():
+            logger.warning(f"Config file not found at {config_path}")
+            return False
+
+        with open(config_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        pattern = re.compile(
+            r"^(\s*)"
+            + re.escape(key)
+            + r"\s*:\s*([^\n#]*)(\s*(?:#.*)?)$",
+            re.MULTILINE,
+        )
+
+        match = pattern.search(content)
+        if not match:
+            logger.warning(f"Key '{key}' not found in config file {config_path}")
+            return False
+
+        indent = match.group(1)
+        old_value = match.group(2).strip()
+        trailing_comment = match.group(3) or ""
+
+        if isinstance(value, bool):
+            new_value = "yes" if value else "no"
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            new_value = str(value)
+        else:
+            escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+            new_value = f'"{escaped}"'
+
+        if old_value == new_value:
+            logger.debug(f"Key '{key}' is already set to {new_value}")
+            return False
+
+        replacement = f"{indent}{key}: {new_value}{trailing_comment}"
+        new_content = pattern.sub(replacement, content, count=1)
+
+        if not _atomic_write(config_path, new_content):
+            return False
+
+        logger.info(f"Updated '{key}' to {new_value} in {config_path}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to update '{key}' in {config_path}: {e}", exc_info=True)
+        return False
+
+
+def update_yaml_nested_scalar_value(
+    config_path: Path, section: str, key: str, value
+) -> bool:
+    """
+    Update a scalar value for a key nested under a YAML section.
+
+    Example target:
+        IdleStatus:
+          AppId: 0
+
+    Args:
+        config_path: Path to the YAML config file
+        section: Parent section name (e.g., 'IdleStatus')
+        key: Child key name inside the section (e.g., 'AppId')
+        value: New scalar value
+
+    Returns:
+        True if the file was updated, False otherwise
+    """
+    try:
+        if not config_path.exists():
+            logger.warning(f"Config file not found at {config_path}")
+            return False
+
+        with open(config_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        lines = content.splitlines(keepends=True)
+        section_line_re = re.compile(
+            r"^(\s*)" + re.escape(section) + r"\s*:\s*(?:#.*)?$"
+        )
+
+        section_index = -1
+        section_indent_len = 0
+        for idx, line in enumerate(lines):
+            line_no_nl = line.rstrip("\r\n")
+            section_match = section_line_re.match(line_no_nl)
+            if section_match:
+                section_index = idx
+                section_indent_len = len(section_match.group(1))
+                break
+
+        if section_index == -1:
+            logger.warning(
+                f"Section '{section}' not found in config file {config_path}"
+            )
+            return False
+
+        section_end = len(lines)
+        for idx in range(section_index + 1, len(lines)):
+            raw = lines[idx].rstrip("\r\n")
+            stripped = raw.strip()
+
+            if not stripped:
+                continue
+
+            current_indent_len = len(raw) - len(raw.lstrip())
+            if current_indent_len <= section_indent_len and not stripped.startswith("#"):
+                section_end = idx
+                break
+
+        if isinstance(value, bool):
+            new_value = "yes" if value else "no"
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            new_value = str(value)
+        else:
+            escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+            new_value = f'"{escaped}"'
+
+        key_line_re = re.compile(
+            r"^(\s*)"
+            + re.escape(key)
+            + r"\s*:\s*([^\n#]*)(\s*(?:#.*)?)$"
+        )
+
+        for idx in range(section_index + 1, section_end):
+            raw = lines[idx].rstrip("\r\n")
+            key_match = key_line_re.match(raw)
+            if not key_match:
+                continue
+
+            indent = key_match.group(1)
+            if len(indent) <= section_indent_len:
+                continue
+
+            old_value = key_match.group(2).strip()
+            trailing_comment = key_match.group(3) or ""
+
+            if old_value == new_value:
+                logger.debug(f"Key '{section}.{key}' is already set to {new_value}")
+                return False
+
+            newline = "\n" if lines[idx].endswith("\n") else ""
+            lines[idx] = f"{indent}{key}: {new_value}{trailing_comment}{newline}"
+
+            new_content = "".join(lines)
+            if not _atomic_write(config_path, new_content):
+                return False
+
+            logger.info(f"Updated '{section}.{key}' to {new_value} in {config_path}")
+            return True
+
+        logger.warning(
+            f"Key '{key}' under section '{section}' not found in config file {config_path}"
+        )
+        return False
+
+    except Exception as e:
+        logger.error(
+            f"Failed to update '{section}.{key}' in {config_path}: {e}",
+            exc_info=True,
+        )
+        return False
+
+
 def get_user_config_path() -> Path:
     """
     Get the path to the user's SLSsteam config.yaml file.
