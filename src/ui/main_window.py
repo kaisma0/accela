@@ -2,9 +2,10 @@ import atexit
 import logging
 import os
 import sys
+import threading
 from pathlib import Path
 from collections import deque
-from PyQt6.QtCore import Qt, QUrl, QTimer
+from PyQt6.QtCore import Qt, QUrl, QTimer, pyqtSignal
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QShortcut, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
@@ -42,13 +43,18 @@ from ui.dialogs.settings import SettingsDialog
 from utils.logger import qt_log_handler
 from utils.settings import get_settings
 from utils.paths import Paths
+from core.appimage_updater import check_for_appimage_update, launch_appimage_update, AppImageUpdateInfo
 
 logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
+    _update_available = pyqtSignal(object)  # AppImageUpdateInfo
+
     def __init__(self):
         super().__init__()
+        self._update_prompt_shown = False
+        self._update_available.connect(self._show_update_prompt)
         self._setup_window_properties()
         self._initialize_managers()
         self._setup_ui()
@@ -539,6 +545,48 @@ class MainWindow(QMainWindow):
         """Open the Credits dialog"""
         dialog = CreditsDialog(self)
         dialog.exec()
+
+    def check_for_startup_update(self, current_version: str):
+        """Kick off update check in a background thread to avoid blocking the UI."""
+        if self._update_prompt_shown or sys.platform != "linux":
+            return
+        self._update_prompt_shown = True
+
+        def _check():
+            update_info = check_for_appimage_update(current_version)
+            if update_info:
+                self._update_available.emit(update_info)
+
+        threading.Thread(target=_check, daemon=True).start()
+
+    def _show_update_prompt(self, update_info: AppImageUpdateInfo):
+        """Show the update dialog on the main thread."""
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setWindowTitle("Update available")
+        msg.setText(
+            f"ACCELA {update_info.latest_version} is available. You are on {update_info.current_version}."
+        )
+        msg.setInformativeText(
+            "Install now? ACCELA will close, update, and reopen automatically."
+        )
+        update_button = msg.addButton("Update now", QMessageBox.ButtonRole.AcceptRole)
+        msg.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+        msg.exec()
+
+        if msg.clickedButton() is not update_button:
+            return
+
+        started = launch_appimage_update(update_info)
+        if started:
+            QApplication.quit()
+            return
+
+        QMessageBox.warning(
+            self,
+            "Update failed",
+            "Could not start the updater process. Please update manually from GitHub.",
+        )
 
     # Event handlers
     def dragEnterEvent(self, event: QDragEnterEvent):

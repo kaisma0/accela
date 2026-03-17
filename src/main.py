@@ -219,6 +219,9 @@ def main():
         main_win.show()
         logger.info("Main window displayed successfully.")
 
+        # Run update check after first paint so startup remains responsive.
+        QTimer.singleShot(1200, lambda: main_win.check_for_startup_update(app_version))
+
         # Process command-line ZIP files after window is fully initialized
         if command_line_zips or command_line_appid:
             def process_command_line_args():
