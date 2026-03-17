@@ -8,7 +8,6 @@ import tempfile
 from ui.assets import DEPOT_BLACKLIST
 from core.steam_api import get_depot_info_from_api
 from utils.yaml_config_manager import get_user_config_path, add_app_token
-from core.appinfo_editor import get_appinfo_path, add_token_to_appinfo
 from utils.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -99,35 +98,18 @@ class ProcessZipTask:
             slssteam_mode = settings.value("slssteam_mode", False, type=bool)
 
             if slssteam_mode:
-                # Wrapper mode is ON - add token to config (original behavior)
-                if sys.platform == "win32":
-                    # Windows: Add token to Steam's appinfo.vdf
-                    appinfo_path = get_appinfo_path()
+                config_path = get_user_config_path()
 
-                    if not appinfo_path:
-                        logger.warning("Could not find Steam appinfo.vdf, skipping token addition")
-                        return app_token
-
-                    success = add_token_to_appinfo(appinfo_path, app_id, app_token)
-
-                    if success:
-                        logger.info(f"Successfully added token for AppID {app_id} to Steam appinfo.vdf")
-
+                if not config_path.exists():
+                    logger.warning(f"SLSsteam config not found at {config_path}")
                     return app_token
-                else:
-                    # Linux: Add token to SLSsteam config.yaml
-                    config_path = get_user_config_path()
 
-                    if not config_path.exists():
-                        logger.warning(f"SLSsteam config not found at {config_path}")
-                        return app_token
+                success = add_app_token(config_path, app_id, app_token)
 
-                    success = add_app_token(config_path, app_id, app_token)
+                if success:
+                    logger.info(f"Successfully added token for AppID {app_id} to SLSsteam config")
 
-                    if success:
-                        logger.info(f"Successfully added token for AppID {app_id} to SLSsteam config")
-
-                    return app_token
+                return app_token
 
             # Wrapper mode is OFF - return token for file writing
             return app_token

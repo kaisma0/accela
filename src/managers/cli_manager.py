@@ -15,7 +15,7 @@ import sys
 from PyQt6.QtCore import QEventLoop
 from PyQt6.QtGui import QFont
 
-from core.steam_helpers import fix_greenluma_offline_mode, get_steam_libraries
+from core.steam_helpers import get_steam_libraries
 from core.tasks.process_zip_task import ProcessZipTask
 from core.tasks.download_depots_task import DownloadDepotsTask
 from core.morrenus_api import download_manifest as download_morrenus_manifest
@@ -60,10 +60,7 @@ def _get_terminal_command(appid=None, zip_path=None):
     Returns:
         List of command arguments, or None if no terminal available
     """
-    if sys.platform != 'linux':
-        return None
-
-    # Get the directory where accela is installed
+        # Get the directory where accela is installed
     script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     run_script = os.path.join(script_dir, 'run.sh')
 
@@ -120,9 +117,6 @@ def run_cli_mode(app, command_line_zips, logger, appid=None):
     logger.info("=" * 50)
     logger.info("ACCELA CLI Mode")
     logger.info("=" * 50)
-
-    # Fix GreenLuma offline mode
-    fix_greenluma_offline_mode()
 
     # Apply ACCELA theme
     from main import update_appearance
@@ -225,15 +219,6 @@ def run_cli_mode(app, command_line_zips, logger, appid=None):
             continue
 
         logger.info(f"Selected {len(selected_depots)} depots")
-
-        # Step 2.5: DLC selection (Windows + SLSsteam mode only)
-        slssteam_mode = settings.value("slssteam_mode", False, type=bool)
-        if sys.platform == "win32" and slssteam_mode and game_data.get("dlcs"):
-            logger.info("Windows + SLSsteam mode detected, showing DLC selection...")
-            selected_dlcs = select_dlcs(game_data["dlcs"])
-            if selected_dlcs:
-                game_data["selected_dlcs"] = selected_dlcs
-                logger.info(f"Selected {len(selected_dlcs)} DLCs")
 
         # Step 3: Get destination path (respects SLSsteam/library mode settings)
         dest_path = get_destination_path_cli()
@@ -344,11 +329,11 @@ class CLITaskManager:
         self._save_main_depot_info()
 
         # Set Linux binary permissions
-        if sys.platform == "linux":
-            self._set_linux_binary_permissions()
+        self._set_linux_binary_permissions()
 
-        # Add AppIDs to SLSsteam config on Linux
-        if sys.platform == "linux" and self.slssteam_mode_was_active:
+        # Add AppIDs to SLSsteam config
+        # Always available
+        if self.slssteam_mode_was_active:
             self._add_appids_to_slssteam_config()
 
         # Auto-apply Goldberg after download completion
@@ -381,9 +366,9 @@ class CLITaskManager:
             self.logger.info("Steamless is enabled, starting DRM removal...")
             self._run_steamless()
 
-        # Application shortcuts (Linux + SLSsteam mode)
+        # Application shortcuts (SLSsteam mode)
         shortcuts_enabled = self.settings.value("create_application_shortcuts", False, type=bool)
-        if shortcuts_enabled and self.slssteam_mode_was_active and sys.platform == "linux":
+        if shortcuts_enabled and self.slssteam_mode_was_active:
             self.logger.info("Application shortcuts creation is enabled...")
             self._run_application_shortcuts()
 
@@ -393,22 +378,17 @@ class CLITaskManager:
             self.logger.info("Achievement generation is enabled...")
             self._run_achievement_generation()
 
-        # GreenLuma AppList files (Windows + SLSsteam mode)
+        # SLSsteam configuration is handled automatically
         if self.slssteam_mode_was_active:
-            if sys.platform == "win32":
-                self.logger.info("Windows Wrapper Mode active. Creating GreenLuma AppList files...")
-                self._create_greenluma_files()
-            elif sys.platform == "linux":
-                self.logger.info("SLSsteam mode active on Linux, GreenLuma files skipped")
+            self.logger.info("SLSsteam configuration completed")
 
         self.logger.info("All post-processing steps completed")
 
     def _create_acf_file(self, size_on_disk):
         """Create Steam ACF manifest file"""
         if not self.game_data or not self.current_dest_path:
+            self.logger.warning("Missing game data or destination path. Cannot create .acf.")
             return
-
-        self.logger.info("Generating Steam .acf manifest file...")
 
         safe_game_name_fallback = (
             re.sub(r"[^\w\s-]", "", self.game_data.get("game_name", ""))
@@ -435,38 +415,39 @@ class CLITaskManager:
         platform_config = ""
         empty_platform_config = '\t"UserConfig"\n\t{\n\t}\n\t"MountedConfig"\n\t{\n\t}'
 
-        if sys.platform == "linux":
-            downloading_windows_depots = False
-            downloading_linux_depots = False
+        downloading_proton_depots = False
+        downloading_linux_depots = False
+        depot_source_platform = "linux"
 
-            for depot_id in selected_depots:
-                depot_id_str = str(depot_id)
-                depot_info = all_depots.get(depot_id_str, {})
-                platform = (depot_info.get("oslist") or "").lower() or "unknown"
+        for depot_id in selected_depots:
+            depot_id_str = str(depot_id)
+            depot_info = all_depots.get(depot_id_str, {})
+            platform = (depot_info.get("oslist") or "").lower() or "unknown"
 
-                if platform == "windows":
-                    downloading_windows_depots = True
-                elif platform == "linux":
-                    downloading_linux_depots = True
+            if platform == "linux":
+                downloading_linux_depots = True
+            elif platform and platform != "unknown":
+                downloading_proton_depots = True
+                depot_source_platform = platform
 
-            if downloading_windows_depots:
-                self.logger.info("Windows depots on Linux - adding Proton configuration")
-                platform_config = (
-                    '\t"UserConfig"\n'
-                    "\t{\n"
-                    '\t\t"platform_override_dest"\t\t"linux"\n'
-                    '\t\t"platform_override_source"\t\t"windows"\n'
-                    "\t}\n"
-                    '\t"MountedConfig"\n'
-                    "\t{\n"
-                    '\t\t"platform_override_dest"\t\t"linux"\n'
-                    '\t\t"platform_override_source"\t\t"windows"\n'
-                    "\t}"
-                )
-            elif downloading_linux_depots:
-                platform_config = empty_platform_config
-            else:
-                platform_config = empty_platform_config
+        if downloading_proton_depots:
+            self.logger.info(
+                f"Non-Linux depots detected - adding compatibility configuration (source: {depot_source_platform})"
+            )
+            platform_config = (
+                '\t"UserConfig"\n'
+                "\t{\n"
+                '\t\t"platform_override_dest"\t\t"linux"\n'
+                f'\t\t"platform_override_source"\t\t"{depot_source_platform}"\n'
+                "\t}\n"
+                '\t"MountedConfig"\n'
+                "\t{\n"
+                '\t\t"platform_override_dest"\t\t"linux"\n'
+                f'\t\t"platform_override_source"\t\t"{depot_source_platform}"\n'
+                "\t}"
+            )
+        elif downloading_linux_depots:
+            platform_config = empty_platform_config
         else:
             platform_config = empty_platform_config
 
@@ -864,11 +845,7 @@ class CLITaskManager:
         if not self.game_data:
             return
 
-        # Only available on Linux with SLSsteam mode enabled
-        if sys.platform != "linux":
-            self.logger.info("Application shortcuts are only supported on Linux")
-            return
-
+        # Available with SLSsteam mode enabled
         from utils.yaml_config_manager import is_slssteam_mode_enabled
         if not is_slssteam_mode_enabled():
             self.logger.info("SLSsteam mode is disabled, skipping shortcuts creation")
@@ -933,115 +910,4 @@ class CLITaskManager:
         )
         loop.exec()
 
-    def _create_greenluma_files(self):
-        """Create GreenLuma AppList files on Windows"""
-        if not self.game_data:
-            return
 
-        from core import steam_helpers
-        from utils.yaml_config_manager import is_slssteam_config_management_enabled
-
-        try:
-            # Check if config management is enabled
-            if not is_slssteam_config_management_enabled():
-                self.logger.debug("GreenLuma config management is disabled, skipping AppList file creation")
-                return
-
-            steam_path = steam_helpers.find_steam_install()
-            if not steam_path:
-                self.logger.error("Could not find Steam path. Skipping GreenLuma file creation.")
-                return
-
-            app_list_dir = os.path.join(steam_path, "AppList")
-            if not os.path.exists(app_list_dir):
-                os.makedirs(app_list_dir)
-                self.logger.info(f"Created AppList directory at: {app_list_dir}")
-
-            game_appid = self.game_data.get("appid")
-            if not game_appid:
-                return
-
-            # Create main AppList file (with duplicate check)
-            if not self._app_id_exists_in_applist(app_list_dir, game_appid):
-                next_num = self._find_next_applist_number(app_list_dir, self.logger)
-                filepath = os.path.join(app_list_dir, f"{next_num}.txt")
-                with open(filepath, "w", encoding="utf-8") as f:
-                    f.write(str(game_appid))
-                self.logger.info(f"Created GreenLuma file: {filepath} for AppID: {game_appid}")
-            else:
-                self.logger.info(f"AppID {game_appid} already exists in AppList folder. Skipping file creation.")
-
-            # Create DLC AppList files (with duplicate check)
-            selected_dlcs: list = self.game_data.get("selected_dlcs", [])  # type: ignore
-            for dlc_id in selected_dlcs:
-                if not self._app_id_exists_in_applist(app_list_dir, dlc_id):
-                    next_num = self._find_next_applist_number(app_list_dir, self.logger)
-                    filepath = os.path.join(app_list_dir, f"{next_num}.txt")
-                    with open(filepath, "w", encoding="utf-8") as f:
-                        f.write(str(dlc_id))
-                    self.logger.info(f"Created GreenLuma file: {filepath} for DLC: {dlc_id}")
-                else:
-                    self.logger.info(f"DLC AppID {dlc_id} already exists in AppList folder. Skipping file creation.")
-
-            # Copy NoQuestion.bin and StealthMode.bin
-            source_dir = Paths.deps()
-            for filename in ["NoQuestion.bin", "StealthMode.bin"]:
-                source_path = os.path.join(source_dir, filename)
-                dest_path = os.path.join(steam_path, filename)
-                try:
-                    if os.path.exists(source_path):
-                        if not os.path.exists(dest_path):
-                            shutil.copy2(source_path, dest_path)
-                            self.logger.info(f"Copied {filename} to Steam folder")
-                        else:
-                            self.logger.info(f"{filename} already exists in Steam folder, skipping")
-                    else:
-                        self.logger.warning(f"Source {filename} not found in deps folder")
-                except Exception as e:
-                    self.logger.error(f"Failed to copy {filename}: {e}")
-
-        except Exception as e:
-            self.logger.error(f"Failed to create GreenLuma files: {e}", exc_info=True)
-
-    @staticmethod
-    def _find_next_applist_number(app_list_dir, logger=None):
-        """Find the next available AppList number"""
-        if not os.path.exists(app_list_dir):
-            os.makedirs(app_list_dir)
-            return 1
-
-        max_num = 0
-        try:
-            for filename in os.listdir(app_list_dir):
-                match = re.match(r"^(\d+)\.txt$", filename)
-                if match:
-                    num = int(match.group(1))
-                    if num > max_num:
-                        max_num = num
-        except Exception as e:
-            if logger:
-                logger.error(f"Error scanning AppList directory: {e}")
-
-        return max_num + 1
-
-    @staticmethod
-    def _app_id_exists_in_applist(app_list_dir, app_id_to_check):
-        """Check if AppID already exists in AppList"""
-        if not os.path.exists(app_list_dir):
-            return False
-
-        try:
-            for filename in os.listdir(app_list_dir):
-                if filename.lower().endswith(".txt"):
-                    filepath = os.path.join(app_list_dir, filename)
-                    try:
-                        with open(filepath, "r", encoding="utf-8") as f:
-                            content = f.read().strip()
-                            if content == app_id_to_check:
-                                return True
-                    except Exception as e:
-                        logger.debug(f"Failed reading AppList file '{filepath}': {e}")
-        except Exception as e:
-            logger.debug(f"Failed scanning AppList directory '{app_list_dir}': {e}")
-
-        return False

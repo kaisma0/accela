@@ -1,6 +1,5 @@
 import logging
 import os
-import platform
 import re
 import sys
 import urllib.request

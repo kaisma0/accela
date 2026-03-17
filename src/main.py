@@ -3,15 +3,6 @@ import os
 import sys
 from urllib.parse import unquote
 
-if sys.platform == "win32":
-    try:
-        import ctypes
-
-        myappid = "god.is.in.the.wired.accela"
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-    except ImportError:
-        pass
-
 
 from PyQt6.QtGui import QColor, QFont, QFontDatabase, QPalette
 from PyQt6.QtWidgets import QApplication
@@ -138,7 +129,7 @@ def main():
     # CLI mode: activated by -cli flag OR by --appid OR by accela://cli/ URL
     if cli_mode and (command_line_zips or command_line_appid):
         # Check if we should open in external terminal (accela://cli/ URLs)
-        if cli_mode and sys.platform == 'linux':
+        if cli_mode:
             if command_line_appid:
                 logger.info(f"Opening CLI mode in external terminal for AppID {command_line_appid}")
                 if open_cli_terminal(appid=command_line_appid):
@@ -201,10 +192,6 @@ def main():
         elif font_style == "Bold Italic":
             initial_font.setBold(True)
             initial_font.setItalic(True)
-
-    # Fix offline mode in loginusers.vdf if GreenLuma is enabled
-    from core.steam_helpers import fix_greenluma_offline_mode
-    fix_greenluma_offline_mode()
 
     # Apply palette + font
     font_ok, font_info = update_appearance(app, accent_color, bg_color, font=initial_font, font_file=font_file)

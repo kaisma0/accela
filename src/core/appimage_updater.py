@@ -220,15 +220,6 @@ class UpdateCheckWorker(QThread):
         self.no_update.emit() if info is None else self.update_available.emit(info)
 
 
-class DownloadWorker(QThread):
-    progress = pyqtSignal(int, int)
-    downloading_script = pyqtSignal()
-    finished = pyqtSignal(Path, Path)
-    failed = pyqtSignal(str)
-
-    def __init__(self, asset: ReleaseAsset, parent=None) -> None:
-        super().__init__(parent)
-        self._asset = asset
 
     def run(self) -> None:
         tmp = tempfile.NamedTemporaryFile(

@@ -139,9 +139,6 @@ class DownloadDepotsTask(QObject):
                     stderr=subprocess.STDOUT,
                     text=True,
                     encoding="utf-8",
-                    creationflags=subprocess.CREATE_NO_WINDOW
-                    if sys.platform == "win32"
-                    else 0,
                     env=dotnet_env,
                 )
 

@@ -98,10 +98,6 @@ class MainWindow(QMainWindow):
         else:
             logger.warning(f"Could not find window icon at: {str(icon_path)}")
 
-        # Windows-specific taskbar setup
-        if sys.platform == "win32":
-            self._setup_windows_taskbar()
-
     def _setup_exit_shortcut(self):
         """Setup Ctrl+Q shortcut to exit the application"""
         self.exit_shortcut = QShortcut(QKeySequence("Ctrl+Q"), self)
@@ -155,16 +151,6 @@ class MainWindow(QMainWindow):
         msg_box.setWindowTitle("The Wired")
         msg_box.setText(f"Connection Terminated\n\nFinal Score: {score}")
         msg_box.exec()
-
-    def _setup_windows_taskbar(self):
-        """Windows-specific taskbar configuration"""
-        try:
-            import ctypes
-
-            myappid = "god.is.in.the.wired.accela"
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-        except Exception as e:
-            logger.warning(f"Could not set AppUserModelID: {e}")
 
     def _initialize_managers(self):
         """Initialize all manager classes"""
@@ -247,7 +233,7 @@ class MainWindow(QMainWindow):
                 )
                 window = self.main_window.windowHandle()
 
-                # Wayland and Windows
+                # Wayland
                 if window and window.isExposed() and window.startSystemResize(edge):
                     event.accept()
                     return

@@ -1,6 +1,5 @@
 import sys
 import os
-import platform
 import logging
 import shutil
 import subprocess
@@ -30,38 +29,14 @@ from utils.paths import Paths
 logger = logging.getLogger(__name__)
 
 def _get_user_dotnet_path() -> str:
-    """Get the path to user's .dotnet directory, platform-aware.
-
-    For Windows, uses LocalAppData (default for dotnet-install.ps1).
-    For Linux/macOS, uses HOME/.dotnet.
-    """
-    if sys.platform == "win32":
-        # On Windows, dotnet-install.ps1 defaults to %LocalAppData%\Microsoft\dotnet
-        localappdata = os.environ.get("LOCALAPPDATA", os.path.expandvars("%LocalAppData%"))
-        return os.path.join(localappdata, "Microsoft", "dotnet", "dotnet")
-    else:
-        # On Linux/macOS, use HOME/.dotnet
-        return os.path.expanduser("~/.dotnet/dotnet")
+    return os.path.expanduser("~/.dotnet/dotnet")
 
 
 def _get_user_dotnet_root() -> str:
-    """Get the path to user's .dotnet root directory, platform-aware.
-
-    For Windows, uses LocalAppData (default for dotnet-install.ps1).
-    For Linux/macOS, uses HOME/.dotnet.
-    """
-    if sys.platform == "win32":
-        localappdata = os.environ.get("LOCALAPPDATA", os.path.expandvars("%LocalAppData%"))
-        return os.path.join(localappdata, "Microsoft", "dotnet")
-    else:
-        return os.path.expanduser("~/.dotnet")
+    return os.path.expanduser("~/.dotnet")
 
 
 def get_dotnet_path() -> str | None:
-    """Get the path to dotnet executable, checking both locations.
-
-    Prefers user-local and Program Files locations, then PATH.
-    """
     candidates = []
 
     system_dotnet = shutil.which("dotnet")
@@ -70,13 +45,7 @@ def get_dotnet_path() -> str | None:
         candidates.append(system_dotnet)
 
     user_dotnet = _get_user_dotnet_path()
-
-    if sys.platform == "win32":
-        user_dotnet_exe = user_dotnet if user_dotnet.lower().endswith("dotnet.exe") else user_dotnet + ".exe"
-    else:
-        user_dotnet_exe = user_dotnet
-
-    candidates.append(user_dotnet_exe)
+    candidates.append(user_dotnet)
 
     seen = set()
     candidates = [c for c in candidates if c and not (c in seen or seen.add(c))]
@@ -107,10 +76,7 @@ def get_dotnet_path() -> str | None:
 def install_dotnet_9() -> bool:
     """Install .NET 9 runtime using official installer script."""
     try:
-        if sys.platform == "win32":
-            return _install_dotnet_9_windows()
-        else:
-            return _install_dotnet_9_linux()
+        return _install_dotnet_9_linux()
     except Exception as e:
         logger.error(f"Error installing .NET 9: {e}")
         return False
@@ -202,88 +168,6 @@ def _install_dotnet_9_linux() -> bool:
         return False
 
 
-def _install_dotnet_9_windows() -> bool:
-    """Install .NET 9 runtime on Windows using official installer script."""
-    max_retries = 2
-    dotnet_root = _get_user_dotnet_root()
-    
-    install_script_url = 'https://dot.net/v1/dotnet-install.ps1'
-
-    for attempt in range(max_retries):
-        try:
-            logger.info(f"Installing .NET 9 runtime (attempt {attempt + 1}/{max_retries})...")
-
-            env = os.environ.copy()
-            env["DOTNET_ROOT"] = dotnet_root
-
-            with tempfile.NamedTemporaryFile(suffix=".ps1", delete=False, mode='wb') as tmp_script:
-                script_path = tmp_script.name
-                logger.info("Downloading installer script via Python...")
-
-                ctx = ssl.create_default_context()
-
-                with urllib.request.urlopen(install_script_url, context=ctx, timeout=30) as response:
-                    tmp_script.write(response.read())
-
-            try:
-                logger.info("Running .NET 9 installer script...")
-
-                install_cmd = [
-                    "powershell",
-                    "-NoProfile",
-                    "-ExecutionPolicy", "Bypass",
-                    "-File", script_path,
-                    "-Channel", "9.0",
-                    "-Runtime", "dotnet",
-                    "-InstallDir", dotnet_root
-                ]
-
-                install_result = subprocess.run(
-                    install_cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=300,
-                    env=env,
-                )
-
-                if install_result.returncode == 0:
-                    logger.info(".NET 9 runtime installed successfully.")
-                    dotnet_exe = os.path.join(dotnet_root, "dotnet.exe")
-                    if os.path.exists(dotnet_exe):
-                        logger.debug(f"Confirmed executable exists at: {dotnet_exe}")
-                        return True
-                    else:
-                        logger.debug("Installer finished code 0 but dotnet.exe not found in target dir.")
-
-            finally:
-                if os.path.exists(script_path):
-                    os.remove(script_path)
-
-        except subprocess.TimeoutExpired:
-            logger.error("Timeout while installing .NET 9")
-        except urllib.error.URLError as e:
-            if isinstance(e.reason, ssl.SSLCertVerificationError):
-                logger.error(
-                    "TLS certificate verification failed while downloading .NET installer script. "
-                    "Check system certificates, proxy, or firewall settings."
-                )
-            else:
-                logger.error(f"Network error during .NET 9 installation download: {e}")
-        except Exception as e:
-            logger.error(f"Error during .NET 9 installation: {e}")
-
-        if attempt < max_retries - 1:
-            logger.info("Retrying installation...")
-
-    return False
-
-"""
-NOTE: Installing a runtime automatically
-without explicit user consent is generally unsafe
-and can surprise users. Consider switching to a
-PyQT / input() based prompting system.
-"""
-
 def ensure_dotnet_availability() -> bool:
     """Ensure .NET 9 runtime is available, install if missing."""
     if get_dotnet_path():
@@ -321,57 +205,28 @@ def get_base_path(app_name="ACCELA"):
     """
     Return the base directory for the current platform, WITHOUT the logs directory.
     """
-    system = platform.system().lower()
+    # Use XDG_DATA_HOME or ~/.local/share
+    xdg = os.environ.get("XDG_DATA_HOME")
+    if xdg:
+        return Path(xdg) / app_name
 
-    if system == "linux":
-        xdg = os.environ.get("XDG_DATA_HOME")
-        if xdg:
-            return Path(xdg) / app_name
+    home = os.environ.get("HOME")
+    if home:
+        return Path(home) / ".local" / "share" / app_name
 
-        home = os.environ.get("HOME")
-        if home:
-            return Path(home) / ".local" / "share" / app_name
+    tilde = os.path.expanduser("~")
+    if tilde not in ("~", ""):  # ensures it actually expanded
+        return Path(tilde) / ".local" / "share" / app_name
 
-        tilde = os.path.expanduser("~")
-        if tilde not in ("~", ""):  # ensures it actually expanded
-            return Path(tilde) / ".local" / "share" / app_name
-
-        # If all fails resort to same dir save
-        return Path(".") / app_name
-
-    elif system == "windows":
-        # Using AppData/Roaming instead of program directory
-        appdata = os.environ.get('APPDATA')
-        if appdata:
-            base_path = Path(appdata) / app_name
-
-            # Check for existing ACCELA folder in program directory and move it
-            old_path = Path(os.path.dirname(os.path.abspath(sys.argv[0]))) / app_name
-            if old_path.exists() and not base_path.exists():
-                try:
-                    shutil.move(str(old_path), str(base_path))
-                except Exception as e:
-                    logger.warn(f"Could not move existing data: {e}")
-
-            return base_path
-        else:
-            # Fallback to program directory if APPDATA not found
-            return Path(os.path.dirname(os.path.abspath(sys.argv[0]))) / app_name
-
-    elif system == "darwin":  # macOS
-        # Standard macOS location
-        return Path.home() / "Library" / "Logs" / app_name
-
-    else:
-        # Fallback directory for unknown platforms
-        return Path.home() / ".logs" / app_name
+    # Fallback to current directory
+    return Path(".") / app_name
 
 
 def _get_slscheevo_path():
     """Get path to SLScheevo executable or Python script"""
 
     # Running in a PyInstaller bundle → use the embedded executable
-    executable_name = "SLScheevo.exe" if sys.platform == "win32" else "SLScheevo"
+    executable_name = "SLScheevo"
     relative_path = f"SLScheevo/{executable_name}"
 
     # Use Path.depot() for relative pathing directly inside the deps folder.
@@ -444,7 +299,7 @@ def check_venv(path):
         # Check for standard venv markers
         has_cfg = (venv_path / 'pyvenv.cfg').exists()
         # Check for the actual python binary
-        has_bin = (venv_path / 'bin' / 'python').exists() or (venv_path / 'Scripts' / 'python.exe').exists()
+        has_bin = (venv_path / 'bin' / 'python').exists()
 
         if has_cfg or has_bin:
             return venv_path
@@ -498,10 +353,7 @@ def get_venv_python():
 
     if venv_path:
         # Return Python from venv
-        if sys.platform == 'win32':
-            python_exe = venv_path / 'Scripts' / 'python.exe'
-        else:
-            python_exe = venv_path / 'bin' / 'python'
+        python_exe = venv_path / 'bin' / 'python'
 
         if python_exe.exists():
             return str(python_exe)
@@ -514,10 +366,7 @@ def get_venv_activate():
     venv_path = get_venv_path()
 
     if venv_path:
-        if sys.platform == 'win32':
-            activate_script = venv_path / 'Scripts' / 'activate.bat'
-        else:
-            activate_script = venv_path / 'bin' / 'activate'
+        activate_script = venv_path / 'bin' / 'activate'
 
         if activate_script.exists():
             return str(activate_script)

@@ -1,19 +1,11 @@
 """
 Text-based menu system for CLI mode using urwid.
-Supports both Linux and Windows terminals.
 """
 
 import sys
 import os
 import logging 
 from typing import Optional, Any, Union
-
-if sys.platform == "win32":
-    try:
-        import windows_curses
-        windows_curses.enable()
-    except ImportError:
-        pass
 
 import urwid
 
@@ -263,7 +255,7 @@ class DlcSelectionMenu(BaseTextMenu):
     """Text-based DLC selection menu using urwid.CheckBox."""
 
     def __init__(self, dlcs: dict):
-        title = "Select DLC for SLSsteam Wrapper" if sys.platform != "win32" else "Select DLC for GreenLuma Wrapper"
+        title = "Select DLC for SLSsteam Wrapper"
         super().__init__(title)
         self.dlcs = dlcs
         self.selected_dlcs = set()

@@ -164,7 +164,7 @@ class JobQueueManager:
 
     def _prompt_for_steam_restart(self):
         """Prompt user to restart Steam with complete restart logic"""
-        title = "GreenLuma Integration" if sys.platform == "win32" else "SLSsteam Integration"
+        title = "SLSsteam Integration"
         reply = QMessageBox.question(
             self.main_window,
             title,
@@ -176,111 +176,68 @@ class JobQueueManager:
         if reply == QMessageBox.StandardButton.Yes:
             logger.info("User agreed to restart Steam.")
 
-            if sys.platform == "linux":
-                # First, kill Steam if it's running
-                logger.info("Attempting to kill Steam process...")
-                steam_helpers.kill_steam_process()
+            # First, kill Steam if it's running
+            logger.info("Attempting to kill Steam process...")
+            steam_helpers.kill_steam_process()
 
-                time.sleep(1)
+            time.sleep(1)
 
-                # Try to start Steam with the helper function
-                result = steam_helpers.start_steam()
+            # Try to start Steam with the helper function
+            result = steam_helpers.start_steam()
 
-                if result == "NEEDS_USER_PATH":
-                    # Prompt user for both library files
-                    logger.warning("SLSsteam libraries not found. Please locate them manually.")
+            if result == "NEEDS_USER_PATH":
+                # Prompt user for both library files
+                logger.warning("SLSsteam libraries not found. Please locate them manually.")
 
-                    # First library: SLSsteam.so
-                    filePath1, _ = QFileDialog.getOpenFileName(
-                        self.main_window,
-                        "Select SLSsteam.so",
-                        os.path.expanduser("~"),
-                        "SLSsteam.so (SLSsteam.so libSLSsteam.so)"
-                    )
+                # First library: SLSsteam.so
+                filePath1, _ = QFileDialog.getOpenFileName(
+                    self.main_window,
+                    "Select SLSsteam.so",
+                    os.path.expanduser("~"),
+                    "SLSsteam.so (SLSsteam.so libSLSsteam.so)"
+                )
 
-                    if not filePath1:
-                        logger.info("User cancelled file selection for SLSsteam.so")
-                        return
+                if not filePath1:
+                    logger.info("User cancelled file selection for SLSsteam.so")
+                    return
 
-                    # Second library: library-inject.so (could be libSLS-library-inject.so)
-                    filePath2, _ = QFileDialog.getOpenFileName(
-                        self.main_window,
-                        "Select library-inject.so",
-                        os.path.expanduser("~"),
-                        "library-inject.so (library-inject.so libSLS-library-inject.so)"
-                    )
+                # Second library: library-inject.so (could be libSLS-library-inject.so)
+                filePath2, _ = QFileDialog.getOpenFileName(
+                    self.main_window,
+                    "Select library-inject.so",
+                    os.path.expanduser("~"),
+                    "library-inject.so (library-inject.so libSLS-library-inject.so)"
+                )
 
-                    if not filePath2:
-                        logger.info("User cancelled file selection for library-inject.so")
-                        return
+                if not filePath2:
+                    logger.info("User cancelled file selection for library-inject.so")
+                    return
 
-                    # Try to start Steam with both libraries
-                    result = steam_helpers.start_steam_with_slssteam(filePath1, filePath2)
-                    if result == "SUCCESS":
-                        logger.info("Started Steam with SLSsteam.so and library-inject.so")
-                    elif result == "NEEDS_USER_PATH":
-                        # This shouldn't happen since we just provided paths, but handle it
-                        QMessageBox.warning(
-                            self.main_window,
-                            "Execution Failed",
-                            "One or both of the selected library files are invalid or don't exist."
-                        )
-                    else:
-                        QMessageBox.warning(
-                            self.main_window,
-                            "Execution Failed",
-                            "Could not start Steam with the selected libraries."
-                        )
-                elif result == "SUCCESS":
-                    logger.info("Steam started successfully with cached libraries.")
-                else:
-                    logger.warning("Failed to start Steam.")
+                # Try to start Steam with both libraries
+                result = steam_helpers.start_steam_with_slssteam(filePath1, filePath2)
+                if result == "SUCCESS":
+                    logger.info("Started Steam with SLSsteam.so and library-inject.so")
+                elif result == "NEEDS_USER_PATH":
                     QMessageBox.warning(
                         self.main_window,
                         "Execution Failed",
-                        "Could not start Steam."
+                        "One or both of the selected library files are invalid or don't exist."
                     )
-
-            else:
-                # Windows platform
-                steam_path = steam_helpers.find_steam_install()
-                if steam_path:
-                    logger.info("Closing Steam...")
-                    if not steam_helpers.kill_steam_process():
-                        logger.info(
-                            "Steam process was not running or could not be killed."
-                        )
-
-                    time.sleep(1)
-
-                    # Check for DLLInjector.exe first
-                    injector_path = os.path.join(steam_path, "DLLInjector.exe")
-                    if os.path.exists(injector_path):
-                        logger.info("Windows Wrapper Mode: Launching DLLInjector.exe...")
-                        if not steam_helpers.run_dll_injector(steam_path):
-                            QMessageBox.warning(
-                                self.main_window,
-                                "Injector Failed",
-                                f"Could not launch DLLInjector.exe from {steam_path}.",
-                            )
-                    else:
-                        # Check for user32.dll as fallback
-                        user32_path = os.path.join(steam_path, "user32.dll")
-                        if os.path.exists(user32_path):
-                            logger.info("DLLInjector.exe not found, but user32.dll exists. Starting Steam normally...")
-                            steam_helpers.start_steam()  # GreenLuma will load via DLL
-                        else:
-                            QMessageBox.warning(
-                                self.main_window,
-                                "Injector Not Found",
-                                "DLLInjector.exe not found in Steam folder. GreenLuma may not work correctly.",
-                            )
                 else:
                     QMessageBox.warning(
                         self.main_window,
-                        "Error",
-                        "Could not find Steam installation path.",
+                        "Execution Failed",
+                        "Could not start Steam with the selected libraries."
                     )
+            elif result == "SUCCESS":
+                logger.info("Steam started successfully with cached libraries.")
+            else:
+                logger.warning("Failed to start Steam.")
+                QMessageBox.warning(
+                    self.main_window,
+                    "Execution Failed",
+                    "Could not start Steam."
+                )
 
     def clear(self):
         """Clear the job queue"""

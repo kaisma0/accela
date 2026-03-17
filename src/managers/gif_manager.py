@@ -792,13 +792,8 @@ class GIFManager:
 
             if colorized_path.exists():
                 try:
-                    # On Windows NT, copy instead of symlink
-                    if os.name == 'nt':
-                        shutil.copy2(colorized_path, symlink_path)
-                        logger.debug(f"Copied {gif_name} (Windows NT system)")
-                    else:
-                        self._create_color_symlink(colorized_path, symlink_path)
-                        logger.debug(f"Created symlink for {gif_name}")
+                    self._create_color_symlink(colorized_path, symlink_path)
+                    logger.debug(f"Created symlink for {gif_name}")
 
                     successful_links += 1
 
