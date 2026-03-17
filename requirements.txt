@@ -5,6 +5,7 @@ pillow
 psutil
 pygame-ce
 PyQt6
+PyQt6-WebEngine
 PyYAML
 requests
 steam[client] @ git+https://github.com/solsticegamestudios/steam

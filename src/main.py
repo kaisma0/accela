@@ -11,6 +11,8 @@ from PyQt6.QtCore import Qt, QTimer
 QApplication.setHighDpiScaleFactorRoundingPolicy(
     Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
 )
+# Required for Qt WebEngine when imported after QApplication is created.
+QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
 from ui.main_window import MainWindow
 from ui.theme import update_appearance
 

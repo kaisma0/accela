@@ -197,6 +197,58 @@ def get_user_stats():
         return {"error": f"An unexpected error occurred: {e}"}
 
 
+def validate_api_key(api_key=None):
+    """
+    Validates a Morrenus API key against the user stats endpoint.
+    Returns (True, None) when valid, otherwise (False, error_message).
+    """
+    key = api_key
+    if key is None:
+        settings = get_settings()
+        key = settings.value("morrenus_api_key", "", type=str)
+
+    key = (key or "").strip()
+    if not key:
+        return (False, "API key is empty.")
+
+    url = f"{BASE_URL}/user/stats"
+    params = {"api_key": key}
+
+    try:
+        response = _session.get(url, params=params, timeout=10)
+        error_msg = _handle_api_error(response)
+        if error_msg:
+            return (False, error_msg)
+
+        response.raise_for_status()
+        return (True, None)
+    except requests.exceptions.HTTPError as e:
+        response = e.response
+        response_text = response.text if response is not None else ""
+        status_code = response.status_code if response is not None else "N/A"
+        logger.error(f"API key validation HTTP error: {e} - {response_text}")
+
+        try:
+            if response is None:
+                return (False, f"API Error ({status_code}): {e}")
+            error_detail = response.json().get("detail", response_text)
+            return (False, f"API Error ({status_code}): {error_detail}")
+        except requests.exceptions.JSONDecodeError:
+            return (False, f"API Error ({status_code}): {response_text}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"API key validation request failed: {e}")
+        error_str = str(e).lower()
+        if "ssl" in error_str or "wrong_version_number" in error_str:
+            return (
+                False,
+                "SSL connection failed. This may be caused by a proxy, firewall, or network configuration blocking HTTPS connections.",
+            )
+        return (False, f"Request Failed: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error during API key validation: {e}", exc_info=True)
+        return (False, f"An unexpected error occurred: {e}")
+
+
 def check_health():
     """
     Checks if the Morrenus API is healthy.
