@@ -1,3 +1,4 @@
+from ui.custom_titlebar import CustomTitleBar
 import logging
 import random
 import time
@@ -30,6 +31,7 @@ class LainMinigameDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle("The Wired Terminal")
         self.resize(800, 600)
         self.setMinimumSize(600, 500)
@@ -66,7 +68,10 @@ class LainMinigameDialog(QDialog):
             "TRACE", "UTOPIA", "VEIL", "WITNESS", "XENON", "YIELD", "ZENITH"
         ]
 
-        self.layout = QVBoxLayout(self)
+        
+        CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
+        
+        self.layout = QVBoxLayout(self._tb_content_widget)
 
         # Title
         title = ScaledFontLabel("THE WIRED TERMINAL")

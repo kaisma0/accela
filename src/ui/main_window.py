@@ -33,7 +33,7 @@ from managers.task_manager import TaskManager
 from managers.ui_state_manager import UIStateManager
 from managers.gif_manager import GIFManager
 from core import morrenus_api
-from ui.bottom_titlebar import BottomTitleBar
+from ui.custom_titlebar import CustomTitleBar
 from ui.dialogs.api_key_automation import ApiKeyAutomationDialog
 from ui.dialogs.fetchmanifest import FetchManifestDialog
 from ui.dialogs.gamelibrary import GameLibraryDialog
@@ -263,7 +263,7 @@ class MainWindow(QMainWindow):
 
         # Create titlebar first if positioned at top
         if self.titlebar_position == "top":
-            self.bottom_titlebar = BottomTitleBar(self)
+            self.bottom_titlebar = CustomTitleBar(self, title="ACCELA", is_main_window=True)
             self.layout.addWidget(self.bottom_titlebar)
 
         self._create_main_content()
@@ -272,7 +272,7 @@ class MainWindow(QMainWindow):
 
         # Add titlebar at bottom if not already added at top
         if self.titlebar_position != "top":
-            self.bottom_titlebar = BottomTitleBar(self)
+            self.bottom_titlebar = CustomTitleBar(self, title="ACCELA", is_main_window=True)
             self.layout.addWidget(self.bottom_titlebar)
 
         self.setAcceptDrops(True)

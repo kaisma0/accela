@@ -1,3 +1,4 @@
+from ui.custom_titlebar import CustomTitleBar
 import logging
 import os
 import re
@@ -26,12 +27,16 @@ logger = logging.getLogger(__name__)
 class DepotSelectionDialog(QDialog):
     def __init__(self, app_id, game_name, depots, header_url, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle("Select Depots to Download")
         self.depots = depots
         self.game_name = game_name
         self.header_url = header_url
         self.resize(485, 520)
-        layout = QVBoxLayout(self)
+        
+        CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
+        
+        layout = QVBoxLayout(self._tb_content_widget)
         layout.setContentsMargins(0, 0, 0, 10)
         layout.setSpacing(10)
 

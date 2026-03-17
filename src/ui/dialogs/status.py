@@ -1,3 +1,4 @@
+from ui.custom_titlebar import CustomTitleBar
 import logging
 
 from PyQt6.QtCore import Qt
@@ -28,6 +29,7 @@ class StatusDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.parent = parent
         self.setWindowTitle("Last Download Task Status")
         self.resize(450, 180)
@@ -87,7 +89,10 @@ class StatusDialog(QDialog):
 
     def _setup_ui(self):
         """Setup the dialog UI"""
-        layout = QVBoxLayout(self)
+        
+        CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
+        
+        layout = QVBoxLayout(self._tb_content_widget)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(5)
 

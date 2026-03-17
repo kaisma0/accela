@@ -1,3 +1,5 @@
+from PyQt6.QtCore import Qt
+from ui.custom_titlebar import CustomTitleBar
 import logging
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
@@ -21,9 +23,13 @@ logger = logging.getLogger(__name__)
 class StyleDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle("Style Settings")
         self.settings = get_settings()
-        self.main_layout = QVBoxLayout(self)
+        
+        CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
+        
+        self.main_layout = QVBoxLayout(self._tb_content_widget)
         self.main_window = parent
 
         logger.debug("Opening StyleDialog.")
@@ -157,6 +163,7 @@ class StyleDialog(QDialog):
         """Handle immediate titlebar position change"""
         position = "bottom" if state == 2 else "top"  # checkbox = move to bottom
         self.settings.setValue("titlebar_position", position)
+        CustomTitleBar.reposition_dialog_titlebar(self, position)
 
         # Apply change immediately if main window exists
         if self.main_window and hasattr(self.main_window, 'reposition_titlebar'):
@@ -304,8 +311,8 @@ class StyleDialog(QDialog):
         self.settings.setValue("font-style", font_style)
 
         # Save titlebar position setting
-        titlebar_top = self.titlebar_position_checkbox.isChecked()
-        titlebar_position = "top" if titlebar_top else "bottom"
+        move_to_bottom = self.titlebar_position_checkbox.isChecked()
+        titlebar_position = "bottom" if move_to_bottom else "top"
         self.settings.setValue("titlebar_position", titlebar_position)
         logger.info(f"Titlebar position set to: {titlebar_position}")
 

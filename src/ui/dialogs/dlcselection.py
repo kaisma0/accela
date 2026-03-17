@@ -1,3 +1,4 @@
+from ui.custom_titlebar import CustomTitleBar
 import logging
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QCursor
@@ -17,11 +18,15 @@ logger = logging.getLogger(__name__)
 class DlcSelectionDialog(QDialog):
     def __init__(self, dlcs, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle("Select DLC for SLSsteam Wrapper")
         self.dlcs = dlcs
         self.setMinimumWidth(600)
         self.setMinimumHeight(400)
-        layout = QVBoxLayout(self)
+        
+        CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
+        
+        layout = QVBoxLayout(self._tb_content_widget)
 
         self.anchor_row = -1
 
