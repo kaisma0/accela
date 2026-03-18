@@ -2,13 +2,10 @@ from ui.custom_titlebar import CustomTitleBar
 import logging
 import random
 import time
-from datetime import datetime
 
-from components.custom_widgets import ScaledFontLabel, ScaledLabel, ScaledButton
-from PyQt6.QtGui import QColor, QFont, QPixmap
+from components.custom_widgets import ScaledFontLabel, ScaledButton
 from PyQt6.QtWidgets import (
     QDialog,
-    QDialogButtonBox,
     QHBoxLayout,
     QMessageBox,
     QPushButton,

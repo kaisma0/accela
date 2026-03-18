@@ -2,13 +2,11 @@ from ui.custom_titlebar import CustomTitleBar
 import logging
 import os
 import shutil
-from pathlib import Path
 from PyQt6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -16,8 +14,6 @@ from PyQt6.QtWidgets import (
     QWidget,
     QFileDialog,
     QGroupBox,
-    QFormLayout,
-    QCheckBox,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap

@@ -3,26 +3,9 @@ import requests
 import json
 import os
 import tempfile
-import urllib.request
 import re
 import time
 
-from PyQt6.QtWidgets import (
-    QDialog,
-    QVBoxLayout,
-    QCheckBox,
-    QDialogButtonBox,
-    QListWidget,
-    QListWidgetItem,
-    QPushButton,
-    QMessageBox,
-    QLabel,
-    QApplication,
-    QHBoxLayout,
-)
-from PyQt6.QtCore import Qt, QObject, pyqtSignal, QThread
-from PyQt6.QtGui import QPixmap, QCursor
-from utils.settings import get_settings
 from utils.image_fetcher import ImageFetcher
 from managers.db_manager import DatabaseManager
 

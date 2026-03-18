@@ -1,7 +1,5 @@
 import logging
-import os
 import re
-import sys
 from io import BytesIO
 from pathlib import Path
 

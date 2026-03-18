@@ -5,13 +5,10 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox,
     QVBoxLayout,
     QCheckBox,
-    QGroupBox,
     QLabel,
     QHBoxLayout,
     QSlider,
     QPushButton,
-    QWidget,
-    QSizePolicy,
 )
 from PyQt6.QtCore import Qt
 
