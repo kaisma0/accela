@@ -1,25 +1,17 @@
 import atexit
 import logging
-import os
-import sys
 import threading
-from pathlib import Path
 from collections import deque
-from PyQt6.QtCore import Qt, QUrl, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QShortcut, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
-    QFileDialog,
-    QFrame,
     QHBoxLayout,
     QLabel,
-    QListWidget,
     QMainWindow,
     QMessageBox,
     QProgressBar,
-    QPushButton,
     QSizePolicy,
-    QStatusBar,
     QTextEdit,
     QVBoxLayout,
     QWidget,

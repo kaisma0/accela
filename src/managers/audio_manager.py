@@ -2,7 +2,7 @@ import os
 import logging
 import time
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtMultimedia import QAudioSink,QMediaDevices
+from PyQt6.QtMultimedia import QMediaDevices
 import pygame
 
 from utils.paths import Paths

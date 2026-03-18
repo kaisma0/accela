@@ -3,10 +3,6 @@ import os
 import logging
 import shutil
 import subprocess
-import urllib.error
-import urllib.request
-import tempfile
-import ssl
 
 from pathlib import Path
 

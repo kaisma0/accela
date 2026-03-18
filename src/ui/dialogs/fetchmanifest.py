@@ -5,7 +5,6 @@ import re
 from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QIcon, QPixmap
 from PyQt6.QtWidgets import (
-    QApplication,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -341,7 +340,6 @@ class FetchManifestDialog(QDialog):
             except RuntimeError:
                 # Thread may have already been deleted by Qt
                 logger.debug("TaskRunner thread was already deleted, skipping cleanup.")
-                pass
 
         super().closeEvent(a0)
 
@@ -353,5 +351,4 @@ class FetchManifestDialog(QDialog):
                 logger.debug(
                     "Image fetcher was already deleted, skipping cleanup."
                 )
-                pass
         self._active_image_fetchers.clear()

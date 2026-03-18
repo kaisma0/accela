@@ -9,7 +9,7 @@ import shutil
 import hashlib
 import json
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QProgressBar, QLabel, QPushButton, QApplication
-from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer
 
 from utils.helpers import get_base_path
 from utils.paths import Paths

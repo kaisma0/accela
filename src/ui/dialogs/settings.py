@@ -3,7 +3,6 @@ import logging
 import os
 import shutil
 import subprocess
-import sys
 from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -37,7 +36,6 @@ from utils.helpers import (
     _get_slscheevo_path,
     _get_slscheevo_save_path,
     create_checkbox_setting,
-    create_color_setting,
     create_font_setting,
     create_slider_setting,
     get_base_path,

@@ -1,5 +1,5 @@
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QMovie, QFont, QFontMetrics
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont, QFontMetrics
 from PyQt6.QtWidgets import QLabel, QPushButton
 
 class ScaledLabel(QLabel):

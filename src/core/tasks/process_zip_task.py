@@ -1,7 +1,6 @@
 import zipfile
 import re
 import os
-import sys
 import logging
 import tempfile
 

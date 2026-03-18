@@ -4,7 +4,7 @@ import sys
 from urllib.parse import unquote
 
 
-from PyQt6.QtGui import QColor, QFont, QFontDatabase, QPalette
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import Qt, QTimer
 

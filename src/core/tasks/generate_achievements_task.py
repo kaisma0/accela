@@ -1,9 +1,6 @@
 import logging
-import os
 import re
 import subprocess
-import sys
-from pathlib import Path
 
 from PyQt6.QtCore import QObject, pyqtSignal
 

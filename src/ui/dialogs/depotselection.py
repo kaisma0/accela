@@ -1,13 +1,9 @@
 from ui.custom_titlebar import CustomTitleBar
 import logging
-import os
 import re
-import sys
-import urllib.request
-from pathlib import Path
 
-from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QCursor, QPixmap
+from PyQt6.QtCore import Qt, QThread
+from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,

@@ -5,7 +5,6 @@ import zipfile
 from pathlib import Path
 
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
-from PyQt6.QtWidgets import QApplication
 
 from core.steam_helpers import get_steam_libraries, get_library_index, find_steam_install
 from core.tasks.manifest_check_task import ManifestCheckTask
@@ -756,7 +755,7 @@ class GameManager(QObject):
 
         import os
 
-        from core.steam_helpers import find_steam_install, get_steam_libraries
+        from core.steam_helpers import get_steam_libraries
 
         confirm_msg = f"Are you sure you want to uninstall '{game_name}'?\n\n"
 
@@ -944,7 +943,6 @@ class GameManager(QObject):
         Remove Linux desktop shortcuts and icons created by ApplicationShortcutsTask.
         """
         import os
-        import re
         from pathlib import Path
 
         # CRITICAL SAFETY CHECK: Never remove shortcuts/icons for invalid appids

@@ -1,5 +1,4 @@
 import os
-import sys
 import logging
 import time
 from PyQt6.QtWidgets import QMessageBox, QFileDialog

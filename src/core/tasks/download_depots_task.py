@@ -3,10 +3,8 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import time
-from pathlib import Path
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 

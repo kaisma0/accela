@@ -12,7 +12,7 @@ except ImportError:
     zstd = None
 
 from utils.helpers import get_base_path
-from utils.paths import Paths,Path
+from utils.paths import Paths
 
 logger = logging.getLogger(__name__)
 

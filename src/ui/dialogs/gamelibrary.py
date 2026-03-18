@@ -1,10 +1,8 @@
 from ui.custom_titlebar import CustomTitleBar
 import logging
 import os
-import sys
 import subprocess
 from pathlib import Path
-from functools import partial
 from weakref import ref as weakref
 
 from PyQt6.QtCore import QSize, Qt, QTimer
@@ -14,7 +12,6 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
-    QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,

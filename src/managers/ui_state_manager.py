@@ -1,8 +1,6 @@
 import os
 import random
 import logging
-from pathlib import Path
-from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QMovie, QFont
 from PyQt6.QtWidgets import (
     QWidget,
