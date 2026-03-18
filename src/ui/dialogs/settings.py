@@ -981,6 +981,15 @@ class SettingsDialog(QDialog):
         )
         display_layout.addWidget(self.ignore_color_warnings_checkbox)
 
+        self.ui_debug_mode_checkbox = create_checkbox_setting(
+            "UI Debug Mode (Show INFO logs)",
+            "ui_debug_mode",
+            False,
+            self,
+            "Show INFO and DEBUG logs in the application interface.",
+        )
+        display_layout.addWidget(self.ui_debug_mode_checkbox)
+
         display_group.setLayout(display_layout)
         style_layout.addWidget(display_group)
 

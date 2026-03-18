@@ -22,6 +22,14 @@ class QtLogHandler(QObject, logging.Handler):
 
     def emit(self, record):
         try:
+            from utils.settings import get_settings
+            settings = get_settings()
+            debug_mode = settings.value("ui_debug_mode", False, type=bool)
+
+            # Hide INFO and lower level logs in UI if debug mode is off
+            if not debug_mode and record.levelno < logging.WARNING:
+                return
+
             msg = self.format(record)
             self.new_record.emit(msg)
         except RuntimeError:

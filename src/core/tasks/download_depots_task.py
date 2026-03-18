@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
@@ -76,10 +77,50 @@ class DownloadDepotsTask(QObject):
         self.total_download_size_for_this_job = 0
         self.completed_so_far_for_this_job = 0
         self.current_depot_size = 0
+        self._current_depot_started_at = None
+        self._current_depot_id = None
+
+        # Run metrics for end-of-job summary logging
+        self._run_started_at = None
+        self._attempted_depots = 0
+        self._completed_depots = 0
+        self._failed_depots = 0
+        self._skipped_depots = 0
+        self._warning_count = 0
+
+    def _reset_run_metrics(self):
+        self._run_started_at = time.monotonic()
+        self._attempted_depots = 0
+        self._completed_depots = 0
+        self._failed_depots = 0
+        self._skipped_depots = 0
+        self._warning_count = 0
+
+    def _log_run_summary(self, appid, status):
+        elapsed = 0.0
+        if self._run_started_at is not None:
+            elapsed = max(0.0, time.monotonic() - self._run_started_at)
+
+        logger.info(
+            "Summary | app=%s | status=%s | attempted=%d | completed=%d | failed=%d | skipped=%d | warnings=%d | elapsed=%.1fs",
+            appid,
+            status,
+            self._attempted_depots,
+            self._completed_depots,
+            self._failed_depots,
+            self._skipped_depots,
+            self._warning_count,
+            elapsed,
+        )
 
     def run(self, game_data, selected_depots, dest_path):
         global command
-        logger.info(f"Download task starting for {len(selected_depots)} depots.")
+        appid = game_data.get("appid", "unknown")
+        game_name = game_data.get("game_name", "unknown")
+        self._reset_run_metrics()
+        logger.info(
+            f"Starting depot download task for app {appid} ({game_name}) with {len(selected_depots)} selected depots."
+        )
 
         # Check for .NET 9 availability before proceeding (will attempt auto-install if missing)
         self.progress.emit("Checking .NET 9 runtime availability...")
@@ -88,6 +129,7 @@ class DownloadDepotsTask(QObject):
                 "ERROR: .NET 9 runtime is required and could not be installed automatically."
             )
             logger.critical(".NET 9 runtime not available")
+            self._log_run_summary(appid, "failed")
             self.error.emit((RuntimeError, ".NET 9 runtime not available", None))
             return
 
@@ -96,6 +138,12 @@ class DownloadDepotsTask(QObject):
         )
         if not commands:
             self.progress.emit("No valid download commands to execute. Task finished.")
+            logger.warning(
+                f"No valid depot download commands were generated for app {appid}; finishing without running downloader."
+            )
+            self._skipped_depots = len(skipped_depots)
+            self._warning_count += self._skipped_depots
+            self._log_run_summary(appid, "no-op")
             self.completed.emit()
             return
 
@@ -104,7 +152,7 @@ class DownloadDepotsTask(QObject):
         self.total_download_size_for_this_job = sum(depot_sizes)
         self.completed_so_far_for_this_job = 0
         logger.info(
-            f"Task tracking total download size: {self.total_download_size_for_this_job} bytes"
+            f"Planned download size for app {appid}: {self.total_download_size_for_this_job} bytes across {total_depots} runnable depots."
         )
 
         try:
@@ -114,10 +162,12 @@ class DownloadDepotsTask(QObject):
             if self.total_download_size_for_this_job + margin > free_space:
                 error_msg = f"Insufficient disk space! Required: {self.total_download_size_for_this_job / (1024**3):.2f} GB. Available: {free_space / (1024**3):.2f} GB."
                 self.progress.emit(f"ERROR: {error_msg}")
-                logger.error(error_msg)
+                logger.error(f"{error_msg}")
+                self._log_run_summary(appid, "failed")
                 self.error.emit((RuntimeError, error_msg, None))
                 return
         except Exception as e:
+            self._warning_count += 1
             logger.warning(f"Failed to check disk space for {dest_path}: {e}")
 
         try:
@@ -127,11 +177,17 @@ class DownloadDepotsTask(QObject):
                     break
 
                 depot_id = command[5]
+                self._current_depot_id = str(depot_id)
+                self._current_depot_started_at = time.monotonic()
                 self.current_depot_size = depot_sizes[i]
                 self.progress.emit(
                     f"--- Starting download for depot {depot_id} ({i + 1}/{total_depots}) [Size: {self.current_depot_size} bytes] ---"
                 )
+                logger.info(
+                    f"Launching DepotDownloaderMod for depot {depot_id} ({i + 1}/{total_depots}) with manifest {command[7]}."
+                )
                 self.last_percentage = -1
+                self._attempted_depots += 1
 
                 self.process = subprocess.Popen(
                     command,
@@ -164,6 +220,7 @@ class DownloadDepotsTask(QObject):
 
                 if not self._is_running:
                     logger.info("Download task stopping because stop() was called.")
+                    self._log_run_summary(appid, "cancelled")
                     self.completed.emit()
                     return
 
@@ -175,19 +232,37 @@ class DownloadDepotsTask(QObject):
                     self.progress.emit(
                         f"Warning: DepotDownloaderMod exited with code {return_code} for depot {depot_id}."
                     )
+                    self._failed_depots += 1
+                    self._warning_count += 1
                     logger.warning(
                         f"DepotDownloaderMod exited with code {return_code} for depot {depot_id}."
                     )
                 else:
                     self.completed_so_far_for_this_job += self.current_depot_size
+                    self._completed_depots += 1
+                    elapsed = 0.0
+                    if self._current_depot_started_at is not None:
+                        elapsed = time.monotonic() - self._current_depot_started_at
+                    logger.info(
+                        f"Depot {depot_id} completed successfully in {elapsed:.1f}s."
+                    )
+
+                self._current_depot_started_at = None
+                self._current_depot_id = None
 
             if skipped_depots:
                 self.progress.emit(
                     f"Skipped {len(skipped_depots)} depots due to missing manifests: {', '.join(skipped_depots)}"
                 )
+                self._skipped_depots = len(skipped_depots)
+                self._warning_count += len(skipped_depots)
+                logger.warning(
+                    f"Skipped {len(skipped_depots)} depots due to missing manifest IDs: {', '.join(skipped_depots)}"
+                )
 
             if not self._is_running:
                 logger.info("Download task stopped before cleanup.")
+                self._log_run_summary(appid, "cancelled")
                 self.completed.emit()
                 return
 
@@ -213,6 +288,8 @@ class DownloadDepotsTask(QObject):
             # self._ensure_play_not_owned_games_enabled()
 
             self.completed.emit()
+            logger.info(f"Depot download task finished for app {appid}.")
+            self._log_run_summary(appid, "completed")
 
         except FileNotFoundError:
             exe_name = "dotnet"
@@ -222,6 +299,7 @@ class DownloadDepotsTask(QObject):
                 f"ERROR: '{exe_name}' not found. Make sure .NET 9 runtime is installed."
             )
             logger.critical(f"'{exe_name}' not found.")
+            self._log_run_summary(appid, "failed")
             self.error.emit((FileNotFoundError, f"'{exe_name}' not found", None))
             raise
         except Exception as e:
@@ -229,6 +307,7 @@ class DownloadDepotsTask(QObject):
             logger.error(f"Download subprocess failed: {e}", exc_info=True)
             self.process = None
             self.process_pid = None
+            self._log_run_summary(appid, "failed")
             self.error.emit((type(e), str(e), None))
             raise
 
@@ -271,6 +350,7 @@ class DownloadDepotsTask(QObject):
         manifest_dir = os.path.join(temp_dir, "mistwalker_manifests")
 
         self.progress.emit(f"Generating depot keys file at {keys_path}")
+        logger.debug(f"Writing depot key file: {keys_path}")
         with open(keys_path, "w") as f:
             for depot_id in selected_depots:
                 if depot_id in game_data["depots"]:
@@ -290,6 +370,7 @@ class DownloadDepotsTask(QObject):
         )
         os.makedirs(download_dir, exist_ok=True)
         self.progress.emit(f"Download destination set to: {download_dir}")
+        logger.info(f"Resolved download destination: {download_dir}")
 
         # Use dotnet to run the .NET 9 DLL (multiplatform, like Steamless)
         # Get the full path to dotnet, checking both PATH and default install location
@@ -334,9 +415,11 @@ class DownloadDepotsTask(QObject):
                     depot_sizes.append(int(size_str))
                 else:
                     depot_sizes.append(0)
+                    self._warning_count += 1
                     self.progress.emit(f"Warning: No size data for depot {depot_id}. Total progress may be inaccurate.")
             except (ValueError, TypeError):
                 depot_sizes.append(0)
+                self._warning_count += 1
                 self.progress.emit(f"Warning: Invalid size data for depot {depot_id}. Total progress may be inaccurate.")
 
             manifest_file_path = os.path.join(
@@ -369,6 +452,7 @@ class DownloadDepotsTask(QObject):
         dotnet_env = os.environ.copy()
         dotnet_root = os.path.dirname(os.path.dirname(dotnet_path))
         dotnet_env["DOTNET_ROOT"] = dotnet_root
+        logger.debug(f"Using DOTNET_ROOT={dotnet_root}")
 
         return commands, skipped_depots, depot_sizes, dotnet_env
 

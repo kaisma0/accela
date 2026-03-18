@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -110,6 +111,11 @@ class TaskManager:
         self._last_steamless_status_text = "N/A"
         self._last_installed_game = None
 
+        # Download progress logging throttle state
+        self._last_download_log_time = 0.0
+        self._last_download_log_bucket = -1
+        self._last_download_log_line = ""
+
         # Cancel cleanup preference
         self._delete_files_on_cancel: Optional[bool] = None
 
@@ -165,7 +171,7 @@ class TaskManager:
         """Show depot selection dialog"""
         game_data = self.game_data
         if not game_data:
-            logger.warning("No game_data available for depot selection dialog.")
+            logger.warning("Cannot open depot selection dialog: Game data is missing.")
             self.job_finished()
             return
 
@@ -276,7 +282,7 @@ class TaskManager:
     def _start_download(self, selected_depots, dest_path):
         """Start the download process"""
         if not self.game_data:
-            logger.error("Cannot start download: game_data is missing.")
+            logger.error("Aborting download initiation: Missing requisite game data.")
             self.job_finished()
             return
 
@@ -312,8 +318,13 @@ class TaskManager:
         self.main_window.progress_bar.setValue(0)
         self.main_window.speed_label.setVisible(True)
 
+        # Reset download log throttling state for each new job.
+        self._last_download_log_time = 0.0
+        self._last_download_log_bucket = -1
+        self._last_download_log_line = ""
+
         self.download_task = DownloadDepotsTask()
-        self.download_task.progress.connect(logger.info)
+        self.download_task.progress.connect(self._handle_download_progress_log)
         self.download_task.progress_percentage.connect(
             self.main_window.progress_bar.setValue
         )
@@ -381,6 +392,68 @@ class TaskManager:
                 logger.debug("Speed monitor was already stopped. Updating flag.")
                 self.is_awaiting_speed_monitor_stop = False
                 self.main_window.job_queue._check_if_safe_to_start_next_job()
+
+    def _handle_download_progress_log(self, message):
+        """Log downloader output with throttling so progress stays readable."""
+        if not message:
+            return
+
+        text = message.strip()
+        if not text:
+            return
+
+        lowered = text.lower()
+        now = time.monotonic()
+
+        if text.startswith("ERROR:") or " failed" in lowered or "error" in lowered:
+            logger.error(f"{text}")
+            self._last_download_log_time = now
+            self._last_download_log_line = text
+            return
+
+        if text.startswith("Warning:") or "warning" in lowered:
+            logger.warning(f"{text}")
+            self._last_download_log_time = now
+            self._last_download_log_line = text
+            return
+
+        important_markers = (
+            "starting download for depot",
+            "cleaning up temporary files",
+            "removed temp",
+            "skipped",
+            "download destination set to",
+            "checking .net 9 runtime",
+        )
+        if any(marker in lowered for marker in important_markers):
+            logger.info(f"{text}")
+            self._last_download_log_time = now
+            self._last_download_log_line = text
+            return
+
+        percent_match = re.search(r"(\d{1,3}(?:\.\d{1,2})?)%", text)
+        if percent_match:
+            try:
+                percent = int(float(percent_match.group(1)))
+            except ValueError:
+                percent = None
+
+            if percent is not None:
+                percent = max(0, min(100, percent))
+                current_bucket = percent // 5
+
+                # Emit only when entering a new 5% bucket, with explicit completion safeguard.
+                if current_bucket > self._last_download_log_bucket or percent == 100:
+                    logger.info(f"{text}")
+                    self._last_download_log_bucket = current_bucket
+                    self._last_download_log_time = now
+                    self._last_download_log_line = text
+            return
+
+        if now - self._last_download_log_time >= 15 and text != self._last_download_log_line:
+            logger.info(f"{text}")
+            self._last_download_log_time = now
+            self._last_download_log_line = text
 
     def _on_speed_monitor_stopped(self):
         """Handle speed monitor cleanup completion"""
@@ -477,7 +550,7 @@ class TaskManager:
             game_directory = os.path.join(
                 self.current_dest_path, "steamapps", "common", install_folder_name
             )
-            logger.info("Auto-applying Goldberg after download completion")
+            logger.info("Auto-application triggered post-download")
             self.apply_goldberg_to_game(
                 game_directory=game_directory,
                 appid=str(self.game_data.get("appid", "")),
@@ -490,7 +563,7 @@ class TaskManager:
 
         if steamless_enabled and not self.is_cancelling:
             logger.info(
-                "Steamless is enabled, starting DRM removal after download completion"
+                "Feature enabled; preparing for DRM removal..."
             )
             self.main_window.drop_text_label.setText(
                 f"Running Steamless: {self.game_data.get('game_name', '')}"
@@ -511,7 +584,7 @@ class TaskManager:
             and not self.is_cancelling
         ):
             logger.info(
-                "Application shortcuts creation is enabled, starting after download completion"
+                "Generating application shortcuts..."
             )
             self.main_window.drop_text_label.setText(
                 f"Creating Application Shortcuts: {self.game_data.get('game_name', '')}"
@@ -543,7 +616,7 @@ class TaskManager:
         )
         if shortcuts_enabled and not self.is_cancelling:
             logger.info(
-                "Application shortcuts creation is enabled, starting after download completion"
+                "Generating application shortcuts..."
             )
             self.main_window.drop_text_label.setText(
                 f"Creating Application Shortcuts: {self.game_data.get('game_name', '')}"
@@ -680,11 +753,11 @@ class TaskManager:
             # Linux-native depots do not need override config.
             if platform == "linux":
                 downloading_linux_depots = True
-                logger.info(f"  -> Identified as Linux depot")
+                logger.info(f"-> Identified as Linux depot")
             elif platform and platform != "unknown":
                 downloading_proton_depots = True
                 depot_source_platform = platform
-                logger.info(f"  -> Identified as non-Linux depot: {platform}")
+                logger.info(f"-> Identified as non-Linux depot: {platform}")
 
         logger.info(
             f"Platform detection summary - Proton source: {downloading_proton_depots}, Linux: {downloading_linux_depots}"
@@ -904,11 +977,11 @@ class TaskManager:
             return
 
         logger.info("\n" + "=" * 40)
-        logger.info("Starting Steamless DRM Removal...")
+        logger.info("Starting Steamless DRM removal...")
         logger.info(f"Processing directory: {game_directory}")
 
         self.steamless_task = SteamlessTask()
-        self.steamless_task.progress.connect(logger.info)
+        self.steamless_task.progress.connect(self._log_steamless_message)
         self.steamless_task.result.connect(self._on_steamless_complete)
         self.steamless_task.finished.connect(self._on_steamless_finished)
         self.steamless_task.error.connect(self._handle_steamless_task_error)
@@ -934,7 +1007,7 @@ class TaskManager:
         # Clear progress log for new run
         self._steamless_progress_log = []
 
-        logger.info(f"Starting manual Steamless processing for: {exe_path}")
+        logger.info(f"Commencing manual processing for executable: {exe_path}")
         self._steamless_manual_run = True
 
         self.steamless_task = SteamlessTask()
@@ -1280,15 +1353,18 @@ class TaskManager:
     def _on_steamless_progress(self, message):
         """Capture Steamless progress messages for resume dialog"""
         self._steamless_progress_log.append(message)
-        logger.info(message)
+        self._log_steamless_message(message)
+
+    def _log_steamless_message(self, message):
+        logger.info(f"{message}")
 
     def _on_steamless_complete(self, success):
         """Handle Steamless processing completion"""
         logger.info("\n" + "=" * 40)
         if success:
-            logger.info("Steamless processing completed successfully")
+            logger.info("Processing completed successfully")
         else:
-            logger.info("Steamless processing completed with warnings or no DRM found")
+            logger.info("Processing completed with warnings or no DRM found")
 
         # Store the result for _on_steamless_finished to use
         # This prevents duplicate achievement generation starts
@@ -1306,7 +1382,7 @@ class TaskManager:
 
         # For manual runs, show resume dialog
         if self._steamless_manual_run:
-            logger.info("Manual Steamless processing completed")
+            logger.info("Manual processing completed")
             self._show_steamless_resume_dialog()
             self._steamless_manual_run = False
             self._steamless_success = None
@@ -1331,7 +1407,7 @@ class TaskManager:
                
                 and not self.is_cancelling
             ):
-                logger.info("Starting application shortcuts after Steamless completion")
+                logger.info("Generating application shortcuts...")
                 game_name = (
                     self.game_data.get("game_name", "") if self.game_data else ""
                 )
@@ -1428,10 +1504,10 @@ class TaskManager:
     def _handle_steamless_task_error(self, error_info):
         """Handle Steamless task runner errors"""
         _, error_value, error_traceback = error_info
-        logger.info(f"Steamless error: {error_value}")
-        logger.error(f"Steamless processing failed: {error_value}")
+        logger.info(f"Error: {error_value}")
+        logger.error(f"Processing failed: {error_value}")
         if error_traceback:
-            logger.error("Steamless traceback:\n%s", error_traceback)
+            logger.error("Traceback:\n%s", error_traceback)
 
         # Mark that Steamless had an error
         self._steamless_error = True
@@ -1472,7 +1548,7 @@ class TaskManager:
         logger.info("Auto-detecting account from SLScheevo...")
 
         self.achievement_task = GenerateAchievementsTask()
-        self.achievement_task.progress.connect(logger.info)
+        self.achievement_task.progress.connect(lambda msg: logger.info(f"{msg}"))
         # Do NOT connect progress_percentage to progress bar - achievement generation
         # happens after download completion and should not interfere with the 100% progress
         # self.achievement_task.progress_percentage.connect(self.progress_bar.setValue)
