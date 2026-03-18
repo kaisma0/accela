@@ -1105,7 +1105,7 @@ class SteamUtils:
             f"Created {self.main.MAX_TRIES_FILE} with default value: {self.main.DEFAULT_MAX_TRIES}"
         )
 
-    def copy_bins_to_steam_stats(self):
+    def copy_bins_to_steam_stats(self, app_ids=None):
         """
         Copies all files from bins/* to the Steam appcache/stats directory
         for the given Steam ID64.
@@ -1121,9 +1121,16 @@ class SteamUtils:
             return
 
         files_copied = 0
+        app_ids_str = [str(aid) for aid in app_ids] if app_ids else None
         for file_path in self.main.OUTPUT_DIR.glob("*"):
             if not file_path.is_file():
                 continue
+
+            # Only filter if app_ids were explicitly provided
+            if app_ids_str is not None:
+                file_app_id = file_path.stem.split('_')[-1]
+                if file_app_id.isdigit() and file_app_id not in app_ids_str:
+                    continue
 
             if files_copied == 0:
                 self.logger.log_base("")
@@ -1485,7 +1492,7 @@ class Main:
         if not missing_app_ids:
             self.logger.log_info("No missing stats files to generate")
             client.logout()
-            self.steam_utils.copy_bins_to_steam_stats()
+            self.steam_utils.copy_bins_to_steam_stats(app_ids)
             self.steam_utils.prompt_security_warning()
             sys.exit(EXIT_NO_ACTIONS)
 
@@ -1516,7 +1523,7 @@ class Main:
         client.logout()
 
         # Copy generated files to Steam directory
-        self.steam_utils.copy_bins_to_steam_stats()
+        self.steam_utils.copy_bins_to_steam_stats(app_ids)
 
         self.steam_utils.prompt_security_warning()
 

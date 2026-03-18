@@ -326,7 +326,7 @@ class GIFManager:
 
         for input_dir in input_dirs:
             if not input_dir.exists():
-                logger.warning(f"Input directory does not exist: {input_dir}")
+                logger.debug(f"Input directory does not exist: {input_dir}")
                 continue
 
             logger.debug(f"Scanning directory: {input_dir}")

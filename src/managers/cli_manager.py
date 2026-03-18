@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 from PyQt6.QtCore import QEventLoop
 from PyQt6.QtGui import QFont
@@ -115,7 +116,7 @@ def run_cli_mode(app, command_line_zips, logger, appid=None):
     settings = get_settings()
 
     logger.info("=" * 50)
-    logger.info("ACCELA CLI Mode")
+    logger.info("ACCELA CLI Mode Initialized")
     logger.info("=" * 50)
 
     # Apply ACCELA theme
@@ -177,10 +178,10 @@ def run_cli_mode(app, command_line_zips, logger, appid=None):
 
     for index, zip_path in enumerate(command_line_zips):
         current_job = index + 1
-        logger.info(f"\n[{current_job}/{total_zips}] Processing: {os.path.basename(zip_path) if zip_path else 'Unknown'}")
+        logger.info(f"\n({current_job}/{total_zips}) Processing: {os.path.basename(zip_path) if zip_path else 'Unknown'}")
 
         # Step 1: Process ZIP file
-        logger.info("Parsing ZIP file...")
+        logger.info("Parsing archive...")
         zip_task = ProcessZipTask()
 
         game_data_holder = [None]
@@ -227,7 +228,7 @@ def run_cli_mode(app, command_line_zips, logger, appid=None):
             logger.info("Destination folder not selected, skipping this ZIP")
             continue
 
-        logger.info(f"Destination: {dest_path}")
+        logger.info(f"Target installation path set to: {dest_path}")
 
         # Step 4: Start download
         logger.info("\n" + "=" * 40)
@@ -237,7 +238,72 @@ def run_cli_mode(app, command_line_zips, logger, appid=None):
         game_data["selected_depots_list"] = selected_depots
 
         download_task = DownloadDepotsTask()
-        download_task.progress.connect(logger.info)
+
+        last_log_time = {"value": 0.0}
+        last_log_bucket = {"value": -1}
+        last_log_line = {"value": ""}
+
+        def _handle_download_progress(message):
+            if not message:
+                return
+
+            text = message.strip()
+            if not text:
+                return
+
+            lowered = text.lower()
+            now = time.monotonic()
+
+            if text.startswith("ERROR:") or " failed" in lowered or "error" in lowered:
+                logger.error(f"{text}")
+                last_log_time["value"] = now
+                last_log_line["value"] = text
+                return
+
+            if text.startswith("Warning:") or "warning" in lowered:
+                logger.warning(f"{text}")
+                last_log_time["value"] = now
+                last_log_line["value"] = text
+                return
+
+            important_markers = (
+                "starting download for depot",
+                "cleaning up temporary files",
+                "removed temp",
+                "skipped",
+                "download destination set to",
+                "checking .net 9 runtime",
+            )
+            if any(marker in lowered for marker in important_markers):
+                logger.info(f"{text}")
+                last_log_time["value"] = now
+                last_log_line["value"] = text
+                return
+
+            percent_match = re.search(r"(\d{1,3}(?:\.\d{1,2})?)%", text)
+            if percent_match:
+                try:
+                    percent = int(float(percent_match.group(1)))
+                except ValueError:
+                    percent = None
+
+                if percent is not None:
+                    percent = max(0, min(100, percent))
+
+                    # Emit when the percentage changes, with explicit completion safeguard.
+                    if percent > last_log_bucket["value"] or percent == 100:
+                        logger.info(f"{text}")
+                        last_log_bucket["value"] = percent
+                        last_log_time["value"] = now
+                        last_log_line["value"] = text
+                return
+
+            if now - last_log_time["value"] >= 15 and text != last_log_line["value"]:
+                logger.info(f"{text}")
+                last_log_time["value"] = now
+                last_log_line["value"] = text
+
+        download_task.progress.connect(_handle_download_progress)
 
         # TaskRunner.run() returns the worker, store it
         download_task_runner = TaskRunner()
@@ -353,7 +419,7 @@ class CLITaskManager:
             game_directory = os.path.join(
                 self.current_dest_path, "steamapps", "common", install_folder_name
             )
-            self.logger.info("Auto-applying Goldberg after download completion")
+            self.logger.info("Auto-application triggered post-download")
             self._apply_goldberg(
                 game_directory,
                 str(self.game_data.get("appid", "")),
@@ -363,19 +429,19 @@ class CLITaskManager:
         # Steamless processing
         steamless_enabled = self.settings.value("use_steamless", False, type=bool)
         if steamless_enabled:
-            self.logger.info("Steamless is enabled, starting DRM removal...")
+            self.logger.info("Initialization started...")
             self._run_steamless()
 
         # Application shortcuts (SLSsteam mode)
         shortcuts_enabled = self.settings.value("create_application_shortcuts", False, type=bool)
         if shortcuts_enabled and self.slssteam_mode_was_active:
-            self.logger.info("Application shortcuts creation is enabled...")
+            self.logger.info("Generating application shortcuts...")
             self._run_application_shortcuts()
 
         # Achievement generation
         achievements_enabled = self.settings.value("generate_achievements", False, type=bool)
         if achievements_enabled:
-            self.logger.info("Achievement generation is enabled...")
+            self.logger.info("Initialization started...")
             self._run_achievement_generation()
 
         # SLSsteam configuration is handled automatically
@@ -825,11 +891,11 @@ class CLITaskManager:
 
         from core.tasks.steamless_task import SteamlessTask
 
-        self.logger.info("Starting Steamless DRM Removal...")
+        self.logger.info("Starting Steamless DRM removal...")
         self.logger.info(f"Processing directory: {game_directory}")
 
         steamless_task = SteamlessTask()
-        steamless_task.progress.connect(self.logger.info)
+        steamless_task.progress.connect(lambda message: self.logger.info(f"{message}"))
 
         loop = QEventLoop()
         steamless_task.result.connect(lambda success: loop.quit())
@@ -838,7 +904,7 @@ class CLITaskManager:
         steamless_task.start()
         loop.exec()
 
-        self.logger.info("Steamless processing completed")
+        self.logger.info("Processing completed")
 
     def _run_application_shortcuts(self):
         """Create application shortcuts"""
@@ -893,7 +959,7 @@ class CLITaskManager:
         self.logger.info("Generating achievements...")
 
         achievement_task = GenerateAchievementsTask()
-        achievement_task.progress.connect(self.logger.info)
+        achievement_task.progress.connect(lambda message: self.logger.info(f"{message}"))
 
         loop = QEventLoop()
 

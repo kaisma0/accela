@@ -22,6 +22,14 @@ class QtLogHandler(QObject, logging.Handler):
 
     def emit(self, record):
         try:
+            from utils.settings import get_settings
+            settings = get_settings()
+            debug_mode = settings.value("ui_debug_mode", False, type=bool)
+
+            # Hide INFO and lower level logs in UI if debug mode is off
+            if not debug_mode and record.levelno < logging.WARNING:
+                return
+
             msg = self.format(record)
             self.new_record.emit(msg)
         except RuntimeError:
@@ -92,7 +100,8 @@ def setup_logging():
     handlers.append(console_handler)
 
     # Qt handler
-    qt_log_handler.setLevel(logging.INFO)
+    # Keep handler permissive so emit() can enforce ui_debug_mode dynamically.
+    qt_log_handler.setLevel(logging.DEBUG)
     qt_log_handler.setFormatter(formatter)
     handlers.append(qt_log_handler)
 
@@ -114,12 +123,16 @@ def setup_logging():
     logger = logging.getLogger(__name__)
 
     # Log configuration details
+    settings = get_settings()
+    debug_mode = settings.value("ui_debug_mode", False, type=bool)
+    qt_ui_level = "INFO" if debug_mode else "WARNING"
+
     logger.info("Logging Initialized")
     logger.info("Python: %s", sys.version)
     logger.info("Log file: %s", log_path)
     logger.info("File level: DEBUG")
     logger.info("Console level: INFO")
-    logger.info("Qt GUI level: INFO")
+    logger.info("Qt GUI level: %s", qt_ui_level)
 
     return logger
 
