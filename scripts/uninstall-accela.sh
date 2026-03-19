@@ -25,21 +25,26 @@ ask_confirm() {
     local default="${2:-n}"
     local response
 
-    if [ "${FORCE_YES:-0}" = "1" ]; then
-        return 0
+    if ! { true </dev/tty; } 2>/dev/null; then
+        log_warn "No terminal available, using default (${default}) for: $prompt"
+        [ "$default" = "y" ] && return 0 || return 1
     fi
 
+    local prompt_str
     while true; do
         if [ "$default" = "y" ]; then
-            read -r -p "$prompt [Y/n]: " response
+            prompt_str="$prompt [Y/n]: "
         else
-            read -r -p "$prompt [y/N]: " response
+            prompt_str="$prompt [y/N]: "
         fi
+
+        printf "%s" "$prompt_str" >&2
+        IFS= read -r response </dev/tty || { response="$default"; break; }
 
         case "${response:-$default}" in
             [Yy]*) return 0 ;;
             [Nn]*) return 1 ;;
-            *) echo "Please answer yes or no." ;;
+            *) echo "Please answer yes or no." >&2 ;;
         esac
     done
 }

@@ -14,7 +14,7 @@ else
 fi
 
 INSTALL_DIR="$HOME/.local/share/ACCELA"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_DIR="$HOME/.config/kaisma0"
 ICON_SOURCE_PATH="$PROJECT_ROOT/src/res/logo/accela.png"

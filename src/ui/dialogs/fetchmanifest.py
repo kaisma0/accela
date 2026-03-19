@@ -329,6 +329,13 @@ class FetchManifestDialog(QDialog):
         self.results_list.setEnabled(True)
         self.status_label.setText("An error occurred. Ready to search")
 
+    def keyPressEvent(self, event):
+        # Prevent QDialog from closing on Enter/Return key press,
+        # since that interferes with the search input's returnPressed signal.
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            return
+        super().keyPressEvent(event)
+
     def closeEvent(self, a0):
         # Ensure all image fetchers are cleaned up when dialog closes
         self._stop_active_image_fetchers()
