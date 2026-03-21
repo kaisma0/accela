@@ -8,7 +8,6 @@ import time
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
-from utils.helpers import ensure_dotnet_availability, get_dotnet_path
 from utils.paths import Paths
 
 from utils.settings import get_settings
@@ -120,16 +119,7 @@ class DownloadDepotsTask(QObject):
             f"Starting depot download task for app {appid} ({game_name}) with {len(selected_depots)} selected depots."
         )
 
-        # Check for .NET 9 availability before proceeding (will attempt auto-install if missing)
-        self.progress.emit("Checking .NET 9 runtime availability...")
-        if not ensure_dotnet_availability():
-            self.progress.emit(
-                "ERROR: .NET 9 runtime is required and could not be installed automatically."
-            )
-            logger.critical(".NET 9 runtime not available")
-            self._log_run_summary(appid, "failed")
-            self.error.emit((RuntimeError, ".NET 9 runtime not available", None))
-            return
+
 
         commands, skipped_depots, depot_sizes, dotnet_env = self._prepare_downloads(
             game_data, selected_depots, dest_path
@@ -182,7 +172,7 @@ class DownloadDepotsTask(QObject):
                     f"--- Starting download for depot {depot_id} ({i + 1}/{total_depots}) [Size: {self.current_depot_size} bytes] ---"
                 )
                 logger.info(
-                    f"Launching DepotDownloaderMod for depot {depot_id} ({i + 1}/{total_depots}) with manifest {command[7]}."
+                    f"Launching DepotDownloader for depot {depot_id} ({i + 1}/{total_depots}) with manifest {command[7]}."
                 )
                 self.last_percentage = -1
                 self._attempted_depots += 1
@@ -228,12 +218,12 @@ class DownloadDepotsTask(QObject):
 
                 if return_code != 0:
                     self.progress.emit(
-                        f"Warning: DepotDownloaderMod exited with code {return_code} for depot {depot_id}."
+                        f"Warning: DepotDownloader exited with code {return_code} for depot {depot_id}."
                     )
                     self._failed_depots += 1
                     self._warning_count += 1
                     logger.warning(
-                        f"DepotDownloaderMod exited with code {return_code} for depot {depot_id}."
+                        f"DepotDownloader exited with code {return_code} for depot {depot_id}."
                     )
                 else:
                     self.completed_so_far_for_this_job += self.current_depot_size
@@ -294,7 +284,7 @@ class DownloadDepotsTask(QObject):
             if "command" in locals() and command:
                 exe_name = command[0]
             self.progress.emit(
-                f"ERROR: '{exe_name}' not found. Make sure .NET 9 runtime is installed."
+                f"ERROR: '{exe_name}' not found. Make sure .NET 10 runtime is installed."
             )
             logger.critical(f"'{exe_name}' not found.")
             self._log_run_summary(appid, "failed")
@@ -370,13 +360,8 @@ class DownloadDepotsTask(QObject):
         self.progress.emit(f"Download destination set to: {download_dir}")
         logger.info(f"Resolved download destination: {download_dir}")
 
-        # Use dotnet to run the .NET 9 DLL (multiplatform, like Steamless)
-        # Get the full path to dotnet, checking both PATH and default install location
-        dotnet_path = get_dotnet_path()
-        if not dotnet_path:
-            raise RuntimeError("dotnet command not found. Please install .NET 9 runtime manually.")
-        dotnet_cmd = dotnet_path
-        dll_path = Paths.deps("DepotDownloaderMod.dll").absolute()
+        # Use the self-contained native binary directly
+        binary_path = Paths.deps("DepotDownloader").absolute()
 
         commands = []
         skipped_depots = []
@@ -426,8 +411,7 @@ class DownloadDepotsTask(QObject):
 
             commands.append(
                 [
-                    dotnet_cmd,
-                    str(dll_path),
+                    str(binary_path),
                     "-app",
                     game_data["appid"],
                     "-depot",
@@ -446,13 +430,10 @@ class DownloadDepotsTask(QObject):
                 ]
             )
 
-        # Create environment with DOTNET_ROOT set for the dotnet subprocess
-        dotnet_env = os.environ.copy()
-        dotnet_root = os.path.dirname(os.path.dirname(dotnet_path))
-        dotnet_env["DOTNET_ROOT"] = dotnet_root
-        logger.debug(f"Using DOTNET_ROOT={dotnet_root}")
+        # Use default environment for native binary
+        env = os.environ.copy()
 
-        return commands, skipped_depots, depot_sizes, dotnet_env
+        return commands, skipped_depots, depot_sizes, env
 
     def stop(self):
         logger.debug("Stop signal received by download task.")
