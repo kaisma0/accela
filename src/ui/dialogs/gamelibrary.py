@@ -830,13 +830,21 @@ class GameLibraryDialog(QDialog):
         uninstall_layout = QVBoxLayout(uninstall_tab)
         uninstall_layout.setContentsMargins(15, 15, 15, 15)
 
-        # Linux cleanup options
+        # Base cleanup options
+        self.remove_game_data_checkbox = None
         self.remove_compatdata_checkbox = None
         self.remove_saves_checkbox = None
         self.remove_from_library_checkbox = None
         self.remove_shortcuts_checkbox = None
 
         appid_is_valid = appid and appid not in ("0", "N/A", "unknown")
+
+        self.remove_game_data_checkbox = QCheckBox("Remove base game files and manifests")
+        self.remove_game_data_checkbox.setChecked(False)
+        self.remove_game_data_checkbox.setToolTip("Deletes the game folder, Steam manifest (.acf), and depot manifest")
+        uninstall_layout.addWidget(self.remove_game_data_checkbox)
+        
+        uninstall_layout.addSpacing(10)
 
         linux_options_label = QLabel("Linux Options")
         linux_options_label.setStyleSheet(f"""
@@ -871,11 +879,19 @@ class GameLibraryDialog(QDialog):
             )
         uninstall_layout.addWidget(self.remove_saves_checkbox)
 
-        self.remove_from_library_checkbox = QCheckBox("Remove from Steam library")
+        self.remove_from_library_checkbox = QCheckBox("Remove from SLSsteam")
         if appid_is_valid:
-            self.remove_from_library_checkbox.setToolTip(
-                "Removes this game from SLSstean's AdditionalApps list in config.yaml"
-            )
+            if is_slssteam_mode_enabled() and is_slssteam_config_management_enabled():
+                self.remove_from_library_checkbox.setChecked(True)
+                self.remove_from_library_checkbox.setToolTip(
+                    "Untracks the game from Accela and removes it from SLSsteam's config.yaml"
+                )
+            else:
+                self.remove_from_library_checkbox.setEnabled(True)
+                self.remove_from_library_checkbox.setChecked(True)
+                self.remove_from_library_checkbox.setToolTip(
+                    "Untracks the game from Accela by removing tracking files"
+                )
         else:
             self.remove_from_library_checkbox.setEnabled(False)
             self.remove_from_library_checkbox.setToolTip(
@@ -1137,11 +1153,17 @@ class GameLibraryDialog(QDialog):
     def _uninstall_game(self, game_data, dialog):
         """Uninstall the game by removing folder and ACF file"""
         # Check additional removal options
+        remove_game_data = False
         remove_compatdata = False
         remove_saves = False
         remove_from_library = False
         remove_shortcuts = False
 
+        remove_game_data = (
+            self.remove_game_data_checkbox.isChecked()
+            if self.remove_game_data_checkbox
+            else False
+        )
         remove_compatdata = (
             self.remove_compatdata_checkbox.isChecked()
             if self.remove_compatdata_checkbox
@@ -1163,8 +1185,23 @@ class GameLibraryDialog(QDialog):
             else False
         )
 
+        if not (remove_game_data or remove_compatdata or remove_saves or remove_from_library or remove_shortcuts):
+            QMessageBox.information(
+                self,
+                "Nothing Selected",
+                "Please select at least one item to remove."
+            )
+            return
+
         # Get confirmation message from GameManager
-        confirm_msg = self.game_manager.get_uninstall_confirmation_message(game_data)
+        confirm_msg = self.game_manager.get_uninstall_confirmation_message(
+            game_data,
+            remove_game_data=remove_game_data,
+            remove_compatdata=remove_compatdata,
+            remove_saves=remove_saves,
+            remove_from_library=remove_from_library,
+            remove_shortcuts=remove_shortcuts
+        )
 
         # Confirm uninstall
         reply = QMessageBox.question(
@@ -1180,7 +1217,7 @@ class GameLibraryDialog(QDialog):
 
         # Perform uninstall using GameManager
         success, error_msg = self.game_manager.uninstall_game(
-            game_data, remove_compatdata=remove_compatdata, remove_saves=remove_saves, remove_from_library=remove_from_library, remove_shortcuts=remove_shortcuts
+            game_data, remove_game_data=remove_game_data, remove_compatdata=remove_compatdata, remove_saves=remove_saves, remove_from_library=remove_from_library, remove_shortcuts=remove_shortcuts
         )
 
         if success:
