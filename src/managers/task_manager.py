@@ -32,7 +32,8 @@ from utils.helpers import get_base_path
 from utils.yaml_config_manager import (
     get_user_config_path,
     add_additional_app,
-    add_dlc_data,
+    add_depot_data,
+    remove_depot_data,
 )
 
 from utils.paths import Paths
@@ -1753,7 +1754,7 @@ class TaskManager:
         self.job_finished()
 
     def _add_appids_to_slssteam_config(self):
-        """Add downloaded AppIDs and DLCs to SLSsteam config.yaml on Linux."""
+        """Add downloaded AppIDs and depot IDs to SLSsteam config.yaml on Linux."""
         if not self.game_data:
             logger.warning("No game_data available, skipping SLSsteam config update")
             return
@@ -1776,28 +1777,25 @@ class TaskManager:
                         f"Added main AppID '{main_appid}' to SLSsteam AdditionalApps"
                     )
 
-            # Add selected DLCs to DlcData only if > 64 DLCs (Steam limit)
-            selected_dlcs = self.game_data.get("selected_dlcs", [])
-            dlcs = self.game_data.get("dlcs", {})
+            # Add selected depots to DepotData
+            selected_depots = self.game_data.get("selected_depots_list", [])
+            all_depots = self.game_data.get("depots", {})
 
-            if main_appid and selected_dlcs and len(selected_dlcs) > 64:
+            if main_appid and selected_depots:
                 logger.info(
-                    f"Game has {len(selected_dlcs)} DLCs (>64), adding to DlcData"
+                    f"Adding {len(selected_depots)} depot(s) to DepotData"
                 )
-                for dlc_id in selected_dlcs:
-                    dlc_name = dlcs.get(dlc_id, "")
-                    added = add_dlc_data(
-                        config_path, str(main_appid), str(dlc_id), dlc_name
+                for depot_id in selected_depots:
+                    depot_id_str = str(depot_id)
+                    depot_info = all_depots.get(depot_id_str, {})
+                    depot_desc = depot_info.get("desc", "") if isinstance(depot_info, dict) else ""
+                    added = add_depot_data(
+                        config_path, str(main_appid), depot_id_str, depot_desc
                     )
                     if added:
                         logger.info(
-                            f"Added DLC '{dlc_name}' ({dlc_id}) to SLSsteam DlcData"
+                            f"Added depot '{depot_id_str}' to SLSsteam DepotData"
                         )
-            else:
-                logger.debug(
-                    f"Game has {len(selected_dlcs)} DLCs, skipping DlcData "
-                    f"(only needed for >64 DLCs)"
-                )
 
         except Exception as e:
             logger.warning(

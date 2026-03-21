@@ -10,7 +10,7 @@ from core.steam_helpers import get_steam_libraries, get_library_index, find_stea
 from core.tasks.manifest_check_task import ManifestCheckTask
 from utils.helpers import get_base_path
 from utils.task_runner import TaskRunner
-from utils.yaml_config_manager import get_user_config_path, add_additional_app, remove_additional_app, fix_slssteam_config_indentation, get_app_tokens, add_app_token
+from utils.yaml_config_manager import get_user_config_path, add_additional_app, remove_additional_app, remove_depot_data, fix_slssteam_config_indentation, get_app_tokens, add_app_token
 
 logger = logging.getLogger(__name__)
 
@@ -859,11 +859,12 @@ class GameManager(QObject):
             if remove_shortcuts:
                 self._remove_linux_shortcuts_and_icons(appid, game_name)
 
-            # Remove from SLSsteam config.yaml AdditionalApps list
+            # Remove from SLSsteam config.yaml AdditionalApps list and DepotData
             if remove_from_library and appid and appid not in ("0", "N/A", "unknown"):
                 config_path = get_user_config_path()
                 if config_path.exists():
                     remove_additional_app(config_path, str(appid))
+                    remove_depot_data(config_path, str(appid))
 
             # Remove from game manager
             self.remove_game(appid)

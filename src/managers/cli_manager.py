@@ -840,7 +840,7 @@ class CLITaskManager:
         from utils.yaml_config_manager import (
             get_user_config_path,
             add_additional_app,
-            add_dlc_data,
+            add_depot_data,
         )
 
         if not self.game_data:
@@ -857,13 +857,15 @@ class CLITaskManager:
                 add_additional_app(config_path, str(main_appid), game_name)
                 self.logger.info(f"Added AppID '{main_appid}' to SLSsteam config")
 
-            selected_dlcs: list = self.game_data.get("selected_dlcs", [])  # type: ignore
-            dlcs: dict = self.game_data.get("dlcs", {})  # type: ignore
+            selected_depots: list = self.game_data.get("selected_depots_list", [])  # type: ignore
+            all_depots: dict = self.game_data.get("depots", {})  # type: ignore
 
-            if main_appid and selected_dlcs and len(selected_dlcs) > 64:
-                for dlc_id in selected_dlcs:
-                    dlc_name = dlcs.get(dlc_id, "")
-                    add_dlc_data(config_path, str(main_appid), str(dlc_id), dlc_name)
+            if main_appid and selected_depots:
+                for depot_id in selected_depots:
+                    depot_id_str = str(depot_id)
+                    depot_info = all_depots.get(depot_id_str, {})
+                    depot_desc = depot_info.get("desc", "") if isinstance(depot_info, dict) else ""
+                    add_depot_data(config_path, str(main_appid), depot_id_str, depot_desc)
 
             self.logger.info("AppIDs added to SLSsteam config")
         except Exception as e:
