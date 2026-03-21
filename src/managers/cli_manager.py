@@ -272,7 +272,7 @@ def run_cli_mode(app, command_line_zips, logger, appid=None):
                 "removed temp",
                 "skipped",
                 "download destination set to",
-                "checking .net 9 runtime",
+                "checking .net 10 runtime",
             )
             if any(marker in lowered for marker in important_markers):
                 logger.info(f"{text}")

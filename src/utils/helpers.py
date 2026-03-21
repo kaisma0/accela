@@ -59,8 +59,8 @@ def get_dotnet_path() -> str | None:
                 timeout=10,
                 env=env,
             )
-            if "Microsoft.NETCore.App 9." in result.stdout:
-                logger.info(f"Found .NET 9 using {dotnet_exe}")
+            if "Microsoft.NETCore.App 10." in result.stdout:
+                logger.info(f"Found .NET 10 using {dotnet_exe}")
                 return dotnet_exe
 
         except Exception as e:
@@ -69,19 +69,19 @@ def get_dotnet_path() -> str | None:
     return None
 
 
-def install_dotnet_9() -> bool:
-    """Install .NET 9 runtime using official installer script."""
+def install_dotnet_10() -> bool:
+    """Install .NET 10 runtime using official installer script."""
     try:
-        return _install_dotnet_9_linux()
+        return _install_dotnet_10_linux()
     except Exception as e:
-        logger.error(f"Error installing .NET 9: {e}")
+        logger.error(f"Error installing .NET 10: {e}")
         return False
 
 
-def _install_dotnet_9_linux() -> bool:
-    """Install .NET 9 runtime on Linux using official installer script."""
+def _install_dotnet_10_linux() -> bool:
+    """Install .NET 10 runtime on Linux using official installer script."""
     try:
-        logger.info("Installing .NET 9 runtime via official installer script...")
+        logger.info("Installing .NET 10 runtime via official installer script...")
 
         # Set DOTNET_ROOT to ensure the install script uses and exposes the correct location
         env = os.environ.copy()
@@ -96,7 +96,7 @@ def _install_dotnet_9_linux() -> bool:
         os.makedirs(dotnet_root, exist_ok=True)
 
         # Download the script first
-        logger.info("Downloading .NET 9 installer script...")
+        logger.info("Downloading .NET 10 installer script...")
         download_cmd = None
         if shutil.which("curl"):
             download_cmd = [
@@ -127,15 +127,15 @@ def _install_dotnet_9_linux() -> bool:
             env=env,
         )
         if download_result.returncode != 0:
-            logger.error(f"Failed to download .NET 9 installer script: {download_result.stderr}")
+            logger.error(f"Failed to download .NET 10 installer script: {download_result.stderr}")
             return False
 
         # Make it executable and run it
         os.chmod(install_script_path, 0o755)
 
-        logger.info("Running .NET 9 installer script...")
+        logger.info("Running .NET 10 installer script...")
         install_result = subprocess.run(
-            [install_script_path, "--channel", "9.0", "--runtime", "dotnet"],
+            [install_script_path, "--channel", "10.0", "--runtime", "dotnet"],
             capture_output=True,
             text=True,
             timeout=300,
@@ -149,28 +149,28 @@ def _install_dotnet_9_linux() -> bool:
             logger.debug(f"Could not remove temporary installer script: {e}")
 
         if install_result.returncode == 0:
-            logger.info(".NET 9 runtime installed successfully")
+            logger.info(".NET 10 runtime installed successfully")
             logger.debug(f"Install stdout: {install_result.stdout}")
             return True
-        logger.error(f"Failed to install .NET 9 (exit code {install_result.returncode})")
+        logger.error(f"Failed to install .NET 10 (exit code {install_result.returncode})")
         logger.error(f"stdout: {install_result.stdout}")
         logger.error(f"stderr: {install_result.stderr}")
         return False
     except subprocess.TimeoutExpired:
-        logger.error("Timeout while installing .NET 9")
+        logger.error("Timeout while installing .NET 10")
         return False
     except Exception as e:
-        logger.error(f"Exception during .NET 9 installation: {e}")
+        logger.error(f"Exception during .NET 10 installation: {e}")
         return False
 
 
 def ensure_dotnet_availability() -> bool:
-    """Ensure .NET 9 runtime is available, install if missing."""
+    """Ensure .NET 10 runtime is available, install if missing."""
     if get_dotnet_path():
         return True
 
-    logger.warning(".NET 9 not found, attempting automatic installation...")
-    success = install_dotnet_9()
+    logger.warning(".NET 10 not found, attempting automatic installation...")
+    success = install_dotnet_10()
 
     if success:
         dotnet_exec = get_dotnet_path()
@@ -181,12 +181,12 @@ def ensure_dotnet_availability() -> bool:
                 current_path = os.environ.get("PATH", "")
                 if dotnet_root not in current_path.split(os.pathsep):
                     os.environ["PATH"] = dotnet_root + os.pathsep + current_path
-                logger.debug(".NET 9 is now available and DOTNET_ROOT/PATH set for this process")
+                logger.debug(".NET 10 is now available and DOTNET_ROOT/PATH set for this process")
             except Exception:
                 logger.debug("Failed to set DOTNET_ROOT/PATH in current process environment")
             return True
-        logger.warning(".NET 9 installation completed but still not detected")
-    logger.error("Failed to ensure .NET 9 availability")
+        logger.warning(".NET 10 installation completed but still not detected")
+    logger.error("Failed to ensure .NET 10 availability")
     return False
 
 """

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class SteamlessIntegration(QObject):
     """
     Integration module for Steamless CLI to remove Steam DRM from games.
-    Uses .NET 9 runtime directly (no Wine/Proton needed).
+    Uses .NET 10 runtime directly (no Wine/Proton needed).
     """
 
     progress = pyqtSignal(str)
@@ -282,7 +282,7 @@ class SteamlessIntegration(QObject):
         try:
             if not self.dotnet_available:
                 self.error.emit(
-                    ".NET 9 runtime is not available. Please install .NET 9 runtime."
+                    ".NET 10 runtime is not available. Please install .NET 10 runtime."
                 )
                 return False
 
@@ -561,21 +561,29 @@ class SteamlessTask(QThread):
             return False
 
         # Check and ensure dotnet availability (will attempt auto-install if missing)
-        self.progress.emit("Checking .NET 9 runtime availability...")
+        self.progress.emit("Checking .NET 10 runtime availability...")
         self.dotnet_available = ensure_dotnet_availability()
-
+        
         if not self.dotnet_available:
-            error_msg = (
-                ".NET 9 runtime installation failed or was not completed. "
-                "Steamless requires .NET 9 to run.\n\n"
-                "Please install .NET 9 runtime manually from:\n"
-                "https://dotnet.microsoft.com/download/dotnet/9.0"
+            msg = (
+                "Automatic .NET 10 installation failed.\n\n"
+                "Steamless requires the .NET 10 Runtime to function.\n"
+                "Please install it manually from:\n"
+                "https://dotnet.microsoft.com/download/dotnet/10.0\n\n"
+                "Restart this application after installing."
             )
-            self.progress.emit(error_msg)
-            self.error.emit((Exception, error_msg, ""))
+            self.progress.emit("ERROR: .NET 10 runtime not available.")
+            logger.error(".NET 10 runtime was not found and could not be installed.")
+            
+            # Emit error but let the task fail gracefully
+            self.error.emit(
+                "Runtime Error",
+                msg,
+                "The required .NET 10 runtime could not be located or installed automatically."
+            )
             return False
 
-        self.progress.emit(".NET 9 runtime is available")
+        self.progress.emit(".NET 10 runtime is available")
 
         self.progress.emit("Steamless integration initialized successfully")
         logger.info(f"Steamless initialized at: {self.steamless_path}")
@@ -776,7 +784,7 @@ class SteamlessTask(QThread):
         self.process = None
 
     def is_dotnet_available(self):
-        """Check if .NET 9 is available for Steamless execution"""
+        """Check if .NET 10 is available for Steamless execution"""
         return self.dotnet_available
 
     def get_steamless_path(self):
