@@ -214,10 +214,13 @@ class CustomGifItem(QWidget):
 
         # Create and show the view dialog
         view_dialog = QDialog(self)
+        view_dialog.setWindowFlags(view_dialog.windowFlags() | Qt.WindowType.FramelessWindowHint)
         view_dialog.setWindowTitle(f"Viewing: {os.path.basename(file_to_show)}")
         view_dialog.setMinimumSize(400, 400)
 
-        layout = QVBoxLayout(view_dialog)
+        CustomTitleBar.setup_dialog_layout(view_dialog, title=view_dialog.windowTitle())
+
+        layout = QVBoxLayout(view_dialog._tb_content_widget)
 
         # Create label to display the image
         image_label = QLabel()

@@ -1,7 +1,7 @@
 import logging
 
 from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtGui import QColor, QIcon, QMovie, QPainter, QPixmap
+from PyQt6.QtGui import QColor, QIcon, QMovie, QPainter, QPixmap, QShortcut, QKeySequence
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget, QSizePolicy, QVBoxLayout
 
@@ -120,10 +120,14 @@ class CustomTitleBar(QFrame):
 
         self._update_sizing()
         
-        # Avoid calling overridden methods from __init__ (subclass buttons may not exist yet).
         self._apply_style()
         CustomTitleBar._update_button_colors(self)
         self._update_button_styles()
+
+        # Add scoped Ctrl+Q shortcut to close the window
+        self.exit_shortcut = QShortcut(QKeySequence("Ctrl+Q"), self.parent)
+        self.exit_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+        self.exit_shortcut.activated.connect(self.parent.close)
 
     def _setup_main_window_widgets(self, parent):
         self.navi_label = QLabel()

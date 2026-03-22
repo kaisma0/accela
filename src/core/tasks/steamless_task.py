@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from PyQt6.QtCore import QMutex, QObject, QThread, pyqtSignal
 
-from utils.helpers import ensure_dotnet_availability, get_dotnet_path
+from utils.helpers import get_dotnet_path
 from utils.paths import Paths
 
 logger = logging.getLogger(__name__)
@@ -560,20 +560,20 @@ class SteamlessTask(QThread):
             self.error.emit((Exception, error_msg, ""))
             return False
 
-        # Check and ensure dotnet availability (will attempt auto-install if missing)
+        # Check dotnet availability
         self.progress.emit("Checking .NET 10 runtime availability...")
-        self.dotnet_available = ensure_dotnet_availability()
+        self.dotnet_path = get_dotnet_path()
+        self.dotnet_available = self.dotnet_path is not None
         
         if not self.dotnet_available:
             msg = (
-                "Automatic .NET 10 installation failed.\n\n"
                 "Steamless requires the .NET 10 Runtime to function.\n"
-                "Please install it manually from:\n"
+                "Please run scripts/fix-deps.sh to install it automatically, or install it manually from:\n"
                 "https://dotnet.microsoft.com/download/dotnet/10.0\n\n"
                 "Restart this application after installing."
             )
             self.progress.emit("ERROR: .NET 10 runtime not available.")
-            logger.error(".NET 10 runtime was not found and could not be installed.")
+            logger.error(".NET 10 runtime was not found.")
             
             # Emit error but let the task fail gracefully
             self.error.emit(

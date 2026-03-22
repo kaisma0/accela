@@ -240,19 +240,19 @@ install_dependencies() {
     # ACCELA dependencies
     case "$FAMILY" in
         fedora)
-            ACCELA_PACKAGES="python3 xcb-util-cursor libnotify git"
+            ACCELA_PACKAGES="python3 xcb-util-cursor libnotify git curl wget"
             install_packages "$ACCELA_PACKAGES" "$FAMILY"
             ;;
         debian)
-            ACCELA_PACKAGES="python3 python3-venv libxcb-cursor0 libnotify-bin git"
+            ACCELA_PACKAGES="python3 python3-venv libxcb-cursor0 libnotify-bin git curl wget"
             install_packages "$ACCELA_PACKAGES" "$FAMILY"
             ;;
         arch)
-            ACCELA_PACKAGES="python xcb-util-cursor libnotify git"
+            ACCELA_PACKAGES="python xcb-util-cursor libnotify git curl wget"
             install_packages "$ACCELA_PACKAGES" "$FAMILY"
             ;;
         void)
-            ACCELA_PACKAGES="python3 xcb-util-cursor libnotify git"
+            ACCELA_PACKAGES="python3 xcb-util-cursor libnotify git curl wget"
             install_packages "$ACCELA_PACKAGES" "$FAMILY"
             ;;
     esac
@@ -279,6 +279,30 @@ install_dependencies() {
             install_packages "$SLS_PACKAGES" "$FAMILY"
             ;;
     esac
+
+    echo ""
+    echo "Ensuring latest .NET 10 runtime is installed..."
+
+    # Ensure .NET 10 is installed and up-to-date in ~/.dotnet
+    DOTNET_ROOT="$HOME/.dotnet"
+    mkdir -p "$DOTNET_ROOT"
+    
+    echo "Downloading .NET installer script..."
+    if command -v curl >/dev/null 2>&1; then
+        curl -sSL -o "$DOTNET_ROOT/dotnet-install.sh" "https://dot.net/v1/dotnet-install.sh"
+    else
+        wget -q -O "$DOTNET_ROOT/dotnet-install.sh" "https://dot.net/v1/dotnet-install.sh"
+    fi
+    
+    if [ -f "$DOTNET_ROOT/dotnet-install.sh" ]; then
+        chmod +x "$DOTNET_ROOT/dotnet-install.sh"
+        echo "Checking/Updating .NET 10 runtime..."
+        DOTNET_ROOT="$DOTNET_ROOT" "$DOTNET_ROOT/dotnet-install.sh" --channel 10.0 --runtime dotnet || echo -e "  ${RED}Failed to install/update .NET 10${NC}"
+        rm -f "$DOTNET_ROOT/dotnet-install.sh"
+        echo -e "  ${GREEN}✓${NC} .NET 10 runtime is up to date"
+    else
+        echo -e "  ${RED}Failed to download .NET installer${NC}"
+    fi
 
     echo ""
     echo -e "${GREEN}Dependencies installation completed!${NC}"

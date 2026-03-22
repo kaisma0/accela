@@ -1,0 +1,49 @@
+name: Build and Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Determine Version
+        id: vars
+        run: |
+          if [ -f "src/res/version" ]; then
+            VERSION=$(cat src/res/version | tr -d '[:space:]')
+          else
+            VERSION=$(date +%Y%m%d%H%M%S)
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Build AppImage
+        run: |
+          chmod +x build_appimage.sh
+          ./build_appimage.sh
+
+      - name: Generate Release Notes
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            git log ${PREV_TAG}..HEAD --pretty=format:"- %s ([%h](https://github.com/${{ github.repository }}/commit/%H))" > release_notes.md
+          else
+            git log --pretty=format:"- %s ([%h](https://github.com/${{ github.repository }}/commit/%H))" > release_notes.md
+          fi
+
+      - name: Create Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.vars.outputs.version }}"
+          gh release create "${VERSION}" \
+            --title "v${VERSION}" \
+            --notes-file release_notes.md \
+            build/dist/*.AppImage

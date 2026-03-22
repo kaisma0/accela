@@ -43,7 +43,7 @@ prepare_appimagetool() {
         require_cmd curl
         curl -fL --retry 3 --retry-delay 2 \
             -o "$APPIMAGETOOL_BIN" \
-            "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${ARCH}.AppImage"
+            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${ARCH}.AppImage"
         chmod +x "$APPIMAGETOOL_BIN"
         "$APPIMAGETOOL_BIN" --version >/dev/null 2>&1 || {
             error "Downloaded appimagetool is not executable or invalid: $APPIMAGETOOL_BIN"
@@ -79,9 +79,19 @@ build_python_env() {
 
     # shellcheck disable=SC1091
     source "$APPDIR/bin/.venv/bin/activate"
-    python -m pip install --upgrade pip wheel setuptools
-    python -m pip install -r "$SCRIPT_DIR/requirements.txt"
+    python -m pip install --no-cache-dir --upgrade pip wheel setuptools
+    python -m pip install --no-cache-dir -r "$SCRIPT_DIR/requirements.txt"
+    
+    log "Optimizing bundled python environment"
+    python -m pip uninstall -y pip setuptools wheel
     deactivate
+
+    log "Cleaning up python bytecodes and cache directories"
+    find "$APPDIR/bin/.venv" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+    find "$APPDIR/bin/.venv" -name "*.pyc" -delete 2>/dev/null || true
+
+    log "Stripping debug symbols from shared libraries"
+    find "$APPDIR/bin/.venv" -name "*.so" -exec strip --strip-unneeded {} + 2>/dev/null || true
 }
 
 build_appdir() {
