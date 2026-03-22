@@ -64,6 +64,7 @@ class MainWindow(QMainWindow):
         self.ui_state.apply_style_settings()
         self._setup_audio()
         self._setup_key_sequence_detector()
+<<<<<<< HEAD
         self._setup_exit_shortcut()
     def check_for_startup_update(self, current_version: str) -> None:
         if self._update_prompt_shown:
@@ -84,6 +85,8 @@ class MainWindow(QMainWindow):
         dialog = UpdateDialog(update_info, parent=self)
         dialog.exec()
 
+=======
+>>>>>>> 67dae35 (fix: resolve various bugs and optimize build process)
         QTimer.singleShot(1500, self._run_morrenus_api_key_startup_check)
 
     def _run_morrenus_api_key_startup_check(self):
@@ -114,8 +117,36 @@ class MainWindow(QMainWindow):
         thread.start()
 
     def _validate_morrenus_key_worker(self, api_key):
-        is_valid, error = morrenus_api.validate_api_key(api_key)
-        self._morrenus_key_validation_done.emit(is_valid, error or "")
+        import time
+        max_retries = 15
+        for attempt in range(max_retries):
+            is_valid, error = morrenus_api.validate_api_key(api_key)
+            
+            if is_valid:
+                self._morrenus_key_validation_done.emit(True, "")
+                return
+
+            error_str = str(error or "")
+            is_auth_error = (
+                "Invalid or missing API key" in error_str or
+                "Access denied" in error_str or
+                "API Error (401" in error_str or
+                "API Error (403" in error_str
+            )
+
+            if is_auth_error:
+                # Explicit authentication rejection, do not retry
+                self._morrenus_key_validation_done.emit(False, error_str)
+                return
+
+            if attempt < max_retries - 1:
+                logger.warning(
+                    f"Startup API key validation network error (Attempt {attempt + 1}/{max_retries}). "
+                    f"Retrying in 5s... Reason: {error_str}"
+                )
+                time.sleep(5)
+            else:
+                self._morrenus_key_validation_done.emit(False, error_str)
 
     def _on_morrenus_key_validation_done(self, is_valid, error):
         current_api_key = self.settings.value("morrenus_api_key", "", type=str).strip()
@@ -127,9 +158,26 @@ class MainWindow(QMainWindow):
             logger.info("Morrenus API key is valid at startup.")
             return
 
+        # Only trigger automatic refresh if it's a confirmed authentication error (e.g. 401, 403)
+        # We don't want to wipe the key or interrupt the user for network, server, or rate-limit errors
+        error_str = str(error or "")
+        is_auth_error = (
+            "Invalid or missing API key" in error_str or
+            "Access denied" in error_str or
+            "API Error (401" in error_str or
+            "API Error (403" in error_str
+        )
+
+        if not is_auth_error:
+            logger.warning(
+                "Morrenus API key validation failed, but skipping auto-refresh as it may be a network or server error. "
+                f"Reason: {error_str}"
+            )
+            return
+
         logger.warning(
             "Morrenus API key is invalid at startup. Starting automatic refresh flow. "
-            f"Reason: {error or 'Unknown error'}"
+            f"Reason: {error_str}"
         )
 
         try:
@@ -166,12 +214,6 @@ class MainWindow(QMainWindow):
             self.setWindowIcon(QIcon(str(icon_path)))
         else:
             logger.warning(f"Could not find window icon at: {str(icon_path)}")
-
-    def _setup_exit_shortcut(self):
-        """Setup Ctrl+Q shortcut to exit the application"""
-        self.exit_shortcut = QShortcut(QKeySequence("Ctrl+Q"), self)
-        self.exit_shortcut.activated.connect(self.close)
-        logger.info("Ctrl+Q exit shortcut registered")
 
     def _setup_key_sequence_detector(self):
         """Setup key sequence detection for L->A->I->N"""

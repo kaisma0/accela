@@ -631,11 +631,14 @@ class GameLibraryDialog(QDialog):
     def _show_game_details_dialog(self, game_data):
         """Show game details in a custom dialog with tabbed interface"""
         dialog = QDialog(self)
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.FramelessWindowHint)
         dialog.setWindowTitle("Game Details")
         dialog.setMinimumWidth(500)
         dialog.setModal(True)
 
-        main_layout = QVBoxLayout(dialog)
+        CustomTitleBar.setup_dialog_layout(dialog, title=dialog.windowTitle())
+
+        main_layout = QVBoxLayout(dialog._tb_content_widget)
 
         # Get background color from settings
         bg_color = self.settings.value("background_color", "#1E1E1E")
