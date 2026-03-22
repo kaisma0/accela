@@ -8,6 +8,7 @@ PyQt6
 PyQt6-WebEngine
 PyYAML
 requests
+ruamel.yaml
 steam[client] @ git+https://github.com/solsticegamestudios/steam
 urwid
 vdf

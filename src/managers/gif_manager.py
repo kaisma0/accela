@@ -11,6 +11,7 @@ import json
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QProgressBar, QLabel, QPushButton, QApplication
 from PyQt6.QtCore import Qt, QTimer
 
+from ui.custom_titlebar import CustomTitleBar
 from utils.helpers import get_base_path
 from utils.paths import Paths
 
@@ -27,12 +28,14 @@ class ProgressDialog(QDialog):
         self.setMinimumWidth(400)
 
         # Set window flags to make it a standalone dialog
-        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowTitleHint | Qt.WindowType.CustomizeWindowHint)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
 
         # Make sure it stays on top during processing
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
 
-        layout = QVBoxLayout()
+        CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
+
+        layout = QVBoxLayout(self._tb_content_widget)
 
         self.label = QLabel("Preparing to process GIFs...")
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -48,8 +51,6 @@ class ProgressDialog(QDialog):
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.clicked.connect(self.reject)
         layout.addWidget(self.cancel_button)
-
-        self.setLayout(layout)
 
     def update_progress(self, current, total, status=""):
         """Update progress bar and labels"""
