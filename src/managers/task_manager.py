@@ -405,31 +405,47 @@ class TaskManager:
         lowered = text.lower()
         now = time.monotonic()
 
-        if text.startswith("ERROR:") or " failed" in lowered or "error" in lowered:
-            logger.error(f"{text}")
-            self._last_download_log_time = now
-            self._last_download_log_line = text
-            return
+        is_error_prefix = text.startswith("ERROR:") or text.startswith("Error:")
+        is_warning_prefix = text.startswith("Warning:") or text.startswith("WARNING:")
 
-        if text.startswith("Warning:") or "warning" in lowered:
-            logger.warning(f"{text}")
-            self._last_download_log_time = now
-            self._last_download_log_line = text
-            return
+        # Process important info markers first as long as it's not explicitly prefixed as an error
+        if not (is_error_prefix or is_warning_prefix):
+            important_markers = (
+                "starting download for depot",
+                "starting verification for depot",
+                "verification pass",
+                "verification passed",
+                "cleaning up temporary files",
+                "removed temp",
+                "skipped",
+                "download destination set to",
+                "checking .net 10 runtime",
+            )
+            if any(marker in lowered for marker in important_markers):
+                logger.info(f"{text}")
+                self._last_download_log_time = now
+                self._last_download_log_line = text
+                # Reset progress bucket so a new download/verification phase
+                self._last_download_log_bucket = -1
+                return
 
-        important_markers = (
-            "starting download for depot",
-            "cleaning up temporary files",
-            "removed temp",
-            "skipped",
-            "download destination set to",
-            "checking .net 10 runtime",
-        )
-        if any(marker in lowered for marker in important_markers):
-            logger.info(f"{text}")
-            self._last_download_log_time = now
-            self._last_download_log_line = text
-            return
+        # Check for actual errors, avoiding false positives from files with "error" in their name
+        if is_error_prefix or " failed" in lowered or re.search(r'\berror\b', lowered):
+            # Exclude lines that are clearly just progress indicators reporting a file path
+            if not re.match(r'^\d{1,3}(?:\.\d{1,2})?% .+', text):
+                logger.error(f"{text}")
+                self._last_download_log_time = now
+                self._last_download_log_line = text
+                return
+
+        # Check for actual warnings, avoiding false positives from files with "warning" in their name
+        if is_warning_prefix or re.search(r'\bwarning\b', lowered):
+            # Exclude lines that are clearly just progress indicators reporting a file path
+            if not re.match(r'^\d{1,3}(?:\.\d{1,2})?% .+', text):
+                logger.warning(f"{text}")
+                self._last_download_log_time = now
+                self._last_download_log_line = text
+                return
 
         percent_match = re.search(r"(\d{1,3}(?:\.\d{1,2})?)%", text)
         if percent_match:

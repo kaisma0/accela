@@ -31,6 +31,7 @@ class StreamReader(QObject):
         self.stream = stream
         self._is_running = True
         self.task_instance = task_instance
+        self.collected_lines = []
 
     def run(self):
         try:
@@ -39,6 +40,7 @@ class StreamReader(QObject):
                     break
                 if not self.task_instance._is_running:
                     break
+                self.collected_lines.append(line)
                 self.new_line.emit(line)
         except ValueError:
             logger.debug(
@@ -63,6 +65,8 @@ class DownloadDepotsTask(QObject):
     completed = pyqtSignal()
     error = pyqtSignal(tuple)  # Emits (error_type, error_value, traceback)
 
+    MAX_VERIFICATION_PASSES = 5
+
     def __init__(self):
         super().__init__()
         self._is_running = True
@@ -76,6 +80,11 @@ class DownloadDepotsTask(QObject):
         self.current_depot_size = 0
         self._current_depot_started_at = None
         self._current_depot_id = None
+
+        # Regex for parsing "Total downloaded:" from collected output lines
+        self._total_downloaded_regex = re.compile(
+            r"Total downloaded:\s+(\d+)\s+bytes"
+        )
 
         # Run metrics for end-of-job summary logging
         self._run_started_at = None
@@ -111,14 +120,12 @@ class DownloadDepotsTask(QObject):
         )
 
     def run(self, game_data, selected_depots, dest_path):
-        global command
         appid = game_data.get("appid", "unknown")
         game_name = game_data.get("game_name", "unknown")
         self._reset_run_metrics()
         logger.info(
             f"Starting depot download task for app {appid} ({game_name}) with {len(selected_depots)} selected depots."
         )
-
 
 
         commands, skipped_depots, depot_sizes, dotnet_env = self._prepare_downloads(
@@ -159,84 +166,12 @@ class DownloadDepotsTask(QObject):
             logger.warning(f"Failed to check disk space for {dest_path}: {e}")
 
         try:
-            for i, command in enumerate(commands):
-                if not self._is_running:
-                    logger.info("Download task stopping before next depot.")
-                    break
-
-                depot_id = command[5]
-                self._current_depot_id = str(depot_id)
-                self._current_depot_started_at = time.monotonic()
-                self.current_depot_size = depot_sizes[i]
-                self.progress.emit(
-                    f"--- Starting download for depot {depot_id} ({i + 1}/{total_depots}) [Size: {self.current_depot_size} bytes] ---"
-                )
-                logger.info(
-                    f"Launching DepotDownloader for depot {depot_id} ({i + 1}/{total_depots}) with manifest {command[7]}."
-                )
-                self.last_percentage = -1
-                self._attempted_depots += 1
-
-                self.process = subprocess.Popen(
-                    command,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    encoding="utf-8",
-                    env=dotnet_env,
-                )
-
-                self.process_pid = self.process.pid
-
-                reader_thread = QThread()
-                stream_reader = StreamReader(self.process.stdout, self)
-                stream_reader.moveToThread(reader_thread)
-
-                stream_reader.new_line.connect(self._handle_downloader_output)
-                reader_thread.started.connect(stream_reader.run)
-
-                reader_thread.start()
-                self.process.wait()
-
-                stream_reader.stop()
-                reader_thread.quit()
-                reader_thread.wait()
-
-                # Properly clean up thread and reader objects
-                stream_reader.deleteLater()
-                reader_thread.deleteLater()
-
-                if not self._is_running:
-                    logger.info("Download task stopping because stop() was called.")
-                    self._log_run_summary(appid, "cancelled")
-                    self.completed.emit()
-                    return
-
-                return_code = self.process.returncode
-                self.process = None
-                self.process_pid = None
-
-                if return_code != 0:
-                    self.progress.emit(
-                        f"Warning: DepotDownloader exited with code {return_code} for depot {depot_id}."
-                    )
-                    self._failed_depots += 1
-                    self._warning_count += 1
-                    logger.warning(
-                        f"DepotDownloader exited with code {return_code} for depot {depot_id}."
-                    )
-                else:
-                    self.completed_so_far_for_this_job += self.current_depot_size
-                    self._completed_depots += 1
-                    elapsed = 0.0
-                    if self._current_depot_started_at is not None:
-                        elapsed = time.monotonic() - self._current_depot_started_at
-                    logger.info(
-                        f"Depot {depot_id} completed successfully in {elapsed:.1f}s."
-                    )
-
-                self._current_depot_started_at = None
-                self._current_depot_id = None
+            # --- Initial download pass ---
+            cancelled, _ = self._run_depot_commands(
+                commands, depot_sizes, total_depots, dotnet_env, appid, is_verification=False
+            )
+            if cancelled:
+                return
 
             if skipped_depots:
                 self.progress.emit(
@@ -246,6 +181,59 @@ class DownloadDepotsTask(QObject):
                 self._warning_count += len(skipped_depots)
                 logger.warning(
                     f"Skipped {len(skipped_depots)} depots due to missing manifest IDs: {', '.join(skipped_depots)}"
+                )
+
+            # --- Post-download verification loop ---
+            for verification_pass in range(1, self.MAX_VERIFICATION_PASSES + 1):
+                if not self._is_running:
+                    logger.info("Download task stopped before verification.")
+                    self._log_run_summary(appid, "cancelled")
+                    self.completed.emit()
+                    return
+
+                self.progress.emit(
+                    f"--- Verification pass {verification_pass}/{self.MAX_VERIFICATION_PASSES}: re-running download to verify files ---"
+                )
+                logger.info(
+                    f"Starting verification pass {verification_pass} for app {appid}."
+                )
+
+                self.completed_so_far_for_this_job = 0
+                self.last_percentage = -1
+                self.progress_percentage.emit(0)
+
+                cancelled, verification_bytes = self._run_depot_commands(
+                    commands, depot_sizes, total_depots, dotnet_env, appid, is_verification=True
+                )
+                if cancelled:
+                    return
+
+                if verification_bytes == 0:
+                    self.progress.emit(
+                        f"--- Verification passed: all files verified successfully (pass {verification_pass}) ---"
+                    )
+                    logger.info(
+                        f"Verification passed for app {appid} on pass {verification_pass} "
+                        f"(0 bytes downloaded, all files intact)."
+                    )
+                    break
+                else:
+                    self.progress.emit(
+                        f"--- Verification pass {verification_pass}: {verification_bytes} bytes were re-downloaded (files were repaired) ---"
+                    )
+                    logger.warning(
+                        f"Verification pass {verification_pass} for app {appid}: "
+                        f"{verification_bytes} bytes re-downloaded. Will verify again."
+                    )
+            else:
+                # Exhausted all verification passes without a clean run
+                self.progress.emit(
+                    f"--- Warning: verification did not fully pass after {self.MAX_VERIFICATION_PASSES} attempts ---"
+                )
+                self._warning_count += 1
+                logger.warning(
+                    f"Verification for app {appid} did not produce a clean pass after "
+                    f"{self.MAX_VERIFICATION_PASSES} attempts."
                 )
 
             if not self._is_running:
@@ -280,11 +268,9 @@ class DownloadDepotsTask(QObject):
             self._log_run_summary(appid, "completed")
 
         except FileNotFoundError:
-            exe_name = "dotnet"
-            if "command" in locals() and command:
-                exe_name = command[0]
+            exe_name = "DepotDownloader"
             self.progress.emit(
-                f"ERROR: '{exe_name}' not found. Make sure .NET 10 runtime is installed."
+                f"ERROR: '{exe_name}' not found. Make sure the DepotDownloader binary is installed."
             )
             logger.critical(f"'{exe_name}' not found.")
             self._log_run_summary(appid, "failed")
@@ -299,11 +285,114 @@ class DownloadDepotsTask(QObject):
             self.error.emit((type(e), str(e), None))
             raise
 
+    def _run_depot_commands(self, commands, depot_sizes, total_depots, dotnet_env, appid, is_verification=False):
+        """Run a set of DepotDownloader commands.
+
+        Returns:
+            tuple: (cancelled: bool, bytes_downloaded: int)
+                - cancelled is True if the task was stopped
+                - bytes_downloaded is the total compressed bytes downloaded
+                  across all depots (parsed from DepotDownloader output)
+        """
+        label = "verification" if is_verification else "download"
+        total_bytes_downloaded = 0
+
+        for i, command in enumerate(commands):
+            if not self._is_running:
+                logger.info(f"Download task stopping before next depot ({label}).")
+                self._log_run_summary(appid, "cancelled")
+                self.completed.emit()
+                return True, total_bytes_downloaded
+
+            depot_id = command[5]
+            self._current_depot_id = str(depot_id)
+            self._current_depot_started_at = time.monotonic()
+            self.current_depot_size = depot_sizes[i]
+            self.progress.emit(
+                f"--- Starting {label} for depot {depot_id} ({i + 1}/{total_depots}) [Size: {self.current_depot_size} bytes] ---"
+            )
+            logger.info(
+                f"Launching DepotDownloader ({label}) for depot {depot_id} ({i + 1}/{total_depots}) with manifest {command[7]}."
+            )
+            self.last_percentage = -1
+            self._attempted_depots += 1
+
+            self.process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                env=dotnet_env,
+            )
+
+            self.process_pid = self.process.pid
+
+            reader_thread = QThread()
+            stream_reader = StreamReader(self.process.stdout, self)
+            stream_reader.moveToThread(reader_thread)
+
+            stream_reader.new_line.connect(self._handle_downloader_output)
+            reader_thread.started.connect(stream_reader.run)
+
+            reader_thread.start()
+            self.process.wait()
+
+            stream_reader.stop()
+            reader_thread.quit()
+            reader_thread.wait()
+
+            # Parse "Total downloaded:" from collected lines synchronously
+            # on the worker thread — no cross-thread timing dependency.
+            for collected_line in stream_reader.collected_lines:
+                dl_match = self._total_downloaded_regex.search(collected_line)
+                if dl_match:
+                    total_bytes_downloaded += int(dl_match.group(1))
+
+            # Properly clean up thread and reader objects
+            stream_reader.deleteLater()
+            reader_thread.deleteLater()
+
+            if not self._is_running:
+                logger.info(f"Download task stopping because stop() was called ({label}).")
+                self._log_run_summary(appid, "cancelled")
+                self.completed.emit()
+                return True, total_bytes_downloaded
+
+            return_code = self.process.returncode
+            self.process = None
+            self.process_pid = None
+
+            if return_code != 0:
+                self.progress.emit(
+                    f"Warning: DepotDownloader exited with code {return_code} for depot {depot_id}."
+                )
+                self._failed_depots += 1
+                self._warning_count += 1
+                logger.warning(
+                    f"DepotDownloader exited with code {return_code} for depot {depot_id}."
+                )
+            else:
+                self.completed_so_far_for_this_job += self.current_depot_size
+                self._completed_depots += 1
+                elapsed = 0.0
+                if self._current_depot_started_at is not None:
+                    elapsed = time.monotonic() - self._current_depot_started_at
+                logger.info(
+                    f"Depot {depot_id} ({label}) completed successfully in {elapsed:.1f}s."
+                )
+
+            self._current_depot_started_at = None
+            self._current_depot_id = None
+
+        return False, total_bytes_downloaded
+
     def _handle_downloader_output(self, line):
         if not self._is_running:
             return
         line = line.strip()
         self.progress.emit(line)
+
         match = self.percentage_regex.search(line)
         if match:
             percentage = float(match.group(1))
@@ -491,42 +580,3 @@ class DownloadDepotsTask(QObject):
         except Exception as e:
             logger.error(f"An error occurred while trying to {status} process: {e}")
             raise
-
-    # NOTE: PlayNotOwnedGames setting is now handled by AdditionalApps
-    # No longer needed - games are added to AdditionalApps list instead
-    # def _ensure_play_not_owned_games_enabled(self):
-    #     """Ensure PlayNotOwnedGames is enabled in SLSsteam config.yaml"""
-    #     try:
-    #         # Check if SLSsteam mode is enabled in settings
-    #         settings = get_settings()
-    #         slssteam_mode = settings.value("slssteam_mode", False, type=bool)
-    #
-    #         if not slssteam_mode:
-    #             logger.debug("SLSsteam mode is disabled in settings, skipping PlayNotOwnedGames check")
-    #             return
-    #
-    #         # Use XDG_CONFIG_HOME if set, otherwise default to ~/.config
-    #         xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
-    #         if xdg_config_home:
-    #             config_path = Path(xdg_config_home) / "SLSsteam" / "config.yaml"
-    #         else:
-    #             config_path = Path.home() / ".config" / "SLSsteam" / "config.yaml"
-    #
-    #         if not config_path.exists():
-    #             logger.info(f"SLSsteam config.yaml not found at {config_path}, skipping PlayNotOwnedGames check")
-    #             return
-    #
-    #         logger.info(f"Checking SLSsteam config at {config_path}")
-    #
-    #         # Use regex-based update to preserve formatting
-    #         updated = update_yaml_boolean_value(config_path, "PlayNotOwnedGames", True)
-    #
-    #         if updated:
-    #             logger.info("Successfully enabled PlayNotOwnedGames in SLSsteam config")
-    #             self.progress.emit("PlayNotOwnedGames setting enabled in SLSsteam config")
-    #         else:
-    #             logger.info("PlayNotOwnedGames is already enabled")
-    #
-    #     except Exception as e:
-    #         logger.warning(f"Failed to enable PlayNotOwnedGames setting: {e}")
-    #         # Don't emit error - this is not critical for the download
