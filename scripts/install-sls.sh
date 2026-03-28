@@ -489,17 +489,12 @@ set -eu
             }
 
     editconfig(){
-        whereSLSsteamconfig
-            if grep -q -F "PlayNotOwnedGames: no" "config.yaml"; then
-                sed -i "s/^PlayNotOwnedGames:.*/PlayNotOwnedGames: yes/" config.yaml
-                sed -i "s/^SafeMode:.*/SafeMode: yes/" config.yaml
-                echo "PlayNotOwnedGames: Enabled"
-                echo "SafeMode: Enabled"
-            else
-                echo "PlayNotOwnedGames: Enabled"
-                echo "SafeMode: Enabled"
-                fi
-            }
+    whereSLSsteamconfig
+        if grep -q -F "SafeMode: no" "config.yaml"; then
+            sed -i "s/^SafeMode:.*/SafeMode: yes/" config.yaml
+        fi
+        echo "SafeMode: Enabled"
+        }
 
     createsteamcfg(){
     wheresteamcfg
