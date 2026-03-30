@@ -3,9 +3,8 @@ import logging
 import threading
 from collections import deque
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QShortcut, QKeySequence
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QIcon
 from PyQt6.QtWidgets import (
-    QApplication,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -38,7 +37,7 @@ from utils.logger import qt_log_handler
 from utils.settings import get_settings
 from utils.paths import Paths
 
-from core.appimage_updater import UpdateInfo, UpdaterError, UpdateCheckWorker, UpdateDialog
+from core.appimage_updater import UpdateInfo, UpdateCheckWorker, UpdateDialog
 
 logger = logging.getLogger(__name__)
 

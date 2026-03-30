@@ -28,7 +28,6 @@ from utils.paths import Paths
 # Import text menus for CLI mode (urwid-based, cross-platform)
 from ui.text_menus import (
     select_depots,
-    select_dlcs,
     select_steam_library,
     select_destination_path,
 )
@@ -838,7 +837,7 @@ class CLITaskManager:
         """Add downloaded AppIDs to SLSsteam config.yaml on Linux"""
         from utils.yaml_config_manager import (
             get_user_config_path,
-            add_additional_app,
+            add_list_item,
             add_dlc_data,
         )
 
@@ -853,7 +852,7 @@ class CLITaskManager:
             main_appid = self.game_data.get("appid")
             game_name = self.game_data.get("game_name", "")
             if main_appid:
-                add_additional_app(config_path, str(main_appid), game_name)
+                add_list_item(config_path, "AdditionalApps", str(main_appid), game_name)
                 self.logger.info(f"Added AppID '{main_appid}' to SLSsteam config")
 
             selected_dlcs: list = self.game_data.get("selected_dlcs", [])  # type: ignore

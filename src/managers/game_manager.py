@@ -10,7 +10,7 @@ from core.steam_helpers import get_steam_libraries, get_library_index, find_stea
 from core.tasks.manifest_check_task import ManifestCheckTask
 from utils.helpers import get_base_path
 from utils.task_runner import TaskRunner
-from utils.yaml_config_manager import get_user_config_path, add_additional_app, remove_additional_app, fix_slssteam_config_indentation, get_app_tokens, add_app_token
+from utils.yaml_config_manager import get_user_config_path, add_list_item, remove_list_item, get_map_items, set_map_item
 
 logger = logging.getLogger(__name__)
 
@@ -338,9 +338,6 @@ class GameManager(QObject):
         self.games = self._get_sorted_games(self.games)
         self._apply_filters()
 
-        # Fix SLSsteam config indentation if needed (before syncing)
-        self._fix_slssteam_config()
-
         # Sync games to SLSsteam config if integration is enabled
         self._sync_games_to_slssteam_config()
 
@@ -393,16 +390,6 @@ class GameManager(QObject):
         except OSError:
             return False
 
-    def _fix_slssteam_config(self):
-        """
-        Fix indentation of AdditionalApps entries in SLSsteam config.yaml.
-        This runs automatically after a scan completes to fix any misformatted
-        entries from older versions of ACCELA.
-        """
-        config_path = get_user_config_path()
-        if config_path.exists():
-            fix_slssteam_config_indentation(config_path)
-
     def _sync_games_to_slssteam_config(self):
         """
         Sync found games to SLSsteam AdditionalApps if integration is enabled.
@@ -425,7 +412,7 @@ class GameManager(QObject):
             appid = game.get("appid")
             game_name = game.get("game_name", "")
             if appid and appid not in ("0", "N/A", "unknown"):
-                if add_additional_app(config_path, appid, game_name):
+                if add_list_item(config_path, "AdditionalApps", appid, game_name):
                     added_count += 1
 
         if added_count > 0:
@@ -454,7 +441,7 @@ class GameManager(QObject):
             return
 
         # Get existing tokens from config
-        existing_tokens = get_app_tokens(config_path)
+        existing_tokens = {str(k): str(v) for k, v in get_map_items(config_path, "AppTokens").items()}
         logger.debug(f"Found {len(existing_tokens)} existing AppTokens in config")
 
         # Pattern to extract app_id from filename: accela_fetch_{app_id}.zip
@@ -495,7 +482,7 @@ class GameManager(QObject):
                         app_token = token_match.group(1)
 
                         # Add token to config
-                        if add_app_token(config_path, app_id, app_token):
+                        if set_map_item(config_path, "AppTokens", app_id, app_token):
                             tokens_added += 1
                             logger.info(f"Added missing AppToken for AppID {app_id} from {zip_file.name}")
                         else:
@@ -883,7 +870,7 @@ class GameManager(QObject):
                 if is_slssteam_mode_enabled() and is_slssteam_config_management_enabled() and appid and appid not in ("0", "N/A", "unknown"):
                     config_path = get_user_config_path()
                     if config_path.exists():
-                        remove_additional_app(config_path, str(appid))
+                        remove_list_item(config_path, "AdditionalApps", str(appid))
                         
                 if not remove_game_data and install_path and os.path.exists(install_path):
                     dd_path = os.path.join(install_path, ".DepotDownloader")

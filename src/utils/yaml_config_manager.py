@@ -1,15 +1,12 @@
-"""
-YAML Configuration Manager
-
-Provides helper functions for modifying YAML config files while preserving
-comments, formatting, and whitespace.
-"""
-
+import io
 import logging
 import os
-import re
 import shutil
 from pathlib import Path
+from typing import Any
+
+from ruamel.yaml import YAML
+from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
 from utils.settings import get_settings
 
@@ -18,12 +15,17 @@ logger = logging.getLogger(__name__)
 BACKUP_SUFFIX = ".bak"
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Settings helpers
+# ──────────────────────────────────────────────────────────────────────────────
+
+
 def is_slssteam_mode_enabled() -> bool:
     """
     Check if SLSsteam mode is enabled in settings.
 
     Returns:
-        True if SLSsteam mode is enabled, False otherwise
+        True if SLSsteam mode is enabled, False otherwise.
     """
     settings = get_settings()
     return settings.value("slssteam_mode", False, type=bool)
@@ -34,55 +36,64 @@ def is_slssteam_config_management_enabled() -> bool:
     Check if SLSsteam config management is enabled in settings.
 
     Returns:
-        True if config management is enabled, False otherwise
+        True if config management is enabled, False otherwise.
     """
     settings = get_settings()
     return settings.value("sls_config_management", True, type=bool)
 
 
-def get_fake_appid_for_online() -> str:
-    """
-    Get the FakeAppId to use for playing games online.
+def _check_guards(fn_name: str) -> bool:
+    """Return True only when both SLSsteam mode and config management are enabled."""
+    if not is_slssteam_mode_enabled():
+        logger.debug(f"SLSsteam mode is disabled, skipping {fn_name}")
+        return False
+    if not is_slssteam_config_management_enabled():
+        logger.debug(f"SLSsteam config management is disabled, skipping {fn_name}")
+        return False
+    return True
 
-    Returns:
-        The appid from settings, or "480" (Spacewar) if not set
-    """
-    settings = get_settings()
-    fake_appid = settings.value("fake_appid_for_online", "", type=str).strip()
-    return fake_appid if fake_appid else "480"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Backup & atomic write
+# ──────────────────────────────────────────────────────────────────────────────
 
 
-def _create_backup(config_path: Path) -> bool:
+def _create_backup(config_path: Path, force: bool = False) -> bool:
     """
     Create a backup of the config file.
 
     Creates config.yaml.bak with the current config content.
-    Only creates backup if source file exists.
-    Does not overwrite existing backup if new file is smaller (protection against
-    incomplete/corrupted files).
+    Only creates a backup if the source file exists.
+
+    When *force* is False (the default), an existing backup is kept if the live
+    file is smaller — this guards against overwriting a good backup with a
+    partially-written or corrupted live file.
+
+    When *force* is True the existing backup is always overwritten, which is the
+    correct behaviour on startup (we want a clean pre-session snapshot).
 
     Args:
-        config_path: Path to the config file to backup
+        config_path: Path to the config file to backup.
+        force:       When True, always overwrite an existing backup.
 
     Returns:
-        True if backup was created or already exists, False otherwise
+        True if a backup exists or was created, False otherwise.
     """
     try:
         if not config_path.exists():
             return False
 
-        backup_path = config_path.with_suffix(BACKUP_SUFFIX)
+        backup_path = config_path.with_name(config_path.name + BACKUP_SUFFIX)
 
-        # Check if backup already exists and new file is smaller
-        if backup_path.exists():
+        if not force and backup_path.exists():
             new_size = config_path.stat().st_size
             backup_size = backup_path.stat().st_size
             if new_size < backup_size:
                 logger.debug(
-                    f"Skipping backup: new file ({new_size} bytes) is smaller than "
-                    f"existing backup ({backup_size} bytes)"
+                    f"Skipping backup: current file ({new_size} B) is smaller than "
+                    f"existing backup ({backup_size} B) — keeping backup"
                 )
-                return True  # Keep existing backup, return success
+                return True  # Keep existing backup, still a success
 
         shutil.copy2(config_path, backup_path)
         logger.info(f"Created backup: {backup_path}")
@@ -94,202 +105,199 @@ def _create_backup(config_path: Path) -> bool:
 
 def backup_config_on_startup(config_path: Path) -> bool:
     """
-    Create a backup of the config file on application startup.
+    Create a backup of config.yaml at application startup.
 
-    Should be called once at startup before any modifications are made.
-    Backs up to config.yaml.bak (overwrites any existing backup).
+    Should be called once, before any modifications are made.
+    Always overwrites any existing backup to produce a clean pre-session snapshot.
 
     Args:
-        config_path: Path to the config.yaml file
+        config_path: Path to the config.yaml file.
 
     Returns:
-        True if backup exists or was created, False if config file missing
+        True if a backup exists or was created, False if the config file is missing.
     """
-    return _create_backup(config_path)
+    return _create_backup(config_path, force=True)
 
 
 def _atomic_write(config_path: Path, content: str) -> bool:
     """
-    Atomically write content to config file.
+    Atomically write *content* to *config_path*.
 
-    Writes to a temporary file first, then atomically replaces the original.
-    This ensures the original file is not corrupted if write is interrupted.
+    Writes to a .tmp sibling first, then renames via os.replace(), so the
+    original file is never left in a partial state if a write is interrupted.
 
     Args:
-        config_path: Path to the config file
-        content: Content to write
+        config_path: Destination path.
+        content:     Text content to write (UTF-8).
 
     Returns:
-        True if write succeeded, False otherwise
+        True on success, False on any error.
     """
+    temp_path = config_path.with_name(config_path.name + ".tmp")
     try:
-        # Write to temp file in same directory (same filesystem = atomic rename)
-        temp_path = config_path.with_suffix(config_path.suffix + ".tmp")
         with open(temp_path, "w", encoding="utf-8") as f:
             f.write(content)
-        # Atomic replace
         os.replace(temp_path, config_path)
         return True
     except Exception as e:
         logger.error(f"Failed to atomically write {config_path}: {e}", exc_info=True)
-        # Clean up temp file if it exists
-        if temp_path.exists():
-            try:
-                temp_path.unlink()
-            except Exception as cleanup_error:
-                logger.debug(f"Failed to cleanup temp config file {temp_path}: {cleanup_error}")
+        try:
+            temp_path.unlink(missing_ok=True)
+        except Exception as cleanup_err:
+            logger.debug(f"Could not remove temp file {temp_path}: {cleanup_err}")
         return False
 
 
-def ensure_slssteam_api_enabled(config_path: Path) -> bool:
-    """
-    Ensure SLSsteam API is enabled in config.yaml.
+# ──────────────────────────────────────────────────────────────────────────────
+# ruamel.yaml core helpers
+# ──────────────────────────────────────────────────────────────────────────────
 
-    Sets API: yes if not already present or set to a different value.
-    Only performs the update if SLSsteam mode and config management are enabled in settings.
+
+def _make_yaml() -> YAML:
+    """
+    Build a YAML instance configured for lossless round-trip editing.
+
+    Key settings
+    ────────────
+    - typ='rt' (default)   Round-trip mode: comments, ordering, anchors/aliases
+                           are all preserved across load → dump cycles.
+    - preserve_quotes      Keeps the quoting style of existing string scalars.
+    - width=4096           Suppresses line-wrapping on long values.
+    - indent(...)          ``  - item`` style for block sequences
+                           (dash at column 2, value at column 4).
+    - bool representer     Python booleans serialise as ``yes``/``no``
+                           (SLSsteam convention) rather than YAML 1.2 ``true``/``false``.
+    """
+    yaml = YAML()  # typ='rt' by default
+    yaml.preserve_quotes = True
+    yaml.width = 4096
+
+    # sequence=4, offset=2 produces:
+    #   key:
+    #     - item       ← dash at col 2 from parent, value at col 4
+    yaml.indent(mapping=2, sequence=4, offset=2)
+
+    # Override the default bool representation to match SLSsteam config style.
+    def _bool_representer(dumper, data: bool):
+        return dumper.represent_scalar(
+            "tag:yaml.org,2002:bool", "yes" if data else "no"
+        )
+
+    yaml.representer.add_representer(bool, _bool_representer)
+    return yaml
+
+
+def _load_yaml(config_path: Path) -> tuple[YAML, CommentedMap]:
+    """
+    Parse *config_path* with a round-trip YAML loader.
+
+    Returns an empty ``CommentedMap`` when the file is absent or contains only
+    comments / whitespace, so callers can operate on the result unconditionally
+    (create-if-missing semantics).
 
     Args:
-        config_path: Path to the SLSsteam config.yaml file
+        config_path: Path to the YAML file (need not exist).
 
     Returns:
-        True if API is enabled (already was or was set), False on error or if mode is disabled
+        Tuple of (configured YAML instance, parsed CommentedMap).
     """
-    if not is_slssteam_mode_enabled():
-        logger.debug("SLSsteam mode is disabled, skipping API enable check")
-        return False
-    if not is_slssteam_config_management_enabled():
-        logger.debug("SLSsteam config management is disabled, skipping API enable check")
-        return False
-    return update_yaml_boolean_value(config_path, "API", True)
+    yaml = _make_yaml()
+    if config_path.exists():
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = yaml.load(f)
+        if data is None:
+            data = CommentedMap()
+    else:
+        data = CommentedMap()
+    return yaml, data
 
 
-def update_yaml_boolean_value(config_path: Path, key: str, value: bool) -> bool:
+def _save_yaml(yaml: YAML, data: CommentedMap, config_path: Path) -> bool:
     """
-    Updates a boolean value in YAML config using regex pattern matching.
-
-    This function preserves ALL comments, whitespace, and formatting by only
-    modifying the specific value line for the given key.
+    Serialise *data* back to *config_path* atomically.
 
     Args:
-        config_path: Path to the YAML config file
-        key: The YAML key to update (e.g., 'PlayNotOwnedGames')
-        value: Boolean value to set
+        yaml:        The YAML instance that originally loaded the data
+                     (carries any comment / ordering state).
+        data:        The (possibly mutated) document root.
+        config_path: Destination path.
 
     Returns:
-        True if value was updated, False if already set correctly or key not found
+        True on success, False on any error.
+    """
+    buf = io.StringIO()
+    yaml.dump(data, buf)
+    return _atomic_write(config_path, buf.getvalue())
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Path helper
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def get_user_config_path() -> Path:
+    """
+    Get the path to the user's SLSsteam config.yaml file.
+
+    Respects ``$XDG_CONFIG_HOME`` when it is set and points to an absolute
+    path; otherwise falls back to ``~/.config/SLSsteam/config.yaml``.
+
+    Returns:
+        Path to the config.yaml file.
+    """
+    xdg_str = os.environ.get("XDG_CONFIG_HOME", "")
+    if xdg_str:
+        xdg = Path(xdg_str).expanduser()
+        if xdg.is_absolute():
+            return xdg / "SLSsteam" / "config.yaml"
+    return Path.home() / ".config" / "SLSsteam" / "config.yaml"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Generic scalar updaters
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def update_yaml_scalar_value(config_path: Path, key: str, value: Any) -> bool:
+    """
+    Set any top-level scalar key (bool, int, float, or str).
+
+    Booleans are written as ``yes``/``no``; strings are written with their
+    existing quoting style preserved when possible.
+
+    Args:
+        config_path: Path to the YAML config file.
+        key:         Top-level key to update (e.g. ``'LogLevel'``).
+        value:       New scalar value.
+
+    Returns:
+        True if the file was modified, False if already correct, not found,
+        or an error occurred.
     """
     try:
         if not config_path.exists():
-            logger.warning(f"Config file not found at {config_path}")
+            logger.warning(f"Config file not found: {config_path}")
             return False
 
-        # Read the file content
-        with open(config_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        yaml, data = _load_yaml(config_path)
 
-        # Regex pattern to match the key with its current value
-        # Captures: (1) indentation, (2) key name, (3) current value
-        pattern = re.compile(
-            r"^(\s*)"
-            + re.escape(key)
-            + r"\s*:\s*(yes|no|true|false|Yes|No|True|False)\b",
-            re.MULTILINE,
+        if key not in data:
+            logger.warning(f"Key '{key}' not found in {config_path}")
+            return False
+
+        current = data[key]
+        already_set = (
+            bool(current) == value if isinstance(value, bool) else current == value
         )
-
-        match = pattern.search(content)
-        if not match:
-            logger.warning(f"Key '{key}' not found in config file {config_path}")
+        if already_set:
+            logger.debug(f"'{key}' is already {value!r}")
             return False
 
-        indent = match.group(1)
-        old_value = match.group(2)
-
-        # Always use yes/no format for SLSsteam compatibility
-        new_value = "yes" if value else "no"
-
-        # Check if already set correctly
-        if old_value.lower() == new_value.lower():
-            logger.debug(f"Key '{key}' is already set to {new_value}")
+        data[key] = value
+        if not _save_yaml(yaml, data, config_path):
             return False
 
-        # Create replacement string preserving indentation
-        replacement = f"{indent}{key}: {new_value}"
-
-        # Replace only the matched line
-        new_content = pattern.sub(replacement, content)
-
-        # Write back to file atomically
-        if not _atomic_write(config_path, new_content):
-            return False
-
-        logger.info(f"Updated '{key}' to {new_value} in {config_path}")
-        return True
-
-    except Exception as e:
-        logger.error(f"Failed to update '{key}' in {config_path}: {e}", exc_info=True)
-        return False
-
-
-def update_yaml_scalar_value(config_path: Path, key: str, value) -> bool:
-    """
-    Update a scalar value in YAML config while preserving comments and indentation.
-
-    Supports boolean, numeric, and string values:
-        - bool -> yes/no
-        - int/float -> numeric literal
-        - str/other -> double-quoted string
-
-    Args:
-        config_path: Path to the YAML config file
-        key: The YAML key to update
-        value: New scalar value
-
-    Returns:
-        True if the file was updated, False otherwise
-    """
-    try:
-        if not config_path.exists():
-            logger.warning(f"Config file not found at {config_path}")
-            return False
-
-        with open(config_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        pattern = re.compile(
-            r"^(\s*)"
-            + re.escape(key)
-            + r"\s*:\s*([^\n#]*)(\s*(?:#.*)?)$",
-            re.MULTILINE,
-        )
-
-        match = pattern.search(content)
-        if not match:
-            logger.warning(f"Key '{key}' not found in config file {config_path}")
-            return False
-
-        indent = match.group(1)
-        old_value = match.group(2).strip()
-        trailing_comment = match.group(3) or ""
-
-        if isinstance(value, bool):
-            new_value = "yes" if value else "no"
-        elif isinstance(value, (int, float)) and not isinstance(value, bool):
-            new_value = str(value)
-        else:
-            escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
-            new_value = f'"{escaped}"'
-
-        if old_value == new_value:
-            logger.debug(f"Key '{key}' is already set to {new_value}")
-            return False
-
-        replacement = f"{indent}{key}: {new_value}{trailing_comment}"
-        new_content = pattern.sub(replacement, content, count=1)
-
-        if not _atomic_write(config_path, new_content):
-            return False
-
-        logger.info(f"Updated '{key}' to {new_value} in {config_path}")
+        logger.info(f"Updated '{key}' → {value!r} in {config_path}")
         return True
 
     except Exception as e:
@@ -298,691 +306,464 @@ def update_yaml_scalar_value(config_path: Path, key: str, value) -> bool:
 
 
 def update_yaml_nested_scalar_value(
-    config_path: Path, section: str, key: str, value
+    config_path: Path, section: str, key: str, value: Any
 ) -> bool:
     """
-    Update a scalar value for a key nested under a YAML section.
+    Set a scalar key nested one level inside a named YAML section.
 
-    Example target:
-        IdleStatus:
-          AppId: 0
+    Target shape::
+
+        IdleStatus:       # section
+          AppId: 0        # key: value
 
     Args:
-        config_path: Path to the YAML config file
-        section: Parent section name (e.g., 'IdleStatus')
-        key: Child key name inside the section (e.g., 'AppId')
-        value: New scalar value
+        config_path: Path to the YAML config file.
+        section:     Parent section name (e.g. ``'IdleStatus'``).
+        key:         Child key inside the section (e.g. ``'AppId'``).
+        value:       New scalar value.
 
     Returns:
-        True if the file was updated, False otherwise
+        True if the file was modified, False if already correct, not found,
+        or an error occurred.
     """
     try:
         if not config_path.exists():
-            logger.warning(f"Config file not found at {config_path}")
+            logger.warning(f"Config file not found: {config_path}")
             return False
 
-        with open(config_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        yaml, data = _load_yaml(config_path)
 
-        lines = content.splitlines(keepends=True)
-        section_line_re = re.compile(
-            r"^(\s*)" + re.escape(section) + r"\s*:\s*(?:#.*)?$"
-        )
+        if section not in data or data[section] is None:
+            logger.warning(f"Section '{section}' not found in {config_path}")
+            return False
 
-        section_index = -1
-        section_indent_len = 0
-        for idx, line in enumerate(lines):
-            line_no_nl = line.rstrip("\r\n")
-            section_match = section_line_re.match(line_no_nl)
-            if section_match:
-                section_index = idx
-                section_indent_len = len(section_match.group(1))
-                break
+        section_data = data[section]
 
-        if section_index == -1:
+        if key not in section_data:
             logger.warning(
-                f"Section '{section}' not found in config file {config_path}"
+                f"Key '{key}' not found under section '{section}' in {config_path}"
             )
             return False
 
-        section_end = len(lines)
-        for idx in range(section_index + 1, len(lines)):
-            raw = lines[idx].rstrip("\r\n")
-            stripped = raw.strip()
-
-            if not stripped:
-                continue
-
-            current_indent_len = len(raw) - len(raw.lstrip())
-            if current_indent_len <= section_indent_len and not stripped.startswith("#"):
-                section_end = idx
-                break
-
-        if isinstance(value, bool):
-            new_value = "yes" if value else "no"
-        elif isinstance(value, (int, float)) and not isinstance(value, bool):
-            new_value = str(value)
-        else:
-            escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
-            new_value = f'"{escaped}"'
-
-        key_line_re = re.compile(
-            r"^(\s*)"
-            + re.escape(key)
-            + r"\s*:\s*([^\n#]*)(\s*(?:#.*)?)$"
+        current = section_data[key]
+        already_set = (
+            bool(current) == value if isinstance(value, bool) else current == value
         )
+        if already_set:
+            logger.debug(f"'{section}.{key}' is already {value!r}")
+            return False
 
-        for idx in range(section_index + 1, section_end):
-            raw = lines[idx].rstrip("\r\n")
-            key_match = key_line_re.match(raw)
-            if not key_match:
-                continue
+        section_data[key] = value
+        if not _save_yaml(yaml, data, config_path):
+            return False
 
-            indent = key_match.group(1)
-            if len(indent) <= section_indent_len:
-                continue
-
-            old_value = key_match.group(2).strip()
-            trailing_comment = key_match.group(3) or ""
-
-            if old_value == new_value:
-                logger.debug(f"Key '{section}.{key}' is already set to {new_value}")
-                return False
-
-            newline = "\n" if lines[idx].endswith("\n") else ""
-            lines[idx] = f"{indent}{key}: {new_value}{trailing_comment}{newline}"
-
-            new_content = "".join(lines)
-            if not _atomic_write(config_path, new_content):
-                return False
-
-            logger.info(f"Updated '{section}.{key}' to {new_value} in {config_path}")
-            return True
-
-        logger.warning(
-            f"Key '{key}' under section '{section}' not found in config file {config_path}"
-        )
-        return False
+        logger.info(f"Updated '{section}.{key}' → {value!r} in {config_path}")
+        return True
 
     except Exception as e:
         logger.error(
-            f"Failed to update '{section}.{key}' in {config_path}: {e}",
+            f"Failed to update '{section}.{key}' in {config_path}: {e}", exc_info=True
+        )
+        return False
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Shared list-section helpers
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def get_list_items(config_path: Path, section_name: str) -> set[str]:
+    """
+    Return every numeric item in a YAML block-sequence section as a set of strings.
+
+    Args:
+        config_path:  Path to the YAML config file.
+        section_name: Top-level key whose value is a sequence (e.g. ``'AppIds'``).
+
+    Returns:
+        Set of app ID strings, empty if the file/section is missing or on error.
+    """
+    if not config_path.exists():
+        return set()
+    try:
+        _, data = _load_yaml(config_path)
+        section = data.get(section_name)
+        if not section:
+            return set()
+        return {str(item) for item in section}
+    except Exception as e:
+        logger.error(
+            f"Failed to read '{section_name}' from {config_path}: {e}", exc_info=True
+        )
+        return set()
+
+
+def add_list_item(
+    config_path: Path,
+    section_name: str,
+    item: str,
+    comment: str = "",
+) -> bool:
+    """
+    Append *item* to the named YAML block-sequence section.
+
+    Creates the parent directories, the file, and/or the section itself if any
+    are absent.
+    Only acts when SLSsteam mode and config management are both enabled.
+
+    Args:
+        config_path:  Path to the YAML config file.
+        section_name: Top-level sequence key (e.g. ``'AdditionalApps'``).
+        item:         Numeric app ID to append (as a string).
+        comment:      Optional inline comment to attach to the new entry.
+
+    Returns:
+        True if the entry was inserted, False if it already existed.
+    """
+    if not _check_guards(f"add_list_item ({section_name})"):
+        return False
+
+    try:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        yaml, data = _load_yaml(config_path)
+
+        # Section may be absent from the mapping or explicitly set to null.
+        if data.get(section_name) is None:
+            seq: CommentedSeq = CommentedSeq()
+            seq.fa.set_block_style()
+            data[section_name] = seq
+
+        section: CommentedSeq = data[section_name]
+
+        if any(str(x) == item for x in section):
+            logger.debug(f"Item '{item}' already present in '{section_name}'")
+            return False
+
+        idx = len(section)
+        try:
+            val = int(item)
+        except ValueError:
+            val = item
+        section.append(val)
+        if comment:
+            section.yaml_add_eol_comment(comment, idx)
+
+        if not _save_yaml(yaml, data, config_path):
+            return False
+
+        logger.info(f"Added item '{item}' to '{section_name}' in {config_path}")
+        return True
+
+    except Exception as e:
+        logger.error(
+            f"Failed to add item '{item}' to section '{section_name}' in {config_path}: {e}",
             exc_info=True,
         )
         return False
 
 
-def get_user_config_path() -> Path:
+def remove_list_item(
+    config_path: Path, section_name: str, item: str
+) -> bool:
     """
-    Get the path to the user's SLSsteam config.yaml file.
-
-    Uses XDG_CONFIG_HOME if set, otherwise defaults to ~/.config.
-
-    Returns:
-        Path to the config.yaml file
-    """
-    xdg_config_home_str = os.environ.get("XDG_CONFIG_HOME", "")
-    xdg_config_home = (
-        Path(xdg_config_home_str).expanduser() if xdg_config_home_str else Path()
-    )
-
-    if xdg_config_home_str and xdg_config_home.is_absolute():
-        config_dir = xdg_config_home / "SLSsteam"
-    else:
-        config_dir = Path.home() / ".config" / "SLSsteam"
-
-    return config_dir / "config.yaml"
-
-
-def _fix_additional_apps_indentation(content: str) -> tuple[str, bool]:
-    """
-    Fix indentation of AdditionalApps list items if they lack proper formatting.
-
-    Ensures all list items under AdditionalApps: have 2-space indentation.
-    Only fixes items within the AdditionalApps section, not other YAML lists.
+    Remove *item* from the named YAML block-sequence section.
+    
+    Only acts when SLSsteam mode and config management are both enabled.
 
     Args:
-        content: The YAML file content
+        config_path:  Path to the YAML config file.
+        section_name: Top-level sequence key.
+        item:         Numeric app ID to remove (as a string).
 
     Returns:
-        Tuple of (fixed_content, was_modified)
+        True if the entry was removed, False if not found, file absent, or error.
     """
-    # Find AdditionalApps section and only fix list items within it
-    additional_apps_pattern = re.compile(r"^AdditionalApps:\s*$", re.MULTILINE)
-    match = additional_apps_pattern.search(content)
-
-    if not match:
-        # No AdditionalApps section found, no changes needed
-        return content, False
-
-    # Find the end of AdditionalApps section (next top-level key or end of file)
-    section_start = match.end()
-    # Skip the newline after "AdditionalApps:"
-    if section_start < len(content) and content[section_start] == "\n":
-        section_start += 1
-    after_section = content[section_start:]
-
-    # Look for next top-level key (at start of line, word character)
-    next_key_pattern = re.compile(r"^[A-Za-z]", re.MULTILINE)
-    next_match = next_key_pattern.search(after_section)
-
-    if next_match:
-        section_end = section_start + next_match.start()
-    else:
-        section_end = len(content)
-
-    # Extract just the AdditionalApps section content
-    section_content = content[section_start:section_end]
-
-    # Pattern to find list items that need fixing: "- item" or "-item" (no or 1 space indent)
-    # within the AdditionalApps section
-    misaligned_item_pattern = re.compile(
-        r"(^)(\s*)-(\s*)([^\n#]+?)(?=\s*(?:#|$))", re.MULTILINE
-    )
-
-    # Find and fix misaligned items by adding 2-space indentation
-    fixed_section = misaligned_item_pattern.sub(r"\1  - \4", section_content)
-
-    was_modified = fixed_section != section_content
-    if was_modified:
-        # Reconstruct the content with fixed section
-        fixed_content = content[:section_start] + fixed_section + content[section_end:]
-        logger.debug("Fixed indentation of AdditionalApps list items")
-        return fixed_content, True
-
-    return content, False
-
-
-def _get_app_tokens_section(content: str) -> str:
-    """
-    Extract the AppTokens section from YAML content.
-
-    Returns only the content between AppTokens: and the next top-level key.
-    Returns empty string if AppTokens section not found.
-
-    Args:
-        content: The YAML file content
-
-    Returns:
-        The AppTokens section content, or empty string if not found
-    """
-    app_tokens_pattern = re.compile(r"^AppTokens:\s*$", re.MULTILINE)
-    match = app_tokens_pattern.search(content)
-
-    if not match:
-        return ""
-
-    section_start = match.end()
-    if section_start < len(content) and content[section_start] == "\n":
-        section_start += 1
-    after_section = content[section_start:]
-
-    # Look for next top-level key (at start of line, word character)
-    next_key_pattern = re.compile(r"^[A-Za-z][A-Za-z0-9]*:\s*$", re.MULTILINE)
-    next_match = next_key_pattern.search(after_section)
-
-    if next_match:
-        section_end = section_start + next_match.start()
-    else:
-        section_end = len(content)
-
-    return content[section_start:section_end]
-
-
-def _fix_app_tokens_indentation(content: str) -> tuple[str, bool]:
-    """
-    Fix indentation of AppTokens entries to have 2-space indentation.
-
-    Ensures all entries under AppTokens: have proper 2-space indentation.
-    Only fixes items within the AppTokens section, not other YAML entries.
-
-    Args:
-        content: The YAML file content
-
-    Returns:
-        Tuple of (fixed_content, was_modified)
-    """
-    # Find AppTokens section
-    app_tokens_pattern = re.compile(r"^AppTokens:\s*$", re.MULTILINE)
-    match = app_tokens_pattern.search(content)
-
-    if not match:
-        # No AppTokens section found, no changes needed
-        return content, False
-
-    # Find the end of AppTokens section
-    section_start = match.end()
-    # Skip the newline after "AppTokens:"
-    if section_start < len(content) and content[section_start] == "\n":
-        section_start += 1
-    after_section = content[section_start:]
-
-    # Look for next top-level key (at start of line, word character, not a comment)
-    # Ignore blank lines and comments (#) when looking for next section
-    next_key_pattern = re.compile(r"^[A-Za-z][A-Za-z0-9]*:\s*$", re.MULTILINE)
-    next_match = next_key_pattern.search(after_section)
-
-    # Find the last token entry (line starting with digits)
-    # This ensures we stop at the last token, not at subsequent comments
-    last_token_pattern = re.compile(r"^\s*\d+\s*:\s*[^\n]*$", re.MULTILINE)
-    last_token_matches = list(last_token_pattern.finditer(after_section))
-
-    if last_token_matches:
-        # End section after the last token line (include trailing newlines)
-        last_token_end = last_token_matches[-1].end()
-        # Find the next newline after the last token to include blank lines
-        newline_after_token = after_section.find("\n", last_token_end)
-        if newline_after_token != -1:
-            section_end = section_start + newline_after_token + 1
-        elif next_match:
-            section_end = section_start + next_match.start()
-        else:
-            section_end = len(content)
-    elif next_match:
-        section_end = section_start + next_match.start()
-    else:
-        section_end = len(content)
-
-    # Extract just the AppTokens section content
-    section_content = content[section_start:section_end]
-
-    # Pattern to find ALL token entries (any indentation) and force 2-space indentation
-    # Matches lines starting with optional whitespace followed by digits and colon
-    token_pattern = re.compile(r"(^)(\s*)(\d+)(\s*:\s*[^\n]*)", re.MULTILINE)
-
-    # Replace all tokens with 2-space indentation
-    fixed_section = token_pattern.sub(r"\1  \3\4", section_content)
-
-    was_modified = fixed_section != section_content
-    if was_modified:
-        # Reconstruct the content with fixed section
-        fixed_content = content[:section_start] + fixed_section + content[section_end:]
-        logger.debug("Fixed indentation of AppTokens entries")
-        return fixed_content, True
-
-    return content, False
-
-
-def fix_slssteam_config_indentation(config_path: Path) -> bool:
-    """
-    Fix indentation of AdditionalApps and AppTokens entries in SLSsteam config.yaml.
-
-    This function ensures all list items under AdditionalApps: and entries under
-    AppTokens: have proper 2-space indentation. Should be called after game library
-    scan to fix any misformatted entries in the config file.
-    Only performs the fix if SLSsteam mode and config management are enabled in settings.
-
-    Args:
-        config_path: Path to the YAML config file
-
-    Returns:
-        True if file was modified, False if already correct, file doesn't exist, or mode is disabled
-    """
-    if not is_slssteam_mode_enabled():
-        logger.debug("SLSsteam mode is disabled, skipping indentation fix")
-        return False
-    if not is_slssteam_config_management_enabled():
-        logger.debug("SLSsteam config management is disabled, skipping indentation fix")
+    if not _check_guards(f"remove_list_item ({section_name})"):
         return False
 
+    if not config_path.exists():
+        logger.debug(f"Config file does not exist: {config_path}")
+        return False
     try:
-        if not config_path.exists():
+        yaml, data = _load_yaml(config_path)
+        section = data.get(section_name)
+
+        if not section:
+            logger.debug(f"'{section_name}' is empty; '{item}' not found")
             return False
 
-        with open(config_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        target_idx = next(
+            (i for i, x in enumerate(section) if str(x) == item), None
+        )
+        if target_idx is None:
+            logger.debug(f"Item '{item}' not found in '{section_name}'")
+            return False
 
-        fixed_content, was_modified_apps = _fix_additional_apps_indentation(content)
-        fixed_content, was_modified_tokens = _fix_app_tokens_indentation(fixed_content)
+        del section[target_idx]
 
-        was_modified = was_modified_apps or was_modified_tokens
+        if not _save_yaml(yaml, data, config_path):
+            return False
 
-        if was_modified:
-            if not _atomic_write(config_path, fixed_content):
-                return False
-            if was_modified_apps and was_modified_tokens:
-                logger.info(
-                    f"Fixed AdditionalApps and AppTokens indentation in {config_path}"
-                )
-            elif was_modified_apps:
-                logger.info(f"Fixed AdditionalApps indentation in {config_path}")
-            else:
-                logger.info(f"Fixed AppTokens indentation in {config_path}")
-
-        return was_modified
+        logger.info(f"Removed item '{item}' from '{section_name}' in {config_path}")
+        return True
 
     except Exception as e:
-        logger.error(f"Failed to fix indentation in {config_path}: {e}", exc_info=True)
+        logger.error(
+            f"Failed to remove '{item}' from '{section_name}' in {config_path}: {e}",
+            exc_info=True,
+        )
         return False
 
 
-def add_additional_app(config_path: Path, app_id: str, comment: str = "") -> bool:
-    """
-    Adds an AppID to the AdditionalApps list in SLSsteam config.yaml.
+# ──────────────────────────────────────────────────────────────────────────────
+# Shared map-section helpers
+# ──────────────────────────────────────────────────────────────────────────────
 
-    This function preserves ALL comments, whitespace, and formatting by only
-    appending to the list if the AppID is not already present. Also fixes
-    indentation of existing items if needed.
-    Only performs the addition if SLSsteam mode and config management are enabled in settings.
+
+def _find_map_key(section: CommentedMap, target_key: Any) -> Any | None:
+    """
+    Return the actual key object (int or str) in *section* that matches *target_key*.
+
+    ruamel.yaml may deserialise numeric keys as either ``int`` or ``str``
+    depending on quoting in the source file. This helper normalises the lookup
+    so callers don't need to care about the stored type.
 
     Args:
-        config_path: Path to the YAML config file
-        app_id: The AppID to add
-        comment: Optional comment to add after the AppID
+        section:    The CommentedMap to search.
+        target_key: The numeric key to find (can be int or str).
 
     Returns:
-        True if AppID was added, False if already exists, error, or mode is disabled
+        The matching key object, or None if not found.
     """
-    if not is_slssteam_mode_enabled():
-        logger.debug("SLSsteam mode is disabled, skipping add additional app")
-        return False
-    if not is_slssteam_config_management_enabled():
-        logger.debug("SLSsteam config management is disabled, skipping add additional app")
+    target = str(target_key)
+    return next((k for k in section if str(k) == target), None)
+
+
+def get_map_items(config_path: Path, section_name: str) -> dict[str, Any]:
+    """
+    Return all entries from a YAML mapping section as a flat dictionary.
+    Keys are always returned as strings.
+    """
+    if not config_path.exists():
+        return {}
+    try:
+        _, data = _load_yaml(config_path)
+        section = data.get(section_name)
+        if not section:
+            return {}
+        return {str(k): v for k, v in section.items()}
+    except Exception as e:
+        logger.error(f"Failed to read '{section_name}' from {config_path}: {e}", exc_info=True)
+        return {}
+
+
+def set_map_item(
+    config_path: Path,
+    section_name: str,
+    key: str,
+    value: Any,
+    comment: str = "",
+) -> bool:
+    """
+    Add or update *key* with *value* in the named YAML mapping section.
+    
+    Only acts when SLSsteam mode and config management are both enabled.
+
+    Handles ruamel.yaml type matching (e.g. avoiding duping '123' and 123)
+    automatically via `_find_map_key`. Creates section if missing.
+    """
+    if not _check_guards(f"set_map_item ({section_name})"):
         return False
 
     try:
-        # If file doesn't exist, create it with the new entry
-        if not config_path.exists():
-            # Ensure parent directory exists
-            config_path.parent.mkdir(parents=True, exist_ok=True)
-            if comment:
-                new_entry = f"AdditionalApps:\n  - {app_id}   # {comment}\n"
-            else:
-                new_entry = f"AdditionalApps:\n  - {app_id}\n"
-            if not _atomic_write(config_path, new_entry):
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        yaml, data = _load_yaml(config_path)
+
+        if data.get(section_name) is None:
+            data[section_name] = CommentedMap()
+
+        section: CommentedMap = data[section_name]
+        found_key = _find_map_key(section, key)
+
+        if found_key is not None:
+            if str(section[found_key]) == str(value):
+                logger.debug(f"Key '{key}' in '{section_name}' already set to matching value")
                 return False
-            logger.info(f"Created config file with AppID '{app_id}' in {config_path}")
-            return True
+            # Overwrite the existing matching key to preserve its loaded type
+            section[found_key] = value
+        else:
+            # New keys are usually int for IDs if possible
+            try:
+                insert_key = int(key)
+            except ValueError:
+                insert_key = key
+            
+            section[insert_key] = value
+            if comment:
+                section.yaml_add_eol_comment(comment, insert_key)
 
-        # Read the file content
-        with open(config_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        # Fix indentation of existing AdditionalApps items
-        fixed_content, _ = _fix_additional_apps_indentation(content)
-
-        # Check if AppID already exists in AdditionalApps list
-        # Match patterns like: "- 12345" or "- 12345   # comment"
-        app_id_pattern = re.compile(
-            rf"^\s*-\s*{re.escape(app_id)}\s*(?:#.*)?$", re.MULTILINE
-        )
-
-        if app_id_pattern.search(fixed_content):
-            logger.debug(f"AppID '{app_id}' already exists in AdditionalApps")
+        if not _save_yaml(yaml, data, config_path):
             return False
 
-        # Find AdditionalApps section
-        additional_apps_pattern = re.compile(r"^AdditionalApps:\s*$", re.MULTILINE)
-        match = additional_apps_pattern.search(fixed_content)
+        logger.info(f"Set '{key}': {value!r} in '{section_name}' in {config_path}")
+        return True
 
-        if match:
-            # Append to existing list
-            # Find the end of the list by finding the last item (line starting with "-")
-            start_pos = match.end()
-            remaining = fixed_content[start_pos:]
-            lines = remaining.split("\n")
+    except Exception as e:
+        logger.error(
+            f"Failed to set '{key}' in '{section_name}' in {config_path}: {e}", exc_info=True
+        )
+        return False
 
-            # Find position after the last list item
-            insert_pos = start_pos
-            last_item_end = start_pos
 
-            for i, line in enumerate(lines):
-                stripped = line.strip()
-                if stripped.startswith("-"):
-                    # This is a list item - update the end position
-                    last_item_end = start_pos + sum(
-                        len(lines[j]) + 1 for j in range(i + 1)
-                    )
-                elif not stripped:
-                    # Empty line - continue
-                    continue
-                elif stripped.startswith("#"):
-                    # Comment line - continue (comments can follow list items)
-                    continue
-                else:
-                    # Any other non-empty, non-comment, non-list line is a new section
-                    break
-            else:
-                # End of file
-                last_item_end = len(fixed_content)
+def remove_map_item(
+    config_path: Path, section_name: str, key: str, expected_value: str = ""
+) -> bool:
+    """
+    Remove *key* from the named YAML mapping section.
+    If expected_value is provided, only removes if the stringified value matches.
+    
+    Only acts when SLSsteam mode and config management are both enabled.
+    """
+    if not _check_guards(f"remove_map_item ({section_name})"):
+        return False
 
-            insert_pos = last_item_end
+    if not config_path.exists():
+        logger.debug(f"Config file does not exist: {config_path}")
+        return False
 
-            # Build new entry with proper indentation (2 spaces for list items)
-            if comment:
-                new_entry = f"  - {app_id}   # {comment}\n"
-            else:
-                new_entry = f"  - {app_id}\n"
+    try:
+        yaml, data = _load_yaml(config_path)
+        section = data.get(section_name)
 
-            new_content = (
-                fixed_content[:insert_pos] + new_entry + fixed_content[insert_pos:]
+        if not section:
+            logger.debug(f"'{section_name}' is empty; '{key}' not found")
+            return False
+
+        found_key = _find_map_key(section, key)
+
+        if found_key is None:
+            logger.debug(f"Key '{key}' not found in '{section_name}'")
+            return False
+
+        if expected_value and str(section[found_key]) != expected_value:
+            logger.debug(
+                f"Key '{key}' in '{section_name}' has value '{section[found_key]}', "
+                f"expected '{expected_value}', skipping removal"
             )
-        else:
-            # Create new AdditionalApps section with proper indentation
-            if comment:
-                new_entry = f"AdditionalApps:\n  - {app_id}   # {comment}\n"
-            else:
-                new_entry = f"AdditionalApps:\n  - {app_id}\n"
-
-            new_content = fixed_content + "\n" + new_entry
-
-        # Write back to file atomically
-        if not _atomic_write(config_path, new_content):
             return False
 
-        logger.info(f"Added AppID '{app_id}' to AdditionalApps in {config_path}")
+        del section[found_key]
+
+        if not _save_yaml(yaml, data, config_path):
+            return False
+
+        logger.info(f"Removed '{key}' from '{section_name}' in {config_path}")
         return True
 
     except Exception as e:
         logger.error(
-            f"Failed to add AppID '{app_id}' to {config_path}: {e}", exc_info=True
+            f"Failed to remove '{key}' from '{section_name}' in {config_path}: {e}",
+            exc_info=True,
         )
         return False
 
 
-def remove_additional_app(config_path: Path, app_id: str) -> bool:
+# ──────────────────────────────────────────────────────────────────────────────
+# DlcData
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def get_dlc_data(config_path: Path) -> dict[str, dict[str, str]]:
     """
-    Removes an AppID from the AdditionalApps list in SLSsteam config.yaml.
-
-    This function removes the AppID entry while preserving other content,
-    comments, and formatting.
-    Only performs the removal if SLSsteam mode and config management are enabled in settings.
-
-    Args:
-        config_path: Path to the YAML config file
-        app_id: The AppID to remove
-
-    Returns:
-        True if AppID was removed, False if not found, error, or mode is disabled
+    Return all entries from DlcData section as ``{parent_app_id: {dlc_id: dlc_name}}``.
     """
-    if not is_slssteam_mode_enabled():
-        logger.debug("SLSsteam mode is disabled, skipping remove additional app")
-        return False
-    if not is_slssteam_config_management_enabled():
-        logger.debug("SLSsteam config management is disabled, skipping remove additional app")
-        return False
-
+    if not config_path.exists():
+        return {}
     try:
-        if not config_path.exists():
-            logger.debug(f"Config file does not exist at {config_path}")
-            return False
-
-        with open(config_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        # Pattern to match AppID in AdditionalApps list (with optional comment)
-        # Matches: "- 12345" or "- 12345   # comment"
-        app_id_pattern = re.compile(
-            rf"^\s*-\s*{re.escape(app_id)}\s*(?:#.*)?$", re.MULTILINE
-        )
-
-        match = app_id_pattern.search(content)
-        if not match:
-            logger.debug(f"AppID '{app_id}' not found in AdditionalApps")
-            return False
-
-        # Find the line start and end
-        line_start = content.rfind("\n", 0, match.start()) + 1  # Include newline before
-        if line_start == 0:
-            line_start = 0  # First line, no newline before
-        line_end = content.find("\n", match.end())
-        if line_end == -1:
-            line_end = len(content)  # End of file
-
-        # Check if there's a newline after the line
-        if line_end < len(content) and content[line_end] == "\n":
-            line_end += 1  # Include the newline
-
-        # Remove the line
-        new_content = content[:line_start] + content[line_end:]
-
-        # Write back to file atomically
-        if not _atomic_write(config_path, new_content):
-            return False
-
-        logger.info(f"Removed AppID '{app_id}' from AdditionalApps in {config_path}")
-        return True
-
+        _, data = _load_yaml(config_path)
+        section = data.get("DlcData")
+        if not section:
+            return {}
+        result = {}
+        for p_key, p_val in section.items():
+            if isinstance(p_val, dict):
+                result[str(p_key)] = {str(k): str(v) for k, v in p_val.items()}
+        return result
     except Exception as e:
-        logger.error(
-            f"Failed to remove AppID '{app_id}' from {config_path}: {e}", exc_info=True
-        )
-        return False
+        logger.error(f"Failed to read DlcData from {config_path}: {e}", exc_info=True)
+        return {}
 
 
 def add_dlc_data(
     config_path: Path, parent_app_id: str, dlc_id: str, dlc_name: str
 ) -> bool:
     """
-    Adds a DLC entry to DlcData section in SLSsteam config.yaml.
+    Add a DLC entry under its parent game in the DlcData section.
 
-    Format:
+    Target shape::
+
         DlcData:
-          ParentAppId:
-            DlcAppId: "Dlc Name"
+          <parent_app_id>:
+            <dlc_id>: "DLC Name"
 
-    This function preserves ALL comments, whitespace, and formatting.
-    Only performs the addition if SLSsteam mode and config management are enabled in settings.
+    Creates the parent directories, the file, the DlcData section, and/or the
+    parent node if any are absent.
+    Only acts when SLSsteam mode and config management are both enabled.
 
     Args:
-        config_path: Path to the YAML config file
-        parent_app_id: The parent game AppID
-        dlc_id: The DLC AppID
-        dlc_name: The DLC name
+        config_path:   Path to the YAML config file.
+        parent_app_id: Parent game AppID.
+        dlc_id:        DLC AppID.
+        dlc_name:      Human-readable DLC name.
 
     Returns:
-        True if DLC was added, False if already exists, error, or mode is disabled
+        True if the DLC entry was added, False if it already existed, guards
+        are off, or an error occurred.
     """
-    if not is_slssteam_mode_enabled():
-        logger.debug("SLSsteam mode is disabled, skipping add DLC data")
-        return False
-    if not is_slssteam_config_management_enabled():
-        logger.debug("SLSsteam config management is disabled, skipping add DLC data")
+    if not _check_guards("add_dlc_data"):
         return False
 
     try:
-        if not config_path.exists():
-            logger.warning(f"Config file not found at {config_path}")
-            return False
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        yaml, data = _load_yaml(config_path)
 
-        # Read the file content
-        with open(config_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        if data.get("DlcData") is None:
+            data["DlcData"] = CommentedMap()
 
-        # Find DlcData section
-        dlc_data_pattern = re.compile(r"^DlcData:\s*$", re.MULTILINE)
-        match = dlc_data_pattern.search(content)
+        dlc_data: CommentedMap = data["DlcData"]
+        
+        found_parent_key = _find_map_key(dlc_data, parent_app_id)
+        if found_parent_key is None:
+            try:
+                found_parent_key = int(parent_app_id)
+            except ValueError:
+                found_parent_key = parent_app_id
+            dlc_data[found_parent_key] = CommentedMap()
 
-        if match:
-            dlc_data_start = match.start()
-            dlc_data_end = match.end()
+        parent_map: CommentedMap = dlc_data[found_parent_key]
+        
+        found_dlc_key = _find_map_key(parent_map, dlc_id)
 
-            # Find parent AppID under DlcData
-            parent_pattern = re.compile(
-                rf"^(\s*){re.escape(parent_app_id)}:\s*$", re.MULTILINE
-            )
-            parent_match = parent_pattern.search(content, dlc_data_end)
-
-            if parent_match:
-                # Check if DLC already exists under this parent
-                parent_line_end = parent_match.end()
-                remaining = content[parent_line_end:]
-
-                # Look for next sibling (another AppID at same indent) or end of DlcData
-                next_parent_pattern = re.compile(
-                    rf"^(\s{{{len(parent_match.group(1))}}})[0-9]", re.MULTILINE
+        if found_dlc_key is not None:
+            if str(parent_map[found_dlc_key]) == dlc_name:
+                logger.debug(
+                    f"DLC '{dlc_id}' already exists under AppID '{parent_app_id}'"
                 )
-                next_match = next_parent_pattern.search(remaining)
-
-                if next_match:
-                    parent_section = remaining[: next_match.start()]
-                else:
-                    # Find end of DlcData section
-                    after_dlcdata = content[dlc_data_end:]
-                    end_match = re.compile(r"^[A-Za-z]", re.MULTILINE).search(
-                        after_dlcdata
-                    )
-                    if end_match:
-                        parent_section = remaining[
-                            : dlc_data_end + end_match.start() - parent_line_end
-                        ]
-                    else:
-                        parent_section = remaining
-
-                # Check if DLC already exists
-                dlc_check_pattern = re.compile(
-                    rf'^\s*{re.escape(dlc_id)}:\s*"', re.MULTILINE
-                )
-                if dlc_check_pattern.search(parent_section):
-                    logger.debug(
-                        f"DLC '{dlc_id}' already exists under AppID '{parent_app_id}'"
-                    )
-                    return False
-
-                parent_indent = len(parent_match.group(1))
-
-                # Find insertion position
-                if next_match:
-                    insert_pos = parent_line_end + next_match.start()
-                else:
-                    after_dlcdata = content[dlc_data_end:]
-                    end_match = re.compile(r"^[A-Za-z]", re.MULTILINE).search(
-                        after_dlcdata
-                    )
-                    if end_match:
-                        insert_pos = dlc_data_end + end_match.start()
-                    else:
-                        insert_pos = len(content)
-
-                # Build new DLC entry with proper indentation
-                new_entry = f'{" " * (parent_indent + 2)}{dlc_id}: "{dlc_name}"\n'
-                new_content = content[:insert_pos] + new_entry + content[insert_pos:]
-            else:
-                # Add new parent AppID section under DlcData
-                remaining = content[dlc_data_end:]
-                next_key_pattern = re.compile(r"^[A-Za-z]", re.MULTILINE)
-                next_match = next_key_pattern.search(remaining)
-
-                if next_match:
-                    insert_pos = dlc_data_end + next_match.start()
-                else:
-                    insert_pos = len(content)
-
-                # Build new section with DLC (parent at indent 2, DLC at indent 4)
-                new_entry = f'  {parent_app_id}:\n    {dlc_id}: "{dlc_name}"\n'
-                new_content = content[:insert_pos] + new_entry + content[insert_pos:]
+                return False
+            parent_map[found_dlc_key] = dlc_name
         else:
-            # Create new DlcData section with DLC
-            new_entry = f'DlcData:\n  {parent_app_id}:\n    {dlc_id}: "{dlc_name}"\n'
-            new_content = content + "\n" + new_entry
+            try:
+                insert_dlc_key = int(dlc_id)
+            except ValueError:
+                insert_dlc_key = dlc_id
+            parent_map[insert_dlc_key] = dlc_name
 
-        # Write back to file atomically
-        if not _atomic_write(config_path, new_content):
+        if not _save_yaml(yaml, data, config_path):
             return False
 
         logger.info(
-            f"Added DLC '{dlc_name}' ({dlc_id}) to DlcData under "
-            f"AppID '{parent_app_id}' in {config_path}"
+            f"Added DLC '{dlc_name}' ({dlc_id}) under AppID '{parent_app_id}' "
+            f"in {config_path}"
         )
         return True
 
@@ -993,451 +774,80 @@ def add_dlc_data(
         return False
 
 
-def add_app_token(config_path: Path, app_id: str, token: str) -> bool:
+def remove_dlc_data(config_path: Path, parent_app_id: str, dlc_id: str) -> bool:
     """
-    Add an AppToken to the AppTokens section in SLSsteam config.yaml.
-
-    Format:
-        AppTokens:
-          app_id: token_value
-
-    This function ensures proper 2-space indentation for all entries.
-    Only performs the addition if SLSsteam mode and config management are enabled in settings.
-
+    Remove a DLC entry under its parent game in the DlcData section.
+    
     Args:
-        config_path: Path to the YAML config file
-        app_id: The AppID
-        token: The application token
-
+        config_path:   Path to the YAML config file.
+        parent_app_id: Parent game AppID.
+        dlc_id:        DLC AppID to remove.
+        
     Returns:
-        True if added/updated, False if already exists, error, or mode is disabled
+        True if removed, False if not found or an error occurred.
     """
-    if not is_slssteam_mode_enabled():
-        logger.debug("SLSsteam mode is disabled, skipping add app token")
+    if not _check_guards("remove_dlc_data"):
         return False
-    if not is_slssteam_config_management_enabled():
-        logger.debug("SLSsteam config management is disabled, skipping add app token")
+        
+    if not config_path.exists():
         return False
 
     try:
-        if not config_path.exists():
-            logger.warning(f"Config file not found at {config_path}")
+        yaml, data = _load_yaml(config_path)
+        dlc_data = data.get("DlcData")
+
+        if not dlc_data:
+            return False
+            
+        found_parent_key = _find_map_key(dlc_data, parent_app_id)
+        if found_parent_key is None:
             return False
 
-        # Read the file content
-        with open(config_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        parent_map = dlc_data[found_parent_key]
+        if not isinstance(parent_map, dict):
+            return False
+            
+        found_dlc_key = _find_map_key(parent_map, dlc_id)
+        if found_dlc_key is None:
+            return False
+            
+        del parent_map[found_dlc_key]
+        
+        # Optionally remove parent if empty
+        if not parent_map:
+            del dlc_data[found_parent_key]
 
-        # Check if AppTokens section exists
-        app_tokens_pattern = re.compile(r"^AppTokens:\s*$", re.MULTILINE)
-        match = app_tokens_pattern.search(content)
-
-        if not match:
-            # Create new AppTokens section at the end
-            new_entry = f"AppTokens:\n  {app_id}: {token}\n"
-            if not _atomic_write(config_path, content + new_entry):
-                return False
-            logger.info(
-                f"Added AppToken for '{app_id}' to new AppTokens section in {config_path}"
-            )
-            return True
-
-        # Fix indentation of all tokens FIRST (before any modifications)
-        fixed_content, was_fixed = _fix_app_tokens_indentation(content)
-
-        # Write the fixed content if indentation was corrected
-        if was_fixed:
-            if not _atomic_write(config_path, fixed_content):
-                return False
-            logger.debug("Fixed AppTokens indentation before adding new token")
-            content = fixed_content
-        else:
-            content = fixed_content
-
-        # Now search for the token ONLY within the AppTokens section (not in FakeAppIds, etc.)
-        app_tokens_section = _get_app_tokens_section(content)
-        existing_pattern = re.compile(
-            rf"^  {re.escape(app_id)}\s*:\s*(.+)$", re.MULTILINE
-        )
-        existing_match = existing_pattern.search(app_tokens_section)
-
-        if existing_match:
-            existing_token = existing_match.group(1).strip()
-            if existing_token == token:
-                logger.debug(f"AppToken for '{app_id}' already exists with same value")
-                return False
-            else:
-                # Update existing token - calculate position in original content
-                # Find start of AppTokens section in original content
-                app_tokens_start = content.find("AppTokens:\n")
-                if app_tokens_start == -1:
-                    app_tokens_start = content.find("AppTokens:")
-                # Position of the token in original content
-                line_start_in_section = existing_match.start()
-                line_start = (
-                    app_tokens_start + len("AppTokens:\n") + line_start_in_section
-                )
-                line_end = line_start + len(existing_match.group(0))
-                new_line = f"  {app_id}: {token}"
-                new_content = content[:line_start] + new_line + content[line_end:]
-                if not _atomic_write(config_path, new_content):
-                    return False
-                logger.info(f"Updated AppToken for '{app_id}' in {config_path}")
-                return True
-
-        # Add new token after AppTokens:
-        new_token_line = f"  {app_id}: {token}"
-
-        # Find first existing token to insert before (after _fix_app_tokens_indentation, all have 2-space indent)
-        token_line_pattern = re.compile(r"(^AppTokens:\n)(  \S+:[^\n]*)", re.MULTILINE)
-        token_match = token_line_pattern.search(content)
-
-        if token_match:
-            # Insert after first token, preserving everything before AppTokens:
-            new_content = (
-                content[: token_match.end()]  # Up to first token (no \n at end)
-                + "\n"
-                + new_token_line  # \n + new token (rest already has \n)
-                + content[token_match.end() :]  # Remaining tokens (starts with \n)
-            )
-        else:
-            # No existing tokens found - append after AppTokens: line
-            new_content = content.replace(
-                "AppTokens:", "AppTokens:\n" + new_token_line, 1
-            )
-
-        if not _atomic_write(config_path, new_content):
+        if not _save_yaml(yaml, data, config_path):
             return False
 
-        logger.info(f"Added AppToken for '{app_id}' to AppTokens in {config_path}")
+        logger.info(f"Removed DLC '{dlc_id}' under AppID '{parent_app_id}' in {config_path}")
         return True
 
     except Exception as e:
         logger.error(
-            f"Failed to add AppToken '{app_id}' to {config_path}: {e}", exc_info=True
+            f"Failed to remove DLC '{dlc_id}' from {config_path}: {e}", exc_info=True
         )
         return False
 
 
-def get_app_tokens(config_path: Path) -> dict[str, str]:
+# ──────────────────────────────────────────────────────────────────────────────
+# SLSsteam-specific convenience functions
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def ensure_slssteam_api_enabled(config_path: Path) -> bool:
     """
-    Get all AppTokens from SLSsteam config.yaml.
+    Ensure ``API: yes`` is present in config.yaml.
+
+    Only acts when SLSsteam mode and config management are both enabled.
 
     Args:
-        config_path: Path to the YAML config file
+        config_path: Path to the SLSsteam config.yaml file.
 
     Returns:
-        Dict mapping app_id -> token
+        True if the file was modified (API was off and is now on).
+        False if already enabled, guards are off, or an error occurred.
     """
-    tokens = {}
-
-    try:
-        if not config_path.exists():
-            logger.debug(f"Config file not found at {config_path}")
-            return tokens
-
-        with open(config_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        # Find AppTokens section and extract all entries
-        app_tokens_pattern = re.compile(r"^AppTokens:\s*$", re.MULTILINE)
-        match = app_tokens_pattern.search(content)
-
-        if not match:
-            return tokens
-
-        # Find the end of AppTokens section (next top-level key or end of file)
-        section_start = match.end()
-        after_section = content[section_start:]
-
-        # Look for next top-level key (at start of line, word character)
-        next_key_pattern = re.compile(r"^[A-Za-z]", re.MULTILINE)
-        next_match = next_key_pattern.search(after_section)
-
-        if next_match:
-            section_end = section_start + next_match.start()
-        else:
-            section_end = len(content)
-
-        section_content = content[section_start:section_end]
-
-        # Pattern to match token entries: "  app_id: token_value"
-        token_pattern = re.compile(rf"^\s*(\d+)\s*:\s*(.+)$", re.MULTILINE)
-
-        for token_match in token_pattern.finditer(section_content):
-            app_id = token_match.group(1).strip()
-            token = token_match.group(2).strip()
-            tokens[app_id] = token
-
-    except Exception as e:
-        logger.error(f"Failed to read AppTokens from {config_path}: {e}", exc_info=True)
-
-    return tokens
-
-
-def get_fake_app_ids(config_path: Path, fake_appid: str = "") -> set[str]:
-    """
-    Get all FakeAppIds from SLSsteam config.yaml.
-
-    Args:
-        config_path: Path to the YAML config file
-        fake_appid: Optional fake appid to filter by (defaults to settings value or "480")
-
-    Returns:
-        Set of app_id strings that are in FakeAppIds
-    """
-    fake_app_ids = set()
-
-    # Use provided fake_appid or get from settings, default to "480"
-    if not fake_appid:
-        fake_appid = get_fake_appid_for_online()
-
-    try:
-        if not config_path.exists():
-            logger.debug(f"Config file not found at {config_path}")
-            return fake_app_ids
-
-        with open(config_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        # Find FakeAppIds section and extract all entries
-        fake_appids_pattern = re.compile(r"^FakeAppIds:\s*$", re.MULTILINE)
-        match = fake_appids_pattern.search(content)
-
-        if not match:
-            return fake_app_ids
-
-        # Find the end of FakeAppIds section (next top-level key or end of file)
-        section_start = match.end()
-        after_section = content[section_start:]
-
-        # Look for next top-level key (at start of line, word character)
-        next_key_pattern = re.compile(r"^[A-Za-z]", re.MULTILINE)
-        next_match = next_key_pattern.search(after_section)
-
-        if next_match:
-            section_end = section_start + next_match.start()
-        else:
-            section_end = len(content)
-
-        section_content = content[section_start:section_end]
-
-        # Pattern to match FakeAppId entries: "  app_id: <fake_appid>   # comment"
-        entry_pattern = re.compile(rf"^\s*(\d+)\s*:\s*{re.escape(fake_appid)}", re.MULTILINE)
-
-        for entry_match in entry_pattern.finditer(section_content):
-            app_id = entry_match.group(1).strip()
-            fake_app_ids.add(app_id)
-
-    except Exception as e:
-        logger.error(f"Failed to read FakeAppIds from {config_path}: {e}", exc_info=True)
-
-    return fake_app_ids
-
-
-def add_fake_app_id(config_path: Path, app_id: str, game_name: str = "", fake_appid: str = "") -> bool:
-    """
-    Add an AppID to the FakeAppIds list in SLSsteam config.yaml.
-
-    Format:
-        FakeAppIds:
-          appid: <fake_appid>   # Game Name -> SLSonline
-
-    This function preserves ALL comments, whitespace, and formatting.
-    Only performs the addition if SLSsteam mode and config management are enabled in settings.
-
-    Args:
-        config_path: Path to the YAML config file
-        app_id: The AppID to add
-        game_name: Optional game name for comment
-        fake_appid: Optional fake appid to use (defaults to settings value or "480")
-
-    Returns:
-        True if AppID was added, False if already exists, error, or mode is disabled
-    """
-    if not is_slssteam_mode_enabled():
-        logger.debug("SLSsteam mode is disabled, skipping add fake app id")
+    if not _check_guards("ensure_slssteam_api_enabled"):
         return False
-    if not is_slssteam_config_management_enabled():
-        logger.debug("SLSsteam config management is disabled, skipping add fake app id")
-        return False
-
-    # Use provided fake_appid or get from settings, default to "480"
-    if not fake_appid:
-        fake_appid = get_fake_appid_for_online()
-    # Determine the suffix for the comment
-    suffix = "Spacewar" if fake_appid == "480" else "SLSonline"
-
-    try:
-        # If file doesn't exist, create it with the new entry
-        if not config_path.exists():
-            # Ensure parent directory exists
-            config_path.parent.mkdir(parents=True, exist_ok=True)
-            if game_name:
-                new_entry = f"FakeAppIds:\n  {app_id}: {fake_appid}   # {game_name} -> {suffix}\n"
-            else:
-                new_entry = f"FakeAppIds:\n  {app_id}: {fake_appid}\n"
-            if not _atomic_write(config_path, new_entry):
-                return False
-            logger.info(f"Created config file with FakeAppId '{app_id}' in {config_path}")
-            return True
-
-        # Read the file content
-        with open(config_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        # Check if AppID already exists in FakeAppIds list
-        # Match patterns like: "  12345: <fake_appid>" or "  12345: <fake_appid>   # comment"
-        existing_pattern = re.compile(
-            rf"^\s*{re.escape(app_id)}\s*:\s*{re.escape(fake_appid)}", re.MULTILINE
-        )
-
-        if existing_pattern.search(content):
-            logger.debug(f"AppID '{app_id}' already exists in FakeAppIds")
-            return False
-
-        # Find FakeAppIds section
-        fake_appids_pattern = re.compile(r"^FakeAppIds:\s*$", re.MULTILINE)
-        match = fake_appids_pattern.search(content)
-
-        if match:
-            # Append to existing section
-            section_start = match.end()
-            # Skip the newline after "FakeAppIds:"
-            if section_start < len(content) and content[section_start] == "\n":
-                section_start += 1
-            remaining = content[section_start:]
-            lines = remaining.split("\n")
-
-            # Find position after the last entry (line starting with digits)
-            insert_pos = section_start
-            last_entry_end = section_start
-
-            for i, line in enumerate(lines):
-                stripped = line.strip()
-                # Check if line starts with a digit (it's an entry)
-                if stripped and stripped[0].isdigit():
-                    # This is an entry - update the end position
-                    last_entry_end = section_start + sum(
-                        len(lines[j]) + 1 for j in range(i + 1)
-                    )
-                elif not stripped:
-                    # Empty line - continue
-                    continue
-                elif stripped.startswith("#"):
-                    # Comment line - continue
-                    continue
-                else:
-                    # Any other non-empty, non-comment, non-entry line is a new section
-                    break
-            else:
-                # End of file
-                last_entry_end = len(content)
-
-            insert_pos = last_entry_end
-
-            # Build new entry with proper indentation (2 spaces for entries)
-            if game_name:
-                new_entry = f"  {app_id}: {fake_appid}   # {game_name} -> {suffix}\n"
-            else:
-                new_entry = f"  {app_id}: {fake_appid}\n"
-
-            new_content = (
-                content[:insert_pos] + new_entry + content[insert_pos:]
-            )
-        else:
-            # Create new FakeAppIds section with proper indentation
-            if game_name:
-                new_entry = f"FakeAppIds:\n  {app_id}: {fake_appid}   # {game_name} -> {suffix}\n"
-            else:
-                new_entry = f"FakeAppIds:\n  {app_id}: {fake_appid}\n"
-
-            new_content = content + "\n" + new_entry
-
-        # Write back to file atomically
-        if not _atomic_write(config_path, new_content):
-            return False
-
-        logger.info(f"Added AppID '{app_id}' to FakeAppIds in {config_path}")
-        return True
-
-    except Exception as e:
-        logger.error(
-            f"Failed to add FakeAppId '{app_id}' to {config_path}: {e}", exc_info=True
-        )
-        return False
-
-
-def remove_fake_app_id(config_path: Path, app_id: str, fake_appid: str = "") -> bool:
-    """
-    Remove an AppID from the FakeAppIds list in SLSsteam config.yaml.
-
-    This function removes the AppID entry while preserving other content,
-    comments, and formatting.
-    Only performs the removal if SLSsteam mode and config management are enabled in settings.
-
-    Args:
-        config_path: Path to the YAML config file
-        app_id: The AppID to remove
-        fake_appid: Optional fake appid to use (defaults to settings value or "480")
-
-    Returns:
-        True if AppID was removed, False if not found, error, or mode is disabled
-    """
-    if not is_slssteam_mode_enabled():
-        logger.debug("SLSsteam mode is disabled, skipping remove fake app id")
-        return False
-    if not is_slssteam_config_management_enabled():
-        logger.debug("SLSsteam config management is disabled, skipping remove fake app id")
-        return False
-
-    # Use provided fake_appid or get from settings, default to "480"
-    if not fake_appid:
-        fake_appid = get_fake_appid_for_online()
-
-    try:
-        if not config_path.exists():
-            logger.debug(f"Config file does not exist at {config_path}")
-            return False
-
-        with open(config_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        # Pattern to match AppID in FakeAppIds list (with optional comment)
-        # Matches: "  12345: <fake_appid>" or "  12345: <fake_appid>   # comment"
-        app_id_pattern = re.compile(
-            rf"^\s*{re.escape(app_id)}\s*:\s*{re.escape(fake_appid)}(?:\s*#.*)?$", re.MULTILINE
-        )
-
-        match = app_id_pattern.search(content)
-        if not match:
-            logger.debug(f"AppID '{app_id}' not found in FakeAppIds")
-            return False
-
-        # Find the line start and end
-        line_start = content.rfind("\n", 0, match.start()) + 1  # Include newline before
-        if line_start == 0:
-            line_start = 0  # First line, no newline before
-        line_end = content.find("\n", match.end())
-        if line_end == -1:
-            line_end = len(content)  # End of file
-
-        # Check if there's a newline after the line
-        if line_end < len(content) and content[line_end] == "\n":
-            line_end += 1  # Include the newline
-
-        # Remove the line
-        new_content = content[:line_start] + content[line_end:]
-
-        # Write back to file atomically
-        if not _atomic_write(config_path, new_content):
-            return False
-
-        logger.info(f"Removed AppID '{app_id}' from FakeAppIds in {config_path}")
-        return True
-
-    except Exception as e:
-        logger.error(
-            f"Failed to remove FakeAppId '{app_id}' from {config_path}: {e}", exc_info=True
-        )
-        return False
+    return update_yaml_scalar_value(config_path, "API", True)

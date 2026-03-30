@@ -24,14 +24,13 @@ from core.tasks.monitor_speed_task import SpeedMonitorTask
 from core.tasks.process_zip_task import ProcessZipTask
 from core.tasks.steamless_task import SteamlessTask
 from ui.dialogs.depotselection import DepotSelectionDialog
-from ui.dialogs.dlcselection import DlcSelectionDialog
 from ui.dialogs.steamlibrary import SteamLibraryDialog
 from ui.dialogs.chmod_resume import ChmodResumeDialog
 from ui.dialogs.steamless_resume import SteamlessResumeDialog
 from utils.helpers import get_base_path
 from utils.yaml_config_manager import (
     get_user_config_path,
-    add_additional_app,
+    add_list_item,
     add_dlc_data,
 )
 
@@ -1785,7 +1784,7 @@ class TaskManager:
             main_appid = self.game_data.get("appid")
             game_name = self.game_data.get("game_name", "")
             if main_appid:
-                added = add_additional_app(config_path, str(main_appid), game_name)
+                added = add_list_item(config_path, "AdditionalApps", str(main_appid), game_name)
                 if added:
                     logger.info(
                         f"Added main AppID '{main_appid}' to SLSsteam AdditionalApps"

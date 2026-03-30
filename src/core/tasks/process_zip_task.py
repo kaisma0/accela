@@ -6,7 +6,7 @@ import tempfile
 
 from ui.assets import DEPOT_BLACKLIST
 from core.steam_api import get_depot_info_from_api
-from utils.yaml_config_manager import get_user_config_path, add_app_token
+from utils.yaml_config_manager import get_user_config_path, set_map_item
 from utils.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -101,10 +101,7 @@ class ProcessZipTask:
 
                 if not config_path.exists():
                     logger.warning(f"SLSsteam config not found at {config_path}")
-                    return app_token
-
-                success = add_app_token(config_path, app_id, app_token)
-
+                success = set_map_item(config_path, "AppTokens", app_id, app_token)
                 if success:
                     logger.info(f"Successfully added token for AppID {app_id} to SLSsteam config")
 

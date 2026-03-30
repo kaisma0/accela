@@ -46,7 +46,6 @@ from utils.paths import Paths
 from utils.settings import get_settings
 from utils.yaml_config_manager import (
     get_user_config_path,
-    update_yaml_boolean_value,
     update_yaml_nested_scalar_value,
     update_yaml_scalar_value,
 )
@@ -806,18 +805,18 @@ class SettingsDialog(QDialog):
             ).strip()
 
             changed = 0
-            changed += int(update_yaml_boolean_value(config_path, "SafeMode", safe_mode))
+            changed += int(update_yaml_scalar_value(config_path, "SafeMode", safe_mode))
             changed += int(
-                update_yaml_boolean_value(config_path, "Notifications", notifications)
+                update_yaml_scalar_value(config_path, "Notifications", notifications)
             )
             changed += int(
-                update_yaml_boolean_value(
+                update_yaml_scalar_value(
                     config_path,
                     "WarnHashMissmatch",
                     warn_hash_missmatch,
                 )
             )
-            changed += int(update_yaml_boolean_value(config_path, "NotifyInit", notify_init))
+            changed += int(update_yaml_scalar_value(config_path, "NotifyInit", notify_init))
             changed += int(update_yaml_scalar_value(config_path, "FakeEmail", fake_email))
             changed += int(
                 update_yaml_scalar_value(

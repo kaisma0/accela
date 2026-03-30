@@ -32,12 +32,12 @@ from core.steam_helpers import slssteam_api_send
 from utils.helpers import get_base_path
 from utils.image_fetcher import ImageFetcher
 from utils.yaml_config_manager import (
-    add_fake_app_id,
-    get_fake_app_ids,
+    get_map_items,
+    set_map_item,
+    remove_map_item,
     get_user_config_path,
     is_slssteam_config_management_enabled,
     is_slssteam_mode_enabled,
-    remove_fake_app_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -736,16 +736,17 @@ class GameLibraryDialog(QDialog):
             appid_is_valid = appid and appid not in ("0", "N/A", "unknown", "480")
 
             if appid_is_valid:
-                # Get fake_appid from textbox, default to "480" if empty
-                fake_appid = self.fake_appid_input.text().strip()
-                if not fake_appid:
-                    fake_appid = "480"
-
                 # Check if already in FakeAppIds
                 config_path = get_user_config_path()
                 if config_path.exists():
-                    fake_app_ids = get_fake_app_ids(config_path, fake_appid)
-                    self.fake_appid_checkbox.setChecked(appid in fake_app_ids)
+                    items = {str(k): str(v) for k, v in get_map_items(config_path, "FakeAppIds").items()}
+                    if appid in items:
+                        self.fake_appid_checkbox.setChecked(True)
+                        mapped_val = items[appid]
+                        if mapped_val != "480":
+                            self.fake_appid_input.setText(mapped_val)
+                    else:
+                        self.fake_appid_checkbox.setChecked(False)
                 else:
                     self.fake_appid_checkbox.setChecked(False)
 
@@ -1425,12 +1426,20 @@ class GameLibraryDialog(QDialog):
 
         if state == Qt.CheckState.Checked.value:
             # Add to FakeAppIds
-            success = add_fake_app_id(config_path, appid, game_name, fake_appid)
+            suffix = "Spacewar" if fake_appid == "480" else "SLSonline"
+            comment = f"{game_name} -> {suffix}" if game_name else ""
+            
+            try:
+                fake_val = int(fake_appid)
+            except ValueError:
+                fake_val = fake_appid
+                
+            success = set_map_item(config_path, "FakeAppIds", appid, fake_val, comment)
             if not success:
                 self.fake_appid_checkbox.setChecked(False)
         else:
-            # Remove from FakeAppIds
-            success = remove_fake_app_id(config_path, appid, fake_appid)
+            # Remove from FakeAppIds unconditionally if unchecked
+            success = remove_map_item(config_path, "FakeAppIds", appid)
             if not success:
                 self.fake_appid_checkbox.setChecked(True)
 
