@@ -179,14 +179,6 @@ class UIStateManager:
         main_gif_path = get_base_path() / "gifs/colorized/main.gif"
         default_gif_path = Paths.resource("gif/main.gif")
 
-        ui_mode = self.settings.value("ui_mode", "default")
-        sonic_main_applied = False
-        
-        if ui_mode == "sonic":
-            sonic_gif = Paths.resource("sonic/gifs/main.gif")
-            default_gif_path = sonic_gif
-            sonic_main_applied = True
-
         if self.main_movie:
             self.main_movie.stop()
 
@@ -195,7 +187,7 @@ class UIStateManager:
         self.main_window.drop_zone_gif.setMovie(self.main_movie)
         self.current_movie = self.main_movie
 
-        if main_gif_path.exists() and not sonic_main_applied:
+        if main_gif_path.exists():
             self.main_movie.stop()
             self.main_movie = QMovie(str(main_gif_path))
             self.main_window.drop_zone_gif.setMovie(self.main_movie)
@@ -283,15 +275,7 @@ class UIStateManager:
         # Update application appearance
         from main import update_appearance
 
-        # UI mode (e.g., 'sonic') may override colors and font file
-        ui_mode = self.settings.value("ui_mode", "default")
-
-        font_file = None
-        if ui_mode == "sonic":
-            # Sonic mode: use specific palette (blue background, yellow accent)
-            self.main_window.accent_color = "#ffcc00"
-            self.main_window.background_color = "#002c83"
-            font_file = self.settings.value("font-file", "sonic/sonic-1-hud-font.otf")
+        font_file = self.settings.value("font-file", "", type=str) or None
 
         font_ok, font_info = update_appearance(
             QApplication.instance(),
@@ -300,12 +284,6 @@ class UIStateManager:
             self.main_window.font,
             font_file=font_file,
         )
-
-        if ui_mode == "sonic" and font_ok:
-            # Sync main window font family to loaded Sonic font
-            sonic_font = QFont(font_info)
-            sonic_font.setPointSize(font_size)
-            self.main_window.font = sonic_font
 
         # Apply styles to various UI elements
         self._apply_background_color()
@@ -370,26 +348,13 @@ class UIStateManager:
             self.current_movie.stop()
 
         # Determine which GIFs to use based on setting
-        ui_mode = self.settings.value("ui_mode", "default")
-        
-        if ui_mode == "sonic":
-            sonic_dir = Paths.resource("sonic/gifs")
-            sonic_downloads = []
-            if sonic_dir.exists() and sonic_dir.is_dir():
-                sonic_downloads.extend([str(p) for p in sonic_dir.glob("downloading*.gif")])
-
-            if sonic_downloads:
-                available_gifs = sorted(sonic_downloads)
-            else:
-                available_gifs = []
-        elif self.disable_default_gifs:
+        if self.disable_default_gifs:
             available_gifs = self.custom_download_gifs
 
             # If no custom GIFs found, fall back to defaults
             if not available_gifs:
                 available_gifs = self.default_download_gifs
                 logger.warning("No custom GIFs found, using defaults")
-                
         else:
             # Use only default GIFs
             available_gifs = self.default_download_gifs

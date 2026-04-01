@@ -287,8 +287,7 @@ def apply_font(app, font, font_file):
 def update_appearance(app, accent="#C06C84", background="#000000", font=None, font_file=None):
     """Apply a dynamic palette and custom font to the application
 
-    font_file: relative resource path (eg. "res/sonic-1-hud-font.otf") to load
-    instead of the default embedded font.
+    font_file: relative resource path to load instead of the default embedded font.
     """
 
     apply_palette(app, accent, background)

@@ -109,34 +109,23 @@ def apply_theme(app, logger):
     accent_color = settings.value("accent_color", "#C06C84")
     bg_color = settings.value("background_color", "#000000")
 
-    # Check for UI mode (e.g., Sonic) which may override colors/font
-    ui_mode = settings.value("ui_mode", "default")
-    font_file = None
-    initial_font = None
+    # Load user's font settings
+    font_family = settings.value("font", "TrixieCyrG-Plain")
+    font_size = settings.value("font-size", 12, type=int)
+    font_style = settings.value("font-style", "Normal")
 
-    if ui_mode == "sonic":
-        # Sonic palette: blue background, yellow accent
-        accent_color = "#ffcc00"
-        bg_color = "#002c83"
-        font_file = settings.value("font-file", "sonic/sonic-1-hud-font.otf")
-        initial_font = QFont()
-    else:
-        # Load user's font settings
-        font_family = settings.value("font", "TrixieCyrG-Plain")
-        font_size = settings.value("font-size", 12, type=int)
-        font_style = settings.value("font-style", "Normal")
-        
-        initial_font = QFont(font_family)
-        initial_font.setPointSize(font_size)
-        if font_style == "Italic":
-            initial_font.setItalic(True)
-        elif font_style == "Bold":
-            initial_font.setBold(True)
-        elif font_style == "Bold Italic":
-            initial_font.setBold(True)
-            initial_font.setItalic(True)
+    initial_font = QFont(font_family)
+    initial_font.setPointSize(font_size)
+    if font_style == "Italic":
+        initial_font.setItalic(True)
+    elif font_style == "Bold":
+        initial_font.setBold(True)
+    elif font_style == "Bold Italic":
+        initial_font.setBold(True)
+        initial_font.setItalic(True)
 
     # Apply palette + font
+    font_file = settings.value("font-file", "", type=str) or None
     font_ok, font_info = update_appearance(app, accent_color, bg_color, font=initial_font, font_file=font_file)
 
     if font_ok:

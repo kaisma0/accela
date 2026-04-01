@@ -899,22 +899,6 @@ class SettingsDialog(QDialog):
         titlebar_ex_layout.addWidget(titlebar_explanation)
         display_layout.addLayout(titlebar_ex_layout)
 
-        # Sonic Mode toggle
-        self.sonic_mode_checkbox = QCheckBox("Enable Sonic Mode")
-        sonic_on = self.settings.value("ui_mode", "default") == "sonic"
-        self.sonic_mode_checkbox.setChecked(sonic_on)
-        self.sonic_mode_checkbox.setToolTip(
-            "Apply Sonic color palette, font and default media resources."
-        )
-        display_layout.addWidget(self.sonic_mode_checkbox)
-        sonic_explanation = QLabel("Apply Sonic color palette, font and default media resources.")
-        sonic_explanation.setStyleSheet("color: #888888; font-size: 11px;")
-        sonic_explanation.setWordWrap(True)
-        sonic_ex_layout = QHBoxLayout()
-        sonic_ex_layout.setContentsMargins(0, 0, 0, 0)
-        sonic_ex_layout.addSpacing(14)
-        sonic_ex_layout.addWidget(sonic_explanation)
-        display_layout.addLayout(sonic_ex_layout)
 
         self.gif_display_checkbox = create_checkbox_setting(
             "Show GIF Display",
@@ -1260,34 +1244,16 @@ class SettingsDialog(QDialog):
         self.settings.setValue("user_accent_color", self._user_accent_color)
         self.settings.setValue("user_background_color", self._user_background_color)
 
-        previous_ui_mode = self.settings.value("ui_mode", "default")
-        sonic_enabled = self.sonic_mode_checkbox.isChecked() if hasattr(self, "sonic_mode_checkbox") else False
-        new_ui_mode = "sonic" if sonic_enabled else "default"
-        self.settings.setValue("ui_mode", new_ui_mode)
-
-        if sonic_enabled:
-            applied_accent = "#ffcc00"
-            applied_bg = "#002c83"
-            self.settings.setValue("font-file", "sonic/sonic-1-hud-font.otf")
-        else:
-            applied_accent = self._user_accent_color
-            applied_bg = self._user_background_color
-            self.settings.setValue("font-file", "")
-
-        # Reload audio assets if UI mode changed
-        if previous_ui_mode != new_ui_mode and self.main_window and hasattr(self.main_window, "audio_manager"):
-            self.main_window.audio_manager.reload_sounds_for_ui_mode()
-
         ignore_color_warnings = self._save_bool("ignore_color_warnings_checkbox", "ignore_color_warnings")
 
-        if not ignore_color_warnings and not sonic_enabled:
+        if not ignore_color_warnings:
             if self.is_too_close_to_accent_color(QColor(self._user_accent_color), QColor(self._user_background_color)):
                 QMessageBox.warning(self, "Invalid Color", "The background color is too similar to the accent color and will reduce contrast.")
                 return
 
         # Save the applied colors
-        self.settings.setValue("accent_color", applied_accent)
-        self.settings.setValue("background_color", applied_bg)
+        self.settings.setValue("accent_color", self._user_accent_color)
+        self.settings.setValue("background_color", self._user_background_color)
 
         # Font settings
         if hasattr(self, 'current_font'):

@@ -156,27 +156,8 @@ class AudioManager:
             self.open_sound = self.close_sound = self.loop_sound = None
 
     def _resolve_sound_path(self, filename: str):
-        """Resolve sound path, preferring Sonic overrides when enabled."""
-        ui_mode = self.settings.value("ui_mode", "default")
-        return Paths.sound_path(filename,ui_mode)
-
-    def reload_sounds_for_ui_mode(self):
-        """Reload sounds when UI mode changes (e.g., Sonic mode toggle)."""
-        logger.debug("Reloading sounds for UI mode change")
-
-        # Stop any current playback before reloading
-        if self.effects_channel:
-            self.effects_channel.stop()
-        if self.hum_channel:
-            self.hum_channel.stop()
-
-        # Clear current sounds
-        self.open_sound = None
-        self.close_sound = None
-        self.loop_sound = None
-
-        # Recreate sounds without auto-playing the open sound
-        self.setup_sounds(play_open_sound=False)
+        """Resolve sound path from the resources folder."""
+        return Paths.sound_path(filename)
 
     def apply_audio_settings(self):
         """Applies all audio settings including volumes using saved settings"""

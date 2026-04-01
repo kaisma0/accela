@@ -30,13 +30,8 @@ class Paths:
         return Path(path).expanduser().resolve()
 
     @classmethod
-    def sound_path(cls, filename, ui_mode):
+    def sound_path(cls, filename):
         """For use with audio_manager.
-        Prefers sonic/ paths for sonic mode.
+        Returns the sound file path from the res/ folder.
         """
-        # Eventually move this out of here so that the pathing logic has no
-        # idea what ui mode it is.
-        if ui_mode == "sonic":
-            return Paths.resource(f"sonic/sounds/{filename}")
-        # Default sounds are in the root res/ folder (e.g., res/etw.wav)
-        return Paths.resource(filename)    
+        return Paths.resource(filename)
