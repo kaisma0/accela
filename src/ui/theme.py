@@ -4,7 +4,7 @@ from pathlib import Path
 import logging
 
 
-def normal_palette_colors(background_color, accent_color): 
+def normal_palette_colors(background_color, accent_color):
     return {
         QPalette.ColorRole.Window: background_color,
         QPalette.ColorRole.WindowText: accent_color,
@@ -37,7 +37,7 @@ def apply_palette(app, accent, background):
 
     background_color = QColor(background)
     accent_color = QColor(accent)
-    
+
     disabled_bg = background_color.darker(200)
     disabled_text = QColor(100, 100, 100)
 
@@ -51,7 +51,7 @@ def apply_palette(app, accent, background):
     bg_hex = background_color.name()
     bg_dark_120_hex = background_color.darker(120).name()
     bg_light_120_hex = background_color.lighter(120).name()
-    
+
     acc_hex = accent_color.name()
     acc_light_120_hex = accent_color.lighter(120).name()
 
@@ -62,7 +62,7 @@ def apply_palette(app, accent, background):
     selected_lightness = 150
     checked_lightness = 200
     doubled_lightness = 250
-    
+
     background_color_effect = background_color
     if background_color_effect.name() == "#000000":
         background_color_effect = QColor("#282828")
@@ -219,7 +219,7 @@ def apply_palette(app, accent, background):
 def apply_font(app, font, font_file):
     """
     Applies the font to the application.
-    
+
     If font_file is provided, loads that font file and applies it.
     If font is provided (with a family name), checks if it's a system font and uses it.
     Otherwise, falls back to the default TrixieCyrG font.
@@ -227,7 +227,7 @@ def apply_font(app, font, font_file):
 
     logger = logging.getLogger(__name__)
     default_font_file = "TrixieCyrG-Plain Regular.otf"
-    
+
     # If a specific font file is provided, load it
     if font_file:
         font_resource = font_file
@@ -235,7 +235,7 @@ def apply_font(app, font, font_file):
         # Check if the font family exists in the system
         font_family = font.family()
         available_families = QFontDatabase.families()
-        
+
         if font_family in available_families:
             # Font is a system font, just apply it directly
             logger.debug(f"Using system font: {font_family}")

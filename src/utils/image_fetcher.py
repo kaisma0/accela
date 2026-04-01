@@ -62,13 +62,13 @@ class ImageFetcher(QObject):
         """Start the async fetch using QNetworkAccessManager"""
         if self._stopped:
             return
-        
+
         self._start_time = time.time()
         manager = get_network_manager()
-        
+
         request = QNetworkRequest(QUrl(self.url))
         request.setRawHeader(b"User-Agent", b"Mozilla/5.0")
-        
+
         self._reply = manager.get(request)
         self._reply.finished.connect(self._on_finished)  # type: ignore[union-attr]
 
@@ -78,10 +78,10 @@ class ImageFetcher(QObject):
             if self._reply:
                 self._reply.deleteLater()
             return
-        
+
         reply = self._reply
         self._reply = None
-        
+
         try:
             if reply.error() == QNetworkReply.NetworkError.NoError:
                 data = reply.readAll().data()  # .data() returns Python bytes
@@ -126,7 +126,7 @@ class ImageFetcher(QObject):
                 total_time = (time.time() - start_time) * 1000
                 logger.debug(f"Selected valid image URL: {url} (found in {total_time:.2f}ms)")
                 return url
-        
+
         # Should not reach here, but return first URL as fallback
         return url_list[0]
 
@@ -155,7 +155,7 @@ class ImageFetcher(QObject):
         # Return first URL immediately - validation is too slow for UI
         # Failed downloads will trigger async refresh via gamelibrary._trigger_header_refresh
         return urls[0]
-    
+
     @staticmethod
     def _fetch_header_from_web_api(app_id: int) -> str | None:
         """
@@ -167,7 +167,7 @@ class ImageFetcher(QObject):
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             data = response.json()
-            
+
             app_data = data.get(str(app_id), {})
             if app_data.get("success"):
                 header_url = app_data.get("data", {}).get("header_image")

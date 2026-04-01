@@ -211,7 +211,7 @@ class DownloadSLSsteamTask(QObject):
 
             # Find the first directory that actually contains the .so file
             installed_dir = next(
-                (d for d in possible_install_dirs if (d / "SLSsteam.so").exists()), 
+                (d for d in possible_install_dirs if (d / "SLSsteam.so").exists()),
                 None
             )
 
@@ -225,7 +225,7 @@ class DownloadSLSsteamTask(QObject):
             if version_file.exists():
                 with open(version_file, "r") as f:
                     result["installed_version"] = f.read().strip()
-                
+
 
                 result["update_available"] = int(result["latest_version"]) > int(result["installed_version"])
             else:
@@ -233,7 +233,7 @@ class DownloadSLSsteamTask(QObject):
 
             # Check steamclient.so hash compatibility
             hash_check = DownloadSLSsteamTask.check_steamclient_hash()
-            
+
             # Update the base dict with the hash check results
             result.update({
                 "steamclient_found": hash_check.get("found", False),

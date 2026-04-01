@@ -104,9 +104,9 @@ class GameLibraryDialog(QDialog):
         self.setMinimumWidth(800)
         self.setMinimumHeight(800)
 
-        
+
         CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
-        
+
         layout = QVBoxLayout(self._tb_content_widget)
 
         # Scan button
@@ -322,14 +322,14 @@ class GameLibraryDialog(QDialog):
         # Create fetcher (uses QNetworkAccessManager internally - no threads!)
         fetcher = ImageFetcher(url)
         fetcher.setProperty("app_id", app_id)
-        
+
         # Store reference to prevent garbage collection and allow cleanup
         self._active_fetchers[app_id] = fetcher
 
         # Connect signal - no need for QueuedConnection since it's already on main thread
         fetcher.finished.connect(self._on_item_image_fetched)
         fetcher.finished.connect(lambda _, aid=app_id: self._cleanup_fetcher(aid))
-        
+
         # Start the async fetch
         fetcher.start()
 
@@ -399,12 +399,12 @@ class GameLibraryDialog(QDialog):
         Uses a background thread to avoid blocking the UI.
         """
         from concurrent.futures import ThreadPoolExecutor
-        
+
         # Use a thread pool to fetch the header URL without blocking
         def fetch_and_update():
             try:
                 from utils.image_fetcher import ImageFetcher
-                
+
                 # Fetch the correct URL from Steam API
                 api_url = ImageFetcher._fetch_header_from_web_api(app_id)
                 if api_url:
@@ -412,7 +412,7 @@ class GameLibraryDialog(QDialog):
             except Exception as e:
                 logger.warning(f"Failed to fetch header URL for appid {app_id}: {e}")
             return None
-        
+
         def on_fetch_complete(future):
             try:
                 api_url = future.result()
@@ -421,26 +421,26 @@ class GameLibraryDialog(QDialog):
                     QTimer.singleShot(0, lambda: self._apply_header_refresh(app_id, api_url))
             except Exception as e:
                 logger.warning(f"Header refresh failed for appid {app_id}: {e}")
-        
+
         # Submit to thread pool
         executor = ThreadPoolExecutor(max_workers=1)
         future = executor.submit(fetch_and_update)
         future.add_done_callback(on_fetch_complete)
         executor.shutdown(wait=False)
-    
+
     def _apply_header_refresh(self, app_id, api_url):
         """Apply the refreshed header URL on the main thread."""
         if self._closing or not self.isVisible():
             return
-            
+
         try:
             from managers.db_manager import DatabaseManager
-            
+
             # Update the database with fresh URL
             db = DatabaseManager.get_instance()
             db.upsert_app_info(app_id, {"header_url": api_url})
             logger.info(f"Refreshed database entry for appid {app_id}")
-            
+
             # Re-fetch the image with the updated URL
             item = self._find_item_by_appid(app_id)
             if item and app_id not in self._active_fetchers:
@@ -804,14 +804,14 @@ class GameLibraryDialog(QDialog):
             try:
                 path = os.path.normpath(os.path.abspath(str(path)))
                 subprocess.run(["xdg-open", path], check=False)
-                    
+
             except Exception as e:
                 QMessageBox.warning(
                     self,
                     "Open Folder",
                     f"Failed to open folder: {e}",
                 )
-                
+
 
         open_btn.clicked.connect(_open_folder)
 
@@ -847,7 +847,7 @@ class GameLibraryDialog(QDialog):
         self.remove_game_data_checkbox.setChecked(False)
         self.remove_game_data_checkbox.setToolTip("Deletes the game folder, Steam manifest (.acf), and depot manifest")
         uninstall_layout.addWidget(self.remove_game_data_checkbox)
-        
+
         uninstall_layout.addSpacing(10)
 
         linux_options_label = QLabel("Linux Options")
@@ -1428,12 +1428,12 @@ class GameLibraryDialog(QDialog):
             # Add to FakeAppIds
             suffix = "Spacewar" if fake_appid == "480" else "SLSonline"
             comment = f"{game_name} -> {suffix}" if game_name else ""
-            
+
             try:
                 fake_val = int(fake_appid)
             except ValueError:
                 fake_val = fake_appid
-                
+
             success = set_map_item(config_path, "FakeAppIds", appid, fake_val, comment)
             if not success:
                 self.fake_appid_checkbox.setChecked(False)

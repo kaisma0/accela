@@ -30,7 +30,7 @@ class GenerateAchievementsTask(QObject):
         self.progress.emit(error_msg)
         if log_exc:
             logger.error(error_msg, exc_info=True)
-            
+
         self.error.emit(error_msg)
         result = {
             "success": False,
@@ -166,7 +166,7 @@ class GenerateAchievementsTask(QObject):
                 self.process.terminate()
             self.process = None
             self.process_pid = None
-            
+
             return self._fail_and_return(f"Unexpected error during achievement generation: {e}", log_exc=True)
 
     def _handle_output(self, line):

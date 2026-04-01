@@ -20,9 +20,9 @@ class SteamLibraryDialog(QDialog):
         self.setWindowTitle("Select Steam Library")
         self.selected_path = None
         self.setMinimumWidth(500)
-        
+
         CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
-        
+
         layout = QVBoxLayout(self._tb_content_widget)
 
         logger.debug(f"Opening SteamLibraryDialog with {len(library_paths)} libraries.")

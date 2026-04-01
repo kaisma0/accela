@@ -329,7 +329,7 @@ class CustomGifsDialog(QDialog):
     def setup_ui(self):
         """Setup the dialog UI"""
         CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
-        
+
         layout = QVBoxLayout(self._tb_content_widget)
 
         # Title and description
@@ -441,7 +441,7 @@ class CustomGifsDialog(QDialog):
 
         # Check if there are existing download GIF items in the UI
         download_items = [item for item in self.gif_items if _is_download_gif(item.gif_name)]
-        
+
         # Sort by the number in the filename
         download_items.sort(key=lambda x: _get_download_num(x.gif_name))
 
@@ -514,7 +514,7 @@ class CustomGifsDialog(QDialog):
         """Renumber download GIFs to maintain sequential order without gaps"""
         # Get all download GIF items
         download_items = [item for item in self.gif_items if _is_download_gif(item.gif_name)]
-        
+
         # Sort by current number in filename
         download_items.sort(key=lambda x: _get_download_num(x.gif_name))
 
@@ -526,7 +526,7 @@ class CustomGifsDialog(QDialog):
             # Still need to update next_download_num based on highest existing number
             nums = [_get_download_num(i.gif_name) for i in download_items]
             max_num = max(nums) if nums else -1
-            
+
             self.next_download_num = max_num + 1
             self.next_download_label.setText(
                 f"Next: downloading_custom{self.next_download_num}.gif"

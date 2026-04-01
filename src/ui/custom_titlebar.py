@@ -37,8 +37,8 @@ class CustomTitleBar(QFrame):
     @classmethod
     def reposition_dialog_titlebar(cls, dialog, position=None):
         """Reposition an already-created dialog titlebar to top/bottom."""
-        if not (hasattr(dialog, "_base_layout") and 
-                hasattr(dialog, "_titlebar") and 
+        if not (hasattr(dialog, "_base_layout") and
+                hasattr(dialog, "_titlebar") and
                 hasattr(dialog, "_tb_content_widget")):
             return
 
@@ -72,7 +72,7 @@ class CustomTitleBar(QFrame):
         self.parent = parent
         self.is_main_window = is_main_window
         self.setFixedHeight(36)
-        
+
         self.no_previous_state = True
         self._svg_buttons = []  # Keeps track of SVG buttons for dynamic theme updates
 
@@ -83,7 +83,7 @@ class CustomTitleBar(QFrame):
         self.left_widget = QWidget()
         self.left_layout = QHBoxLayout(self.left_widget)
         self.left_layout.setContentsMargins(0, 0, 0, 0)
-        
+
         self.right_widget = QWidget()
         self.right_layout = QHBoxLayout(self.right_widget)
         self.right_layout.setContentsMargins(0, 0, 0, 0)
@@ -108,7 +108,7 @@ class CustomTitleBar(QFrame):
         self.title_label = QLabel(title)
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.title_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        
+
         self._update_title_label_style()
 
         self.layout.addWidget(self.left_widget, 0, Qt.AlignmentFlag.AlignLeft)
@@ -122,7 +122,7 @@ class CustomTitleBar(QFrame):
         self.right_widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
         self._update_sizing()
-        
+
         self._apply_style()
         self._update_button_colors()
         self._update_button_styles()
@@ -193,7 +193,7 @@ class CustomTitleBar(QFrame):
             }}
         """)
         self._update_title_label_style()
-        
+
     def _update_title_label_style(self):
         if hasattr(self, "title_label"):
             settings = get_settings()
@@ -242,7 +242,7 @@ class CustomTitleBar(QFrame):
         for button, svg_data in self._svg_buttons:
             if button:
                 self._update_svg_button_color(button, svg_data, accent_color)
-                
+
         if self.is_main_window and self.no_previous_state:
             self._update_colored_circle_button(self.status_button, accent_color)
 
@@ -307,10 +307,10 @@ class CustomTitleBar(QFrame):
             button.setFixedSize(24, 24)
 
             button.clicked.connect(on_click)
-            
+
             # Register button to easily update colors later
             self._svg_buttons.append((button, svg_data))
-            
+
             return button
         except Exception as e:
             logger.error(f"Failed to create SVG button: {e}", exc_info=True)

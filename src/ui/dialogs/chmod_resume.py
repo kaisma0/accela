@@ -34,9 +34,9 @@ class ChmodResumeDialog(QDialog):
 
     def _setup_ui(self, game_name, file_count, success):
         """Setup the dialog UI"""
-        
+
         CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
-        
+
         layout = QVBoxLayout(self._tb_content_widget)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)

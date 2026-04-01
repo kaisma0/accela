@@ -78,8 +78,8 @@ class ManifestCheckTask(QObject):
 
             # Use batched API call for all valid games
             appid_list = [game["appid"] for game in valid_games]
-            batch_size = 20  
-            rate_limit_delay = 0.3  
+            batch_size = 20
+            rate_limit_delay = 0.3
 
             # Calculate number of batches for progress reporting
             num_batches = (len(appid_list) + batch_size - 1) // batch_size
@@ -133,12 +133,12 @@ class ManifestCheckTask(QObject):
     def _parse_depot_file(self, appid):
         """
         Helper method to parse a depot file and extract its components safely.
-        
+
         Returns:
             tuple: (depot_id, manifest_id, access_token). Values are None if missing or invalid.
         """
         depot_file = Path(get_base_path()) / "depots" / f"{appid}.depot"
-        
+
         if not depot_file.exists():
             return None, None, None
 
@@ -149,7 +149,7 @@ class ManifestCheckTask(QObject):
                 return None, None, None
 
             parts = [p.strip() for p in content.split(":", 2)]
-            
+
             depot_id = parts[0] if len(parts) > 0 else None
             manifest_id = parts[1] if len(parts) > 1 else None
             access_token = parts[2] if len(parts) > 2 and parts[2] else None
@@ -186,7 +186,7 @@ class ManifestCheckTask(QObject):
 
             # Read saved manifest ID
             saved_main_depot_id, saved_manifest_id, _ = self._parse_depot_file(appid)
-            
+
             if not saved_main_depot_id or not saved_manifest_id:
                 logger.debug(f"Cannot determine version: Valid depot data not found for app {appid}")
                 return "cannot_determine"
@@ -200,7 +200,7 @@ class ManifestCheckTask(QObject):
 
                 # Safely grab depots, defaulting to an empty dict if the API returned None
                 depots = steam_client_data.get("depots") or {}
-                
+
                 # Safely extract the manifest ID
                 current_manifest_id = depots.get(saved_main_depot_id, {}).get("manifest_id")
 
@@ -211,7 +211,7 @@ class ManifestCheckTask(QObject):
                         )
                         return "update_available"
                     return "up_to_date"
-                
+
                 return "cannot_determine"
 
             except Exception as e:

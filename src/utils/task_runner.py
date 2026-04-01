@@ -83,9 +83,9 @@ class TaskRunner(QObject):
         if self._thread is not None and self._thread.isRunning():
             try:
                 self._thread.quit()
-                
-                _wait = 2000 if wait_ms is None else wait_ms 
-                
+
+                _wait = 2000 if wait_ms is None else wait_ms
+
                 if _wait > 0 and not self._thread.wait(_wait):
                     logger.warning("Thread did not finish in time during stop()")
                     if terminate_on_timeout:

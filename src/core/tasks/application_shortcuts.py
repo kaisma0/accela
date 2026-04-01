@@ -150,7 +150,7 @@ class ApplicationShortcutsTask(QObject):
             response.raise_for_status()
 
             img_data = response.content
-            
+
             with Image.open(BytesIO(img_data)) as img_opened:
                 img = img_opened.convert("RGBA")
 
@@ -171,7 +171,7 @@ class ApplicationShortcutsTask(QObject):
                     resized.save(out_path, "PNG")
 
                     self.progress.emit(f"Installed icon {size}x{size} → {out_path}")
-                    
+
             return True
 
         except Exception as e:

@@ -43,14 +43,14 @@ class AudioDialog(QDialog):
     def __init__(self, audio_manager=None, parent=None):
         super().__init__(parent)
         self.audio_manager = audio_manager
-        
+
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle("Audio Settings")
         self.settings = get_settings()
         self.setMinimumSize(400, 300)
-        
+
         CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
-        
+
         self.layout = QVBoxLayout(self._tb_content_widget)
 
         logger.debug("Opening AudioDialog.")
@@ -85,35 +85,35 @@ class AudioDialog(QDialog):
 
         # Keep track of generated sliders
         self.sliders = {}
-        
+
         # Configuration for sliders: (Display Name, Setting Key, Default Value)
         # To disable a slider without deleting settings, just comment out its tuple here.
         volume_configs = [
             ("Master Volume", "master_volume", 80),
-            # ("Music Volume", "music_volume", 80), 
+            # ("Music Volume", "music_volume", 80),
             ("Effects Volume", "effects_volume", 50),
             ("Hum Volume", "hum_volume", 20),
         ]
 
         for label_text, key, default_val in volume_configs:
             current_val = self.settings.value(key, default_val, type=int)
-            
+
             slider = QSlider(Qt.Orientation.Horizontal)
-            
+
             # Apply specific styling if needed
             if key == "effects_volume":
                 slider.setTickPosition(QSlider.TickPosition.TicksBelow)
                 slider.setTickInterval(10)
-                
+
             value_label = QLabel(f"{current_val}%")
             reset_button = QPushButton("Reset")
-            
-            # Note: We use lambda defaults (checked=False, k=key, etc.) to correctly 
+
+            # Note: We use lambda defaults (checked=False, k=key, etc.) to correctly
             # capture the variables in the current loop iteration
             reset_button.clicked.connect(
                 lambda checked=False, k=key, d=default_val, s=slider: self.reset_volume(k, d, s)
             )
-            
+
             slider.valueChanged.connect(
                 lambda value, k=key, lbl=value_label: self.on_volume_changed(k, value, lbl)
             )
@@ -154,7 +154,7 @@ class AudioDialog(QDialog):
         """Apply volume changes for preview only via dynamic method call"""
         if not self.audio_manager:
             return
-        
+
         # Dynamically call the correct preview method (e.g., apply_master_volume_preview)
         method_name = f"apply_{setting_key}_preview"
         if hasattr(self.audio_manager, method_name):
@@ -164,7 +164,7 @@ class AudioDialog(QDialog):
 
     def reset_volume(self, setting_key, default_value, slider):
         """Reset volume to default value (preview only)"""
-        # Setting the value automatically triggers the valueChanged signal, 
+        # Setting the value automatically triggers the valueChanged signal,
         # which will update the label and call apply_volume_preview for us.
         slider.setValue(default_value)
 

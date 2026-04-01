@@ -1023,7 +1023,7 @@ class TaskManager:
             if show_dialog:
                 QMessageBox.warning(self.main_window, "Directory Not Found", f"Game directory not found: {game_directory}")
             return False
-        
+
         # Find directories containing steam_api DLLs
         found_dirs = set()
         for root, _, files in os.walk(game_directory):

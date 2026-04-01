@@ -54,10 +54,10 @@ def _parse_vdf_libraries(vdf_path: str) -> Dict[int, str]:
             if path_match and current_index is not None:
                 path = path_match.group(1).replace("\\\\", "\\")
                 libraries[current_index] = path
-                
+
     except Exception as e:
         logger.error(f"Failed to parse libraryfolders.vdf: {e}")
-        
+
     return libraries
 
 
@@ -140,12 +140,12 @@ def _find_library(cached_path: Optional[str], default_paths: List[str], lib_name
     """Helper to check cache or locate existing default library paths."""
     if cached_path and os.path.exists(cached_path):
         return cached_path
-        
+
     for path in default_paths:
         if os.path.exists(path):
             logger.info(f"Found {lib_name} at: {path}")
             return path
-            
+
     return None
 
 
@@ -192,7 +192,7 @@ def start_steam() -> str:
                 missing.append("library-inject.so")
             logger.warning(f"Missing libraries: {', '.join(missing)}")
             return "NEEDS_USER_PATH"
-            
+
     except Exception as e:
         logger.error(f"Failed to execute Steam: {e}", exc_info=True)
         return "FAILED"
@@ -234,7 +234,7 @@ def get_library_index(library_path: str, steam_path: Optional[str] = None) -> in
 
     vdf_path = os.path.join(steam_path, "steamapps", "libraryfolders.vdf")
     libraries = _parse_vdf_libraries(vdf_path)
-    
+
     real_target_path = os.path.realpath(library_path)
     for idx, path in libraries.items():
         if os.path.realpath(path) == real_target_path:

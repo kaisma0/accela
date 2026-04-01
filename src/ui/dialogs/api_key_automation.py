@@ -73,9 +73,9 @@ class ApiKeyAutomationDialog(QDialog):
         return None
 
     def _build_ui(self):
-        
+
         CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
-        
+
         layout = QVBoxLayout(self._tb_content_widget)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)

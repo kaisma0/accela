@@ -57,10 +57,10 @@ def _handle_request_exception(e, action="API request"):
         response_text = response.text if response is not None else ""
         status_code = response.status_code if response is not None else "N/A"
         logger.error(f"{action} HTTP error: {e} - {response_text}")
-        
+
         if response is None:
             return f"API Error ({status_code}): {e}"
-        
+
         try:
             error_detail = response.json().get("detail", response_text)
             return f"API Error ({status_code}): {error_detail}"
@@ -115,7 +115,7 @@ def download_manifest(app_id):
     manifests_dir = Path(get_base_path()) / "morrenus_manifests"
     manifests_dir.mkdir(parents=True, exist_ok=True)
     save_path = manifests_dir / f"accela_fetch_{app_id}.zip"
-    
+
     logger.info(f"Attempting to download manifest for AppID {app_id} to {save_path}")
 
     try:
@@ -123,7 +123,7 @@ def download_manifest(app_id):
             error_msg = _handle_api_error(r)
             if error_msg:
                 return (None, error_msg)
-            
+
             r.raise_for_status()
             with open(save_path, "wb") as f:
                 for chunk in r.iter_content(chunk_size=8192):

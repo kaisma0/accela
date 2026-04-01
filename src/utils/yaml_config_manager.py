@@ -467,7 +467,7 @@ def remove_list_item(
 ) -> bool:
     """
     Remove *item* from the named YAML block-sequence section.
-    
+
     Only acts when SLSsteam mode and config management are both enabled.
 
     Args:
@@ -566,7 +566,7 @@ def set_map_item(
 ) -> bool:
     """
     Add or update *key* with *value* in the named YAML mapping section.
-    
+
     Only acts when SLSsteam mode and config management are both enabled.
 
     Handles ruamel.yaml type matching (e.g. avoiding duping '123' and 123)
@@ -597,7 +597,7 @@ def set_map_item(
                 insert_key = int(key)
             except ValueError:
                 insert_key = key
-            
+
             section[insert_key] = value
             if comment:
                 section.yaml_add_eol_comment(comment, insert_key)
@@ -621,7 +621,7 @@ def remove_map_item(
     """
     Remove *key* from the named YAML mapping section.
     If expected_value is provided, only removes if the stringified value matches.
-    
+
     Only acts when SLSsteam mode and config management are both enabled.
     """
     if not _check_guards(f"remove_map_item ({section_name})"):
@@ -731,7 +731,7 @@ def add_dlc_data(
             data["DlcData"] = CommentedMap()
 
         dlc_data: CommentedMap = data["DlcData"]
-        
+
         found_parent_key = _find_map_key(dlc_data, parent_app_id)
         if found_parent_key is None:
             try:
@@ -741,7 +741,7 @@ def add_dlc_data(
             dlc_data[found_parent_key] = CommentedMap()
 
         parent_map: CommentedMap = dlc_data[found_parent_key]
-        
+
         found_dlc_key = _find_map_key(parent_map, dlc_id)
 
         if found_dlc_key is not None:
@@ -777,18 +777,18 @@ def add_dlc_data(
 def remove_dlc_data(config_path: Path, parent_app_id: str, dlc_id: str) -> bool:
     """
     Remove a DLC entry under its parent game in the DlcData section.
-    
+
     Args:
         config_path:   Path to the YAML config file.
         parent_app_id: Parent game AppID.
         dlc_id:        DLC AppID to remove.
-        
+
     Returns:
         True if removed, False if not found or an error occurred.
     """
     if not _check_guards("remove_dlc_data"):
         return False
-        
+
     if not config_path.exists():
         return False
 
@@ -798,7 +798,7 @@ def remove_dlc_data(config_path: Path, parent_app_id: str, dlc_id: str) -> bool:
 
         if not dlc_data:
             return False
-            
+
         found_parent_key = _find_map_key(dlc_data, parent_app_id)
         if found_parent_key is None:
             return False
@@ -806,13 +806,13 @@ def remove_dlc_data(config_path: Path, parent_app_id: str, dlc_id: str) -> bool:
         parent_map = dlc_data[found_parent_key]
         if not isinstance(parent_map, dict):
             return False
-            
+
         found_dlc_key = _find_map_key(parent_map, dlc_id)
         if found_dlc_key is None:
             return False
-            
+
         del parent_map[found_dlc_key]
-        
+
         # Optionally remove parent if empty
         if not parent_map:
             del dlc_data[found_parent_key]

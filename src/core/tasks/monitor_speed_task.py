@@ -12,7 +12,7 @@ class SpeedMonitorTask(QObject):
     def __init__(self, interval: float = 1.0):
         super().__init__()
         # Prevent ZeroDivisionError and CPU thrashing if interval is 0 or negative
-        self.interval = max(0.1, interval) 
+        self.interval = max(0.1, interval)
         self._is_running = True
 
     def run(self):

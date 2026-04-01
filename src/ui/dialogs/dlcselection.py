@@ -23,9 +23,9 @@ class DlcSelectionDialog(QDialog):
         self.dlcs = dlcs
         self.setMinimumWidth(600)
         self.setMinimumHeight(400)
-        
+
         CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
-        
+
         layout = QVBoxLayout(self._tb_content_widget)
 
         self.anchor_row = -1
@@ -89,7 +89,7 @@ class DlcSelectionDialog(QDialog):
             for i in range(start_row, end_row + 1):
                 self.list_widget.item(i).setCheckState(target_state)
             self.list_widget.blockSignals(False)
-            
+
         else:
             if is_text_click:
                 new_state = (
@@ -98,7 +98,7 @@ class DlcSelectionDialog(QDialog):
                     else Qt.CheckState.Checked
                 )
                 item.setCheckState(new_state)
-                
+
             self.anchor_row = current_row
 
     def _toggle_all_checkboxes(self, check=True):

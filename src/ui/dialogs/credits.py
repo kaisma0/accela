@@ -25,9 +25,9 @@ class CreditsDialog(QDialog):
         self.setMinimumHeight(250)
         self.resize(400, 342)  # Set exact size as requested
         self.settings = get_settings()
-        
+
         CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
-        
+
         self.main_layout = QVBoxLayout(self._tb_content_widget)
         self.main_window = parent
         self.accent_color = self.settings.value("accent_color", "#C06C84")

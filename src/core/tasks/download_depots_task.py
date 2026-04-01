@@ -528,7 +528,7 @@ class DownloadDepotsTask(QObject):
                             pass
                 except psutil.NoSuchProcess:
                     pass
-                
+
                 self.process.terminate()
                 self.process.kill()  # Ensure it dies
             except Exception as e:

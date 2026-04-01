@@ -18,8 +18,8 @@ def _calculate_fitting_font_size(text, base_font, width, height, max_size, min_s
         if word_wrap:
             # Measure bounding rect for wrapped multi-line text
             rect = metrics.boundingRect(
-                QRect(0, 0, target_width, 10000), 
-                Qt.TextFlag.TextWordWrap | Qt.AlignmentFlag.AlignCenter, 
+                QRect(0, 0, target_width, 10000),
+                Qt.TextFlag.TextWordWrap | Qt.AlignmentFlag.AlignCenter,
                 text
             )
             if rect.width() <= target_width and rect.height() <= target_height:
@@ -45,13 +45,13 @@ class ScaledLabel(QLabel):
     def setMovie(self, movie):
         if self._movie == movie:
             return
-            
+
         if self._movie:
             try:
                 self._movie.frameChanged.disconnect(self.on_frame_changed)
             except TypeError:
                 pass # Ignore if it wasn't connected
-                
+
         self._movie = movie
         if self._movie:
             self._movie.frameChanged.connect(self.on_frame_changed)
@@ -85,7 +85,7 @@ class ScaledFontLabel(QLabel):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._scale_font()
-        
+
     def setText(self, text):
         """Override setText to trigger font scaling immediately"""
         super().setText(text)
@@ -96,7 +96,7 @@ class ScaledFontLabel(QLabel):
         if text and self.width() > 0 and self.height() > 0:
             font = self.font()
             new_size = _calculate_fitting_font_size(
-                text, font, self.width(), self.height(), 
+                text, font, self.width(), self.height(),
                 max_size=self.max_font_size, word_wrap=self.wordWrap()
             )
             font.setPointSize(new_size)
@@ -130,7 +130,7 @@ class ScaledButton(QPushButton):
         if text and self.width() > 0 and self.height() > 0:
             font = self.font()
             new_size = _calculate_fitting_font_size(
-                text, font, self.width(), self.height(), 
+                text, font, self.width(), self.height(),
                 max_size=self.max_font_size, word_wrap=False
             )
             font.setPointSize(new_size)

@@ -145,7 +145,7 @@ class JobQueueManager:
     def _check_if_safe_to_start_next_job(self):
         """Check if it's safe to start the next job"""
         tm = self.main_window.task_manager
-        
+
         is_busy = (
             tm.is_processing or
             tm.is_awaiting_zip_task_stop or
@@ -209,7 +209,7 @@ class JobQueueManager:
             logger.warning("SLSsteam libraries not found. Please locate them manually.")
 
             file_path_1 = self._get_library_path(
-                "Select SLSsteam.so", 
+                "Select SLSsteam.so",
                 "SLSsteam.so (SLSsteam.so libSLSsteam.so)"
             )
             if not file_path_1:
@@ -217,7 +217,7 @@ class JobQueueManager:
                 return
 
             file_path_2 = self._get_library_path(
-                "Select library-inject.so", 
+                "Select library-inject.so",
                 "library-inject.so (library-inject.so libSLS-library-inject.so)"
             )
             if not file_path_2:

@@ -183,9 +183,9 @@ def main():
     logger.info("========================================")
 
     # People only have substance within the memories of other people.
-    
+
     app = QApplication(sys.argv)
-    
+
     command_line_appid, command_line_zips = parse_args(sys.argv[1:], logger)
 
     setup_config(logger)

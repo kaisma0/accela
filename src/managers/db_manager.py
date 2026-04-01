@@ -12,7 +12,7 @@ from utils.paths import Paths
 logger = logging.getLogger(__name__)
 
 # 14 Days in seconds (14 * 24 * 60 * 60)
-EXPIRATION_SECONDS = 1_209_600 
+EXPIRATION_SECONDS = 1_209_600
 
 class DatabaseManager:
     _instance = None
@@ -32,7 +32,7 @@ class DatabaseManager:
 
         self.cctx = zstd.ZstdCompressor(level=3)
         self.dctx = zstd.ZstdDecompressor()
-        
+
         self._initialized = True
         logger.info(f"DatabaseManager initialized at: {self.db_path}")
 
@@ -43,13 +43,13 @@ class DatabaseManager:
         """
         # 1. Writable location (e.g. ~/.local/share/ACCELA/steam_headers.db)
         writable_path = get_base_path() / "steam_headers.db"
-        
+
         # 2. Seed location (data/steam_headers.db, relative to the app root)
         seed_path = Paths.base("data/steam_headers.db")
 
         if not writable_path.exists():
             get_base_path().mkdir(parents=True, exist_ok=True)
-            
+
             if seed_path.exists():
                 logger.info(f"Seeding database from {seed_path}")
                 try:
@@ -60,7 +60,7 @@ class DatabaseManager:
             else:
                 logger.warning(f"Seed database not found at {seed_path}. Creating empty DB.")
                 self._create_empty_db(writable_path)
-        
+
         return writable_path
 
     def _connect_db(self):
@@ -115,11 +115,11 @@ class DatabaseManager:
             with self._conn_lock:
                 cur = self.conn.cursor()
                 cur.execute(
-                    "SELECT header_path, last_updated FROM apps WHERE appid = ?", 
+                    "SELECT header_path, last_updated FROM apps WHERE appid = ?",
                     (appid,)
                 )
                 row = cur.fetchone()
-            
+
             if not row or not row['header_path']:
                 return None
 
@@ -135,7 +135,7 @@ class DatabaseManager:
 
     def get_app_info(self, appid):
         """
-        Retrieves app metadata. 
+        Retrieves app metadata.
         Returns None if the AppID is not found (Complete Miss) or Expired.
         """
         if not self.conn or not self.dctx:
@@ -145,17 +145,17 @@ class DatabaseManager:
             with self._conn_lock:
                 cur = self.conn.cursor()
                 cur.execute(
-                    "SELECT name, header_path, installdir, depots_json, last_updated FROM apps WHERE appid = ?", 
+                    "SELECT name, header_path, installdir, depots_json, last_updated FROM apps WHERE appid = ?",
                     (appid,)
                 )
                 row = cur.fetchone()
-            
+
             if not row:
                 return None  # Complete Miss
 
             if self._is_expired(row['last_updated']):
                 logger.info(f"AppID {appid} data is stale. Treating as miss to force refresh.")
-                return None 
+                return None
 
             # Decompress Depots
             depots_data = {}
@@ -191,7 +191,7 @@ class DatabaseManager:
 
     def upsert_app_info(self, appid, data):
         """
-        Writes new data to the DB. 
+        Writes new data to the DB.
         Used only when the API finds data that the DB was missing.
         If only header_url is provided, updates just the header without touching other fields.
         """
@@ -203,7 +203,7 @@ class DatabaseManager:
             header_raw = data.get("header_url")
             header_path = self._normalize_header_path(appid, header_raw) if header_raw else None
             now = int(time.time())
-            
+
             with self._conn_lock:
                 cur = self.conn.cursor()
 
@@ -222,22 +222,22 @@ class DatabaseManager:
                 # Full insert/replace with all data
                 name = data.get("name", f"App {appid}")
                 installdir = data.get("installdir")
-                
+
                 # Handle BuildID packing for storage safely to avoid overwriting existing branches
                 depots_to_save = data.get("depots", {}).copy()
                 if data.get("buildid"):
                     depots_to_save.setdefault("branches", {})["public"] = {"buildid": data["buildid"]}
-                
+
                 # Compress
                 depots_json_str = json.dumps(depots_to_save)
                 depots_compressed = self.cctx.compress(depots_json_str.encode('utf-8'))
 
                 cur.execute("""
-                    INSERT OR REPLACE INTO apps 
+                    INSERT OR REPLACE INTO apps
                     (appid, name, header_path, installdir, depots_json, last_updated)
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, (appid, name, header_path, installdir, depots_compressed, now))
-                
+
                 self.conn.commit()
             logger.info(f"Database healed: Added/Updated AppID {appid}")
 

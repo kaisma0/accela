@@ -12,10 +12,10 @@ from core.tasks.manifest_check_task import ManifestCheckTask
 from utils.helpers import get_base_path
 from utils.task_runner import TaskRunner
 from utils.yaml_config_manager import (
-    get_user_config_path, 
-    add_list_item, 
-    remove_list_item, 
-    get_map_items, 
+    get_user_config_path,
+    add_list_item,
+    remove_list_item,
+    get_map_items,
     set_map_item,
     is_slssteam_mode_enabled,
     is_slssteam_config_management_enabled
@@ -752,7 +752,7 @@ class GameManager(QObject):
         game_name = game_data.get("game_name", "Unknown")
         install_path = game_data.get("install_path")
         appid = game_data.get("appid", "0")
-        
+
         if not (remove_game_data or remove_compatdata or remove_saves or remove_from_library or remove_shortcuts):
             return f"Are you sure you want to run cleanup for '{game_name}'?\n\nNothing selected to remove."
 
@@ -766,7 +766,7 @@ class GameManager(QObject):
             confirm_msg += "\n"
 
         confirm_msg += "This will permanently delete:\n"
-        
+
         if remove_game_data:
             confirm_msg += f"• Game folder: {install_path}\n"
 
@@ -813,7 +813,7 @@ class GameManager(QObject):
                 if is_slssteam_mode_enabled() and is_slssteam_config_management_enabled():
                     confirm_msg += "• Library entry from SLSsteam config.yaml\n"
                     confirm_msg += "• Depot data from SLSsteam config.yaml\n"
-                
+
             if remove_shortcuts:
                 confirm_msg += "• Linux desktop shortcuts and icons\n"
 
@@ -836,7 +836,7 @@ class GameManager(QObject):
                 if install_path and os.path.exists(install_path):
                     shutil.rmtree(install_path)
                     logger.info(f"Removed game folder: {install_path}")
-    
+
                 # Remove ACF file
                 if library_path and appid != "N/A":
                     acf_path = os.path.join(
@@ -845,7 +845,7 @@ class GameManager(QObject):
                     if os.path.exists(acf_path):
                         os.remove(acf_path)
                         logger.info(f"Removed ACF file: {acf_path}")
-    
+
                 # Remove depot file
                 if self._is_valid_appid(appid):
                     try:
@@ -871,7 +871,7 @@ class GameManager(QObject):
                     config_path = get_user_config_path()
                     if config_path.exists():
                         remove_list_item(config_path, "AdditionalApps", str(appid))
-                        
+
                 if not remove_game_data and install_path and os.path.exists(install_path):
                     dd_path = os.path.join(install_path, ".DepotDownloader")
                     if os.path.exists(dd_path):

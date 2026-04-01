@@ -122,7 +122,7 @@ class MainWindow(QMainWindow):
         max_retries = 15
         for attempt in range(max_retries):
             is_valid, error = morrenus_api.validate_api_key(api_key)
-            
+
             if is_valid:
                 self._morrenus_key_validation_done.emit(True, "")
                 return
@@ -389,7 +389,7 @@ class MainWindow(QMainWindow):
                 event.accept()
 
         self.resize_handles = {}
-        all_handles = ["top_left", "top_right", "bottom_left", "bottom_right", 
+        all_handles = ["top_left", "top_right", "bottom_left", "bottom_right",
                        "left", "right", "top", "bottom"]
 
         for name in all_handles:

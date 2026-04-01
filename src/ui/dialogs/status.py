@@ -52,7 +52,7 @@ class StatusDialog(QDialog):
             (" Achievements", "slscheevo"),
             (" DRM Removal", "steamless"),
         ]
-        
+
         self.tool_statuses = []
 
         if self.parent and hasattr(self.parent, "task_manager"):
@@ -86,9 +86,9 @@ class StatusDialog(QDialog):
 
     def _setup_ui(self):
         """Setup the dialog UI"""
-        
+
         CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
-        
+
         layout = QVBoxLayout(self._tb_content_widget)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(5)

@@ -175,7 +175,7 @@ class UIStateManager:
         """Reload movie objects with current GIFs"""
         if not hasattr(self.main_window, "drop_zone_gif"):
             return
-            
+
         main_gif_path = get_base_path() / "gifs/colorized/main.gif"
         default_gif_path = Paths.resource("gif/main.gif")
 

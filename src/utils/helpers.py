@@ -265,7 +265,7 @@ def create_slider_setting(name: str, setting_key: str, default_value: int, paren
         )
 
     slider.setValue(current_value)
-    
+
     value_label = QLabel(f"{current_value}%")
     value_label.setFixedWidth(30)
 
@@ -363,7 +363,7 @@ def create_text_setting(name: str, setting_key: str, default_value: str, parent_
     current_value = default_value
     if parent_widget:
         current_value = parent_widget.settings.value(setting_key, default_value, type=str)
-        
+
     lineedit.setText(current_value)
 
     if tooltip:

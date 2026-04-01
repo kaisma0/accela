@@ -17,7 +17,7 @@ class QtLogHandler(QObject, logging.Handler):
     def __init__(self):
         QObject.__init__(self)
         logging.Handler.__init__(self)
-        
+
         formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
         self.setFormatter(formatter)
 
@@ -56,6 +56,7 @@ logger = logging.getLogger(__name__)
 
 def setup_logging():
     """Setup logging with timestamped log files"""
+
     from utils.settings import get_settings
 
     log_path = get_log_path()

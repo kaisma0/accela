@@ -42,7 +42,7 @@ _BLACKLIST_KEYWORDS = [
     "3d print model",
 ]
 _BLACKLIST_PATTERN = re.compile(
-    rf"\b(?:{'|'.join(re.escape(k) for k in _BLACKLIST_KEYWORDS)})\b", 
+    rf"\b(?:{'|'.join(re.escape(k) for k in _BLACKLIST_KEYWORDS)})\b",
     re.IGNORECASE
 )
 
@@ -76,7 +76,7 @@ class FetchManifestDialog(QDialog):
         self._active_image_fetchers = {}  # Keep track of active fetchers to prevent GC
 
         CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
-        
+
         layout = QVBoxLayout(self._tb_content_widget)
 
         # API Status Bar
@@ -234,12 +234,12 @@ class FetchManifestDialog(QDialog):
             for game in game_results:
                 # Safely parse strings to prevent KeyError/AttributeError crashes
                 name = str(game.get("game_name", ""))
-                
+
                 # Check against pre-compiled regex pattern
                 if _BLACKLIST_PATTERN.search(name):
                     filtered_count += 1
                     continue
-                
+
                 app_id = str(game.get("game_id", ""))
                 if not app_id:
                     continue  # Skip invalid entries lacking an ID
@@ -313,7 +313,7 @@ class FetchManifestDialog(QDialog):
         if temp_zip_path:
             logger.info(f"Manifest downloaded successfully to {temp_zip_path}")
             self.status_label.setText("Download complete! Adding to queue")
-            
+
             parent_widget = self.parent()
             if parent_widget and hasattr(parent_widget, 'job_queue'):
                 parent_widget.job_queue.add_job(temp_zip_path)

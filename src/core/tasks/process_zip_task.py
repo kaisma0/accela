@@ -184,7 +184,7 @@ class ProcessZipTask:
 
                         if api_data.get("header_url"):
                             game_data["header_url"] = api_data["header_url"]
-                            
+
                         if not game_data.get("game_name") and api_data.get("name"):
                             game_data["game_name"] = api_data["name"]
                             logger.info(f"Resolved game name from Steam API: {game_data['game_name']}")
@@ -239,7 +239,7 @@ class ProcessZipTask:
 
                             api_size = details.get("size")
                             lua_size = manifest_sizes.get(depot_id)
-                            
+
                             final_size = api_size or lua_size
                             if final_size:
                                 final_depot_data["size"] = final_size

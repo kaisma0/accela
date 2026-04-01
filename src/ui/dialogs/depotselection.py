@@ -29,9 +29,9 @@ class DepotSelectionDialog(QDialog):
         self.game_name = game_name
         self.header_url = header_url
         self.resize(485, 520)
-        
+
         CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
-        
+
         layout = QVBoxLayout(self._tb_content_widget)
         layout.setContentsMargins(0, 0, 0, 10)
         layout.setSpacing(10)
@@ -187,7 +187,7 @@ class DepotSelectionDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         content_widget.addWidget(buttons)
-        
+
         layout.addLayout(content_widget)
 
     def on_depot_item_clicked(self, item):
@@ -270,7 +270,7 @@ class DepotSelectionDialog(QDialog):
             # Image fetch failed (404), try to get the correct URL from Steam API
             logger.debug(f"Image fetch failed, attempting to refresh from API")
             self._trigger_header_refresh()
-    
+
     def _trigger_header_refresh(self):
         """
         Fetch the correct header URL from Steam API when generic URL fails.
@@ -279,16 +279,16 @@ class DepotSelectionDialog(QDialog):
         if not app_id:
             self._show_no_image()
             return
-        
+
         logger.debug(f"Fetching header URL from Steam API for appid {app_id}")
-        
+
         try:
             # Fetch the correct URL from Steam API (synchronous but fast)
             api_url = ImageFetcher._fetch_header_from_web_api(app_id)
-            
+
             if api_url:
                 logger.info(f"Got header URL from API for appid {app_id}: {api_url}")
-                
+
                 # Update database with fresh URL
                 try:
                     from managers.db_manager import DatabaseManager
@@ -296,18 +296,18 @@ class DepotSelectionDialog(QDialog):
                     db.upsert_app_info(app_id, {"header_url": api_url})
                 except Exception as e:
                     logger.debug(f"Could not update DB: {e}")
-                
+
                 # Re-fetch the image with the correct URL
                 self.retry_thread = QThread(self)
                 self.retry_fetcher = ImageFetcher(api_url)
                 self.retry_fetcher.moveToThread(self.retry_thread)
-                
+
                 self.retry_thread.started.connect(self.retry_fetcher.run)
                 self.retry_fetcher.finished.connect(self._on_retry_image_fetched)
                 self.retry_fetcher.finished.connect(self.retry_thread.quit)
                 self.retry_fetcher.finished.connect(self.retry_fetcher.deleteLater)
                 self.retry_thread.finished.connect(self.retry_thread.deleteLater)
-                
+
                 self.retry_thread.start()
             else:
                 logger.debug(f"No header URL found in API for appid {app_id}")
@@ -315,7 +315,7 @@ class DepotSelectionDialog(QDialog):
         except Exception as e:
             logger.warning(f"Failed to refresh header for appid {app_id}: {e}")
             self._show_no_image()
-    
+
     def _on_retry_image_fetched(self, image_data):
         """Handle the retry image fetch result."""
         if image_data:
@@ -328,7 +328,7 @@ class DepotSelectionDialog(QDialog):
             logger.info(f"Successfully loaded header image after refresh")
         else:
             self._show_no_image()
-    
+
     def _show_no_image(self):
         """Show fallback text when image is not available."""
         self.header_label.setText("Header image not available.")

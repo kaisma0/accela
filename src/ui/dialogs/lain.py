@@ -65,9 +65,9 @@ class LainMinigameDialog(QDialog):
             "TRACE", "UTOPIA", "VEIL", "WITNESS", "XENON", "YIELD", "ZENITH"
         ]
 
-        
+
         CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
-        
+
         self.layout = QVBoxLayout(self._tb_content_widget)
 
         # Title

@@ -564,7 +564,7 @@ class SteamlessTask(QThread):
         self.progress.emit("Checking .NET 10 runtime availability...")
         self.dotnet_path = get_dotnet_path()
         self.dotnet_available = self.dotnet_path is not None
-        
+
         if not self.dotnet_available:
             msg = (
                 "Steamless requires the .NET 10 Runtime to function.\n"
@@ -574,7 +574,7 @@ class SteamlessTask(QThread):
             )
             self.progress.emit("ERROR: .NET 10 runtime not available.")
             logger.error(".NET 10 runtime was not found.")
-            
+
             # Emit error but let the task fail gracefully
             self.error.emit((
                 "Runtime Error",
@@ -789,4 +789,3 @@ class SteamlessTask(QThread):
     def get_steamless_path(self):
         """Get the path to the Steamless directory"""
         return str(self.steamless_path)
-        

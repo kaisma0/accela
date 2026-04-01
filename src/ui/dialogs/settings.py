@@ -216,9 +216,9 @@ class SettingsDialog(QDialog):
         self.resize(610, 700)
         self.settings = get_settings()
         self._sls_status_worker = None  # Prevent garbage collection of worker
-        
+
         CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
-        
+
         self.main_layout = QVBoxLayout(self._tb_content_widget)
         self.main_window = parent
         self.accent_color = self.settings.value("accent_color", "#C06C84")
@@ -228,7 +228,7 @@ class SettingsDialog(QDialog):
         self._original_sgdb_key = self.settings.value("sgdb_api_key", "", type=str)
 
         self._user_accent_color = self.settings.value(
-            "user_accent_color", 
+            "user_accent_color",
             self.settings.value("accent_color", "#C06C84"),
             type=str
         )
@@ -626,7 +626,7 @@ class SettingsDialog(QDialog):
         download_slssteam_ex.setStyleSheet("color: #888888; font-size: 11px;")
         download_slssteam_ex.setWordWrap(True)
         tools_button_layout.addWidget(download_slssteam_ex)
-        
+
         # Update status indicator
         self.slssteam_status_label = QLabel()
         self.slssteam_status_label.setStyleSheet(
@@ -806,11 +806,11 @@ class SettingsDialog(QDialog):
             ]
 
             changed = 0
-            
+
             # Loop and apply scalars
             for key, val in scalar_updates.items():
                 changed += int(update_yaml_scalar_value(config_path, key, val))
-                
+
             # Loop and apply nested
             for parent, child, val in nested_updates:
                 changed += int(update_yaml_nested_scalar_value(config_path, parent, child, val))
@@ -1199,7 +1199,7 @@ class SettingsDialog(QDialog):
         self._save_bool("library_mode_checkbox", "library_mode", "Library mode setting")
         self._save_bool("auto_skip_single_choice_checkbox", "auto_skip_single_choice", "Auto-skip single-choice selection")
         self._save_bool("prompt_steam_restart_checkbox", "prompt_steam_restart", "Prompt Steam Restart")
-        
+
         try:
             val = int(getattr(self, "max_downloads_spinbox").value())
         except Exception:
@@ -1484,7 +1484,7 @@ class SettingsDialog(QDialog):
                 ["xterm", "-e"] + command,
                 ["kitty", "-e"] + command,
             ]
-            
+
             for cmd in linux_terminals:
                 # Safely check if executable exists in PATH
                 if shutil.which(cmd[0]):
@@ -1500,7 +1500,7 @@ class SettingsDialog(QDialog):
             if not launched:
                 venv_activate = get_venv_activate()
                 command_text = (
-                    f'bash -c \'cd "{working_dir}" && source "{venv_activate}" && {" ".join(command)}\'' 
+                    f'bash -c \'cd "{working_dir}" && source "{venv_activate}" && {" ".join(command)}\''
                     if venv_activate else " ".join(command)
                 )
 

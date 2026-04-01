@@ -26,9 +26,9 @@ class StyleDialog(QDialog):
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle("Style Settings")
         self.settings = get_settings()
-        
+
         CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
-        
+
         self.main_layout = QVBoxLayout(self._tb_content_widget)
         self.main_window = parent
 
