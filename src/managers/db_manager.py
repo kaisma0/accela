@@ -39,12 +39,12 @@ class DatabaseManager:
     def _setup_database_path(self):
         """
         Ensures the database exists in a writable user location.
-        If missing, copies the seed DB from the internal PyInstaller bundle.
+        If missing, copies the seed DB from the bundled source tree.
         """
-        # 1. Writable location (e.g. %APPDATA%/ACCELA/steam_headers.db)
+        # 1. Writable location (e.g. ~/.local/share/ACCELA/steam_headers.db)
         writable_path = get_base_path() / "steam_headers.db"
         
-        # 2. Seed location (Internal PyInstaller path: data/steam_headers.db)
+        # 2. Seed location (data/steam_headers.db, relative to the app root)
         seed_path = Paths.base("data/steam_headers.db")
 
         if not writable_path.exists():

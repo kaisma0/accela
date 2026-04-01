@@ -1,9 +1,8 @@
 from pathlib import Path
-import sys
 
 class Paths:
-    # Go up two parents as this is in a nested directory
-    BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).parent.parent)).resolve()
+    # Go up two parents: utils/ -> src/ -> project root
+    BASE_DIR = Path(__file__).parent.parent.resolve()
     RES = BASE_DIR / "res"
     DEPS = BASE_DIR / "deps"
 

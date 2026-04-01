@@ -1,4 +1,3 @@
-import sys
 import os
 import logging
 import shutil
@@ -95,7 +94,6 @@ def get_base_path(app_name="ACCELA"):
 def _get_slscheevo_path():
     """Get path to SLScheevo executable or Python script"""
 
-    # Running in a PyInstaller bundle → use the embedded executable
     executable_name = "SLScheevo"
     relative_path = f"SLScheevo/{executable_name}"
 
@@ -156,11 +154,6 @@ def _get_slscheevo_save_path():
     return save_dir
 
 
-def is_running_in_pyinstaller():
-    """Check if the application is running as a PyInstaller bundle"""
-    return getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
-
-
 def check_venv(path):
     # Convert to absolute path immediately
     venv_path = Path(path).resolve()
@@ -179,12 +172,6 @@ def check_venv(path):
 
 def get_venv_path():
     """Get absolute path to venv Python"""
-    # Return None if running from PyInstaller temp directory
-    # The venv won't be accessible from the MEIPASS temp folder
-    if is_running_in_pyinstaller():
-        logger.debug("Running from PyInstaller - skipping venv lookup (will use bundled .exe if available)")
-        return None
-
     venv_dir = None
 
     # 1. Check AppImage environment (Highest priority for your use case)
