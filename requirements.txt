@@ -10,6 +10,5 @@ PyYAML
 requests
 ruamel.yaml
 steam[client] @ git+https://github.com/solsticegamestudios/steam
-urwid
 vdf
 zstandard

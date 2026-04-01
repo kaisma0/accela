@@ -1,6 +1,8 @@
+import argparse
 import multiprocessing
 import os
 import sys
+from urllib.parse import unquote
 
 
 from PyQt6.QtGui import QFont
@@ -15,8 +17,6 @@ QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
 from ui.main_window import MainWindow
 from ui.theme import update_appearance
 
-from managers.cli_manager import run_cli_mode, open_cli_terminal
-
 from utils.logger import setup_logging
 from utils.settings import get_settings
 from utils.yaml_config_manager import (
@@ -29,33 +29,67 @@ project_root = os.path.abspath(os.path.dirname(__file__))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-def handle_cli_mode(app, logger, cli_mode, command_line_appid, command_line_zips):
-    """Handles CLI mode and returns True if CLI mode processed successfully"""
-    # CLI mode: activated by -cli flag OR by --appid OR by accela://cli/ URL
-    if cli_mode and (command_line_zips or command_line_appid):
-        # Check if we should open in external terminal
-        if command_line_appid:
-            logger.info(f"Opening CLI mode in external terminal for AppID {command_line_appid}")
-            if open_cli_terminal(appid=command_line_appid):
-                logger.info("Terminal opened successfully")
-                return True
-        elif command_line_zips:
-            logger.info(f"Opening CLI mode in external terminal for {len(command_line_zips)} ZIP(s)")
-            if open_cli_terminal(zip_path=command_line_zips[0]):
-                logger.info("Terminal opened successfully")
-                return True
+def parse_args(args, logger):
+    """
+    Parses command-line arguments and custom URI schemas (accela://...).
+    Returns (command_line_appid, command_line_zips).
+    """
+    parser = argparse.ArgumentParser(description="ACCELA", add_help=False)
+    parser.add_argument('--appid', type=str, help='AppID for the game')
 
-        # Fallback to internal CLI mode (when terminal couldn't be opened)
-        if command_line_appid:
-            logger.info(f"Will process AppID {command_line_appid} from Morrenus API in CLI mode")
-            run_cli_mode(app, None, logger, appid=command_line_appid)
-            return True
+    # Use parse_known_args to allow unrecognized arguments (like PyQt flags or URLs/ZIPs)
+    parsed, unknown = parser.parse_known_args(args)
+
+    command_line_appid = None
+    command_line_zips = []
+
+    if parsed.appid:
+        if parsed.appid.isdigit():
+            command_line_appid = int(parsed.appid)
         else:
-            logger.info(f"Will process {len(command_line_zips)} ZIP file(s) from command line in CLI mode")
-            logger.info("Entering CLI mode - skipping main window")
-            run_cli_mode(app, command_line_zips, logger)
-            return True
-    return False
+            logger.error(f"Invalid AppID: {parsed.appid} (must be a number)")
+
+    for arg in unknown:
+        if arg.startswith('accela://'):
+            # Handle custom URL scheme
+            try:
+                url_content = arg[9:]
+                if '/' in url_content:
+                    action, param = url_content.split('/', 1)
+                    param = unquote(param)
+                else:
+                    action = url_content
+                    param = None
+
+                if action == 'download' and param and param.isdigit():
+                    command_line_appid = int(param)
+                    logger.info(f"Found accela://download URL for AppID: {param}")
+                elif action == 'zip' and param:
+                    if os.path.exists(param):
+                        command_line_zips.append(param)
+                        logger.info(f"Found ZIP file from URL: {param}")
+                    else:
+                        logger.warning(f"ZIP file not found from URL: {param}")
+                else:
+                    logger.warning(f"Invalid accela:// URL format: {arg}")
+            except Exception as e:
+                logger.error(f"Failed to parse URL {arg}: {e}")
+
+        elif arg.lower().endswith('.zip'):
+            zip_path = os.path.abspath(arg)
+            if os.path.exists(zip_path):
+                command_line_zips.append(zip_path)
+                logger.info(f"Found ZIP file from command line: {zip_path}")
+            else:
+                logger.warning(f"ZIP file not found: {arg}")
+
+    # AppID and ZIP files are mutually exclusive
+    if command_line_appid and command_line_zips:
+        logger.error("Cannot use --appid and .zip files together. Choose one.")
+        return None, []
+
+    return command_line_appid, command_line_zips
+
 
 def setup_config(logger):
     """Backups and ensures SLSsteam config exists"""
@@ -154,7 +188,6 @@ def launch_app(app, logger, app_version, command_line_appid, command_line_zips):
 def main():
     logger = setup_logging()
     from utils.version import app_version
-    from managers.cli_manager import parse_cli_args
 
     logger.info("========================================")
     logger.info(f"ACCELA {app_version} starting...")
@@ -164,11 +197,8 @@ def main():
     
     app = QApplication(sys.argv)
     
-    cli_mode, command_line_appid, command_line_zips = parse_cli_args(sys.argv[1:], logger)
+    command_line_appid, command_line_zips = parse_args(sys.argv[1:], logger)
 
-    if handle_cli_mode(app, logger, cli_mode, command_line_appid, command_line_zips):
-        return
-        
     setup_config(logger)
     apply_theme(app, logger)
     launch_app(app, logger, app_version, command_line_appid, command_line_zips)
