@@ -37,9 +37,13 @@ def make_volume_row(name: str, slider: QSlider, value_label: QLabel, reset_butto
 
     return layout
 
+
 class AudioDialog(QDialog):
-    def __init__(self, parent=None):
+    # Pass audio_manager explicitly to remove tight coupling to the parent window
+    def __init__(self, audio_manager=None, parent=None):
         super().__init__(parent)
+        self.audio_manager = audio_manager
+        
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle("Audio Settings")
         self.settings = get_settings()
@@ -51,35 +55,25 @@ class AudioDialog(QDialog):
 
         logger.debug("Opening AudioDialog.")
 
-        # Store current values for comparison/rollback
-        self.current_master_volume = self.settings.value("master_volume", 80, type=int)
-        self.current_music_volume = self.settings.value("music_volume", 80, type=int)
-        self.current_effects_volume = self.settings.value("effects_volume", 50, type=int)
-        self.current_hum_volume = self.settings.value("hum_volume", 20, type=int)
-
         # --- Audio Playback Settings ---
         audio_layout = QVBoxLayout()
         audio_label = QLabel("Audio Settings")
         audio_label.setStyleSheet("font-weight: bold;")
         audio_layout.addWidget(audio_label)
 
-        # Play "Entering The Wired" on start
-        self.play_etw_checkbox = QCheckBox("Play \"Entering The Wired\" on start")
-        play_etw_value = self.settings.value("play_etw", True, type=bool)
-        self.play_etw_checkbox.setChecked(play_etw_value)
-        audio_layout.addWidget(self.play_etw_checkbox)
+        # Keep track of generated checkboxes
+        self.checkboxes = {}
+        checkbox_configs = [
+            ("Play \"Entering The Wired\" on start", "play_etw", True),
+            ("Play \"Let's All Love Lain\" on exit", "play_lall", True),
+            ("Play 50Hz hum noise loop", "play_50hz_hum", True),
+        ]
 
-        # Play "Let's All Love Lain" on exit
-        self.play_lall_checkbox = QCheckBox("Play \"Let's All Love Lain\" on exit")
-        play_lall_value = self.settings.value("play_lall", True, type=bool)
-        self.play_lall_checkbox.setChecked(play_lall_value)
-        audio_layout.addWidget(self.play_lall_checkbox)
-
-        # Play 50Hz hum noise loop
-        self.play_50hz_hum_checkbox = QCheckBox("Play 50Hz hum noise loop")
-        play_50hz_hum_value = self.settings.value("play_50hz_hum", True, type=bool)
-        self.play_50hz_hum_checkbox.setChecked(play_50hz_hum_value)
-        audio_layout.addWidget(self.play_50hz_hum_checkbox)
+        for text, key, default_val in checkbox_configs:
+            cb = QCheckBox(text)
+            cb.setChecked(self.settings.value(key, default_val, type=bool))
+            audio_layout.addWidget(cb)
+            self.checkboxes[key] = cb
 
         self.layout.addLayout(audio_layout)
 
@@ -89,89 +83,45 @@ class AudioDialog(QDialog):
         volume_label.setStyleSheet("font-weight: bold;")
         volume_layout.addWidget(volume_label)
 
+        # Keep track of generated sliders
+        self.sliders = {}
+        
+        # Configuration for sliders: (Display Name, Setting Key, Default Value)
+        # To disable a slider without deleting settings, just comment out its tuple here.
+        volume_configs = [
+            ("Master Volume", "master_volume", 80),
+            # ("Music Volume", "music_volume", 80), 
+            ("Effects Volume", "effects_volume", 50),
+            ("Hum Volume", "hum_volume", 20),
+        ]
 
-        # Master Volume
-        self.master_volume_slider = QSlider(Qt.Orientation.Horizontal)
+        for label_text, key, default_val in volume_configs:
+            current_val = self.settings.value(key, default_val, type=int)
+            
+            slider = QSlider(Qt.Orientation.Horizontal)
+            
+            # Apply specific styling if needed
+            if key == "effects_volume":
+                slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+                slider.setTickInterval(10)
+                
+            value_label = QLabel(f"{current_val}%")
+            reset_button = QPushButton("Reset")
+            
+            # Note: We use lambda defaults (checked=False, k=key, etc.) to correctly 
+            # capture the variables in the current loop iteration
+            reset_button.clicked.connect(
+                lambda checked=False, k=key, d=default_val, s=slider: self.reset_volume(k, d, s)
+            )
+            
+            slider.valueChanged.connect(
+                lambda value, k=key, lbl=value_label: self.on_volume_changed(k, value, lbl)
+            )
 
-        self.master_volume_value_label = QLabel(f"{self.current_master_volume}%")
-        self.master_volume_reset = QPushButton("Reset")
-        self.master_volume_reset.clicked.connect(
-            lambda: self.reset_volume("master_volume", 80, self.master_volume_slider)
-        )
-
-        volume_layout.addLayout(make_volume_row(
-            "Master Volume",
-            self.master_volume_slider,
-            self.master_volume_value_label,
-            self.master_volume_reset,
-            self.current_master_volume,
-        ))
-
-
-        # Music Volume
-        self.music_volume_slider = QSlider(Qt.Orientation.Horizontal)
-
-        self.music_volume_value_label = QLabel(f"{self.current_music_volume}%")
-        self.music_volume_reset = QPushButton("Reset")
-        self.music_volume_reset.clicked.connect(
-            lambda: self.reset_volume("music_volume", 80, self.music_volume_slider)
-        )
-
-        #volume_layout.addLayout(make_volume_row(
-        #    "Music Volume",
-        #    self.music_volume_slider,
-        #    self.music_volume_value_label,
-        #    self.music_volume_reset,
-        #    self.current_music_volume,
-        #))
-
-
-        # Effects Volume
-        self.effects_volume_slider = QSlider(Qt.Orientation.Horizontal)
-        self.effects_volume_slider.setRange(0, 100)
-        self.effects_volume_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
-        self.effects_volume_slider.setTickInterval(10)
-
-        self.effects_volume_value_label = QLabel(f"{self.current_effects_volume}%")
-        self.effects_volume_reset = QPushButton("Reset")
-        self.effects_volume_reset.clicked.connect(
-            lambda: self.reset_volume("effects_volume", 50, self.effects_volume_slider)
-        )
-
-        volume_layout.addLayout(make_volume_row(
-            "Effects Volume",
-            self.effects_volume_slider,
-            self.effects_volume_value_label,
-            self.effects_volume_reset,
-            self.current_effects_volume,
-        ))
-
-
-        # Hum Volume
-        self.hum_volume_slider = QSlider(Qt.Orientation.Horizontal)
-
-        self.hum_volume_value_label = QLabel(f"{self.current_hum_volume}%")
-        self.hum_volume_reset = QPushButton("Reset")
-        self.hum_volume_reset.clicked.connect(
-            lambda: self.reset_volume("hum_volume", 20, self.hum_volume_slider)
-        )
-
-        volume_layout.addLayout(make_volume_row(
-            "Hum Volume",
-            self.hum_volume_slider,
-            self.hum_volume_value_label,
-            self.hum_volume_reset,
-            self.current_hum_volume,
-        ))
-
+            volume_layout.addLayout(make_volume_row(label_text, slider, value_label, reset_button, current_val))
+            self.sliders[key] = slider
 
         self.layout.addLayout(volume_layout)
-
-        # Connect slider signals to update functions (but don't save to settings)
-        self.master_volume_slider.valueChanged.connect(self.on_master_volume_changed)
-        self.music_volume_slider.valueChanged.connect(self.on_music_volume_changed)
-        self.effects_volume_slider.valueChanged.connect(self.on_effects_volume_changed)
-        self.hum_volume_slider.valueChanged.connect(self.on_hum_volume_changed)
 
         # Test buttons for ETW and LALL sounds
         test_layout = QHBoxLayout()
@@ -192,101 +142,60 @@ class AudioDialog(QDialog):
         self.layout.addWidget(buttons)
 
         # Sync audio preview values with current settings before any slider interaction
-        if hasattr(self.parent(), 'audio_manager'):
-            self.parent().audio_manager.sync_preview_values_from_settings()
+        if self.audio_manager:
+            self.audio_manager.sync_preview_values_from_settings()
 
-    def on_master_volume_changed(self, value):
-        """Handle master volume changes in real-time (without saving to settings)"""
-        self.master_volume_value_label.setText(f"{value}%")
-        self.apply_master_volume_preview(value)
+    def on_volume_changed(self, setting_key, value, value_label):
+        """Handle volume changes in real-time (without saving to settings)"""
+        value_label.setText(f"{value}%")
+        self.apply_volume_preview(setting_key, value)
 
-    def on_music_volume_changed(self, value):
-        """Handle music volume changes in real-time (without saving to settings)"""
-        self.music_volume_value_label.setText(f"{value}%")
-        self.apply_music_volume_preview(value)
-
-    def on_effects_volume_changed(self, value):
-        """Handle effects volume changes in real-time (without saving to settings)"""
-        self.effects_volume_value_label.setText(f"{value}%")
-        self.apply_effects_volume_preview(value)
-
-    def on_hum_volume_changed(self, value):
-        """Handle hum volume changes in real-time (without saving to settings)"""
-        self.hum_volume_value_label.setText(f"{value}%")
-        self.apply_hum_volume_preview(value)
-
-    def apply_master_volume_preview(self, value):
-        """Apply master volume changes for preview only"""
-        if hasattr(self.parent(), 'audio_manager'):
-            # Temporarily apply the volume without saving to settings
-            self.parent().audio_manager.apply_master_volume_preview(value)
-
-    def apply_music_volume_preview(self, value):
-        """Apply music volume changes for preview only"""
-        if hasattr(self.parent(), 'audio_manager'):
-            # Temporarily apply the volume without saving to settings
-            self.parent().audio_manager.apply_music_volume_preview(value)
-
-    def apply_effects_volume_preview(self, value):
-        """Apply effects volume changes for preview only"""
-        if hasattr(self.parent(), 'audio_manager'):
-            # Temporarily apply the volume without saving to settings
-            self.parent().audio_manager.apply_effects_volume_preview(value)
-
-    def apply_hum_volume_preview(self, value):
-        """Apply hum volume changes for preview only"""
-        if hasattr(self.parent(), 'audio_manager'):
-            # Temporarily apply the volume without saving to settings
-            self.parent().audio_manager.apply_hum_volume_preview(value)
+    def apply_volume_preview(self, setting_key, value):
+        """Apply volume changes for preview only via dynamic method call"""
+        if not self.audio_manager:
+            return
+        
+        # Dynamically call the correct preview method (e.g., apply_master_volume_preview)
+        method_name = f"apply_{setting_key}_preview"
+        if hasattr(self.audio_manager, method_name):
+            getattr(self.audio_manager, method_name)(value)
+        else:
+            logger.warning(f"Audio manager missing preview method: {method_name}")
 
     def reset_volume(self, setting_key, default_value, slider):
         """Reset volume to default value (preview only)"""
+        # Setting the value automatically triggers the valueChanged signal, 
+        # which will update the label and call apply_volume_preview for us.
         slider.setValue(default_value)
-        # Update the label immediately
-        if slider == self.master_volume_slider:
-            self.master_volume_value_label.setText(f"{default_value}%")
-            self.apply_master_volume_preview(default_value)
-        elif slider == self.music_volume_slider:
-            self.music_volume_value_label.setText(f"{default_value}%")
-            self.apply_music_volume_preview(default_value)
-        elif slider == self.effects_volume_slider:
-            self.effects_volume_value_label.setText(f"{default_value}%")
-            self.apply_effects_volume_preview(default_value)
-        elif slider == self.hum_volume_slider:
-            self.hum_volume_value_label.setText(f"{default_value}%")
-            self.apply_hum_volume_preview(default_value)
 
     def test_etw_sound(self):
         """Test play the ETW sound"""
-        if hasattr(self.parent(), 'audio_manager'):
-            self.parent().audio_manager.test_etw_sound()
+        if self.audio_manager:
+            self.audio_manager.test_etw_sound()
 
     def test_lall_sound(self):
         """Test play the LALL sound"""
-        if hasattr(self.parent(), 'audio_manager'):
-            self.parent().audio_manager.test_lall_sound()
+        if self.audio_manager:
+            self.audio_manager.test_lall_sound()
 
     def accept(self):
-        # Save checkbox settings
-        self.settings.setValue("play_etw", self.play_etw_checkbox.isChecked())
-        self.settings.setValue("play_lall", self.play_lall_checkbox.isChecked())
-        self.settings.setValue("play_50hz_hum", self.play_50hz_hum_checkbox.isChecked())
+        # Save checkbox settings dynamically
+        for key, checkbox in self.checkboxes.items():
+            self.settings.setValue(key, checkbox.isChecked())
 
-        # Save volume settings only when applying
-        self.settings.setValue("master_volume", self.master_volume_slider.value())
-        self.settings.setValue("music_volume", self.music_volume_slider.value())
-        self.settings.setValue("effects_volume", self.effects_volume_slider.value())
-        self.settings.setValue("hum_volume", self.hum_volume_slider.value())
+        # Save volume settings only for currently rendered sliders
+        for key, slider in self.sliders.items():
+            self.settings.setValue(key, slider.value())
 
         # Apply final audio settings
-        if hasattr(self.parent(), 'audio_manager'):
-            self.parent().audio_manager.apply_audio_settings()
+        if self.audio_manager:
+            self.audio_manager.apply_audio_settings()
 
         logger.info("Audio settings saved.")
         super().accept()
 
     def reject(self):
         """Restores original volumes if cancelled"""
-        if hasattr(self.parent(), 'audio_manager'):
-            self.parent().audio_manager.apply_audio_settings()
+        if self.audio_manager:
+            self.audio_manager.apply_audio_settings()
         super().reject()

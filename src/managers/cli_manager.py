@@ -5,6 +5,7 @@ When ACCELA is invoked with ZIP file arguments, this module takes over
 to provide a simplified CLI experience without the main window.
 """
 
+import argparse
 import logging
 import os
 import re
@@ -12,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import time
+from urllib.parse import unquote
 
 from PyQt6.QtCore import QEventLoop
 from PyQt6.QtGui import QFont
@@ -50,6 +52,90 @@ LINUX_TERMINALS = [
 ]
 
 
+def parse_cli_args(args, logger):
+    """
+    Parses command-line arguments and custom URI schemas (accela://...).
+    Returns (cli_mode, command_line_appid, command_line_zips).
+    """
+    parser = argparse.ArgumentParser(description="ACCELA", add_help=False)
+    parser.add_argument('-cli', '--cli', action='store_true', help='Enable CLI mode')
+    parser.add_argument('--appid', type=str, help='AppID for the game (GUI mode, requires -cli for CLI mode)')
+    
+    # Use parse_known_args to allow unrecognized arguments (like PyQt flags or URLs/ZIPs)
+    parsed, unknown = parser.parse_known_args(args)
+    
+    cli_mode = parsed.cli
+    command_line_appid = None
+    command_line_zips = []
+    
+    if parsed.appid:
+        if parsed.appid.isdigit():
+            command_line_appid = int(parsed.appid)
+        else:
+            logger.error(f"Invalid AppID: {parsed.appid} (must be a number)")
+
+    for arg in unknown:
+        if arg.startswith('accela://'):
+            # Handle custom URL scheme
+            try:
+                url_content = arg[9:]
+                if url_content.startswith('cli/'):
+                    cli_mode = True
+                    rest = url_content[4:]
+                else:
+                    rest = url_content
+
+                if '/' in rest:
+                    action, param = rest.split('/', 1)
+                    param = unquote(param)
+                else:
+                    action = rest
+                    param = None
+
+                if cli_mode:
+                    if action == 'download' and param and param.isdigit():
+                        command_line_appid = int(param)
+                        logger.info(f"Found accela://cli/download URL for AppID: {param}")
+                    elif action == 'zip' and param:
+                        if os.path.exists(param):
+                            command_line_zips.append(param)
+                            logger.info(f"Found ZIP file from URL: {param}")
+                        else:
+                            logger.warning(f"ZIP file not found from URL: {param}")
+                    else:
+                        logger.warning(f"Invalid accela://cli URL format: {arg}")
+                else:
+                    if action == 'download' and param and param.isdigit():
+                        command_line_appid = int(param)
+                        logger.info(f"Found accela://download URL for AppID: {param} (GUI mode)")
+                    elif action == 'zip' and param:
+                        if os.path.exists(param):
+                            command_line_zips.append(param)
+                            logger.info(f"Found ZIP file from URL: {param} (GUI mode)")
+                        else:
+                            logger.warning(f"ZIP file not found from URL: {param}")
+                    else:
+                        logger.warning(f"Invalid accela:// URL format: {arg}")
+            except Exception as e:
+                logger.error(f"Failed to parse URL {arg}: {e}")
+                
+        elif arg.lower().endswith('.zip'):
+            zip_path = os.path.abspath(arg)
+            if os.path.exists(zip_path):
+                command_line_zips.append(zip_path)
+                logger.info(f"Found ZIP file from command line: {zip_path}")
+            else:
+                logger.warning(f"ZIP file not found: {arg}")
+
+    # AppID and ZIP files are mutually exclusive
+    if command_line_appid and command_line_zips:
+        logger.error("Cannot use --appid and .zip files together. Choose one.")
+        return cli_mode, None, []
+
+    return cli_mode, command_line_appid, command_line_zips
+
+
+
 def _get_terminal_command(appid=None, zip_path=None):
     """Get the terminal command to run CLI mode.
 
@@ -60,7 +146,7 @@ def _get_terminal_command(appid=None, zip_path=None):
     Returns:
         List of command arguments, or None if no terminal available
     """
-        # Get the directory where accela is installed
+    # Get the directory where accela is installed
     script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     run_script = os.path.join(script_dir, 'run.sh')
 
@@ -102,23 +188,77 @@ def open_cli_terminal(appid=None, zip_path=None):
         return False
 
 
-def run_cli_mode(app, command_line_zips, logger, appid=None):
-    """Run ACCELA in CLI mode - show only DepotSelectionDialog for ZIP files.
+class CLIDownloadProgressHandler:
+    """Handles download progress output and throttling for CLI mode."""
+    def __init__(self, logger):
+        self.logger = logger
+        self.last_log_time = 0.0
+        self.last_log_bucket = -1
+        self.last_log_line = ""
 
-    Args:
-        app: QApplication instance
-        command_line_zips: List of ZIP file paths to process
-        logger: Logger instance
-        appid: Optional AppID to download manifest from Morrenus API
-    """
-    # Load settings for CLI mode
-    settings = get_settings()
+    def handle_message(self, message):
+        if not message:
+            return
 
-    logger.info("=" * 50)
-    logger.info("ACCELA CLI Mode Initialized")
-    logger.info("=" * 50)
+        text = message.strip()
+        if not text:
+            return
 
-    # Apply ACCELA theme
+        lowered = text.lower()
+        now = time.monotonic()
+
+        if text.startswith("ERROR:") or " failed" in lowered or "error" in lowered:
+            self.logger.error(f"{text}")
+            self.last_log_time = now
+            self.last_log_line = text
+            return
+
+        if text.startswith("Warning:") or "warning" in lowered:
+            self.logger.warning(f"{text}")
+            self.last_log_time = now
+            self.last_log_line = text
+            return
+
+        important_markers = (
+            "starting download for depot",
+            "cleaning up temporary files",
+            "removed temp",
+            "skipped",
+            "download destination set to",
+            "checking .net 10 runtime",
+        )
+        if any(marker in lowered for marker in important_markers):
+            self.logger.info(f"{text}")
+            self.last_log_time = now
+            self.last_log_line = text
+            return
+
+        percent_match = re.search(r"(\d{1,3}(?:\.\d{1,2})?)%", text)
+        if percent_match:
+            try:
+                percent = int(float(percent_match.group(1)))
+            except ValueError:
+                percent = None
+
+            if percent is not None:
+                percent = max(0, min(100, percent))
+
+                # Emit when the percentage changes, with explicit completion safeguard.
+                if percent > self.last_log_bucket or percent == 100:
+                    self.logger.info(f"{text}")
+                    self.last_log_bucket = percent
+                    self.last_log_time = now
+                    self.last_log_line = text
+            return
+
+        if now - self.last_log_time >= 15 and text != self.last_log_line:
+            self.logger.info(f"{text}")
+            self.last_log_time = now
+            self.last_log_line = text
+
+
+def _setup_cli_theme(app, settings, logger):
+    """Apply the ACCELA theme for CLI mode."""
     from main import update_appearance
     accent_color = settings.value("accent_color", "#C06C84")
     bg_color = settings.value("background_color", "#000000")
@@ -144,6 +284,140 @@ def run_cli_mode(app, command_line_zips, logger, appid=None):
     else:
         logger.warning(f"CLI mode: failed to load custom font")
 
+
+def _get_destination_path_cli(settings):
+    """Get destination path based on settings (same logic as TaskManager)"""
+    slssteam_mode = settings.value("slssteam_mode", False, type=bool)
+    library_mode = settings.value("library_mode", False, type=bool)
+
+    if slssteam_mode or library_mode:
+        libraries = get_steam_libraries()
+        if libraries:
+            path = select_steam_library(libraries)
+            if path:
+                return path
+            return None
+
+    # Use text-based destination path selection
+    default_path = os.path.expanduser("~")
+    path = select_destination_path(default_path)
+    return path
+
+
+def _process_single_zip(zip_path, index, total_zips, settings, logger):
+    """Process a single ZIP file through the CLI workflow."""
+    current_job = index + 1
+    logger.info(f"\n({current_job}/{total_zips}) Processing: {os.path.basename(zip_path) if zip_path else 'Unknown'}")
+
+    # Step 1: Process ZIP file
+    logger.info("Parsing archive...")
+    zip_task = ProcessZipTask()
+
+    game_data_holder = [None]
+
+    def on_zip_processed(result):
+        game_data_holder[0] = result
+        loop.quit()
+
+    # TaskRunner.run() returns the worker
+    zip_task_runner = TaskRunner()
+    zip_task_runner.run(zip_task.run, zip_path).finished.connect(on_zip_processed)
+
+    # Create a local event loop to wait for ZIP processing
+    loop = QEventLoop()
+    zip_task_runner.cleanup_complete.connect(loop.quit)
+    loop.exec()
+
+    game_data = game_data_holder[0]
+
+    if not game_data or not game_data.get("depots"):
+        logger.warning(f"No depots found in {os.path.basename(zip_path) if zip_path else 'Unknown'}")
+        return
+
+    # Step 2: Show depot selection menu
+    logger.info(f"Showing depot selection for: {game_data.get('game_name', 'Unknown')}")
+
+    selected_depots = select_depots(
+        game_data["appid"],
+        game_data["game_name"],
+        game_data["depots"],
+        game_data.get("header_url"),
+    )
+
+    if not selected_depots:
+        logger.info("Depot selection cancelled or no depots selected, skipping this ZIP")
+        return
+
+    logger.info(f"Selected {len(selected_depots)} depots")
+
+    # Step 3: Get destination path (respects SLSsteam/library mode settings)
+    dest_path = _get_destination_path_cli(settings)
+
+    if not dest_path:
+        logger.info("Destination folder not selected, skipping this ZIP")
+        return
+
+    logger.info(f"Target installation path set to: {dest_path}")
+
+    # Step 4: Start download
+    logger.info("\n" + "=" * 40)
+    logger.info("Starting download...")
+    logger.info("=" * 40)
+
+    game_data["selected_depots_list"] = selected_depots
+
+    download_task = DownloadDepotsTask()
+    
+    progress_handler = CLIDownloadProgressHandler(logger)
+    download_task.progress.connect(progress_handler.handle_message)
+
+    # TaskRunner.run() returns the worker, store it
+    download_task_runner = TaskRunner()
+    download_worker = download_task_runner.run(
+        download_task.run, game_data, selected_depots, dest_path
+    )
+
+    # Wait for download to complete
+    download_loop = QEventLoop()
+
+    def on_download_complete():
+        download_loop.quit()
+
+    download_worker.finished.connect(on_download_complete)
+    download_loop.exec()
+
+    # Step 5: Run all post-processing steps
+    logger.info("\n" + "=" * 40)
+    logger.info("Running post-processing...")
+    logger.info("=" * 40)
+
+    # Create a CLI task manager to handle all post-processing
+    cli_task_manager = CLITaskManager(settings, logger)
+    cli_task_manager.run_post_processing(game_data, download_task, dest_path)
+
+    logger.info("\n" + "=" * 40)
+    logger.info(f"Download complete: {game_data.get('game_name', 'Unknown')}")
+    logger.info("=" * 40)
+
+
+def run_cli_mode(app, command_line_zips, logger, appid=None):
+    """Run ACCELA in CLI mode - show only DepotSelectionDialog for ZIP files.
+
+    Args:
+        app: QApplication instance
+        command_line_zips: List of ZIP file paths to process
+        logger: Logger instance
+        appid: Optional AppID to download manifest from Morrenus API
+    """
+    # Load settings for CLI mode
+    settings = get_settings()
+
+    logger.info("=" * 50)
+    logger.info("ACCELA CLI Mode Initialized")
+    logger.info("=" * 50)
+
+    _setup_cli_theme(app, settings, logger)
+
     # If appid is provided, download manifest from Morrenus API
     if appid:
         logger.info(f"Downloading manifest for AppID {appid} from Morrenus API")
@@ -155,182 +429,10 @@ def run_cli_mode(app, command_line_zips, logger, appid=None):
         command_line_zips = [zip_path]
         logger.info(f"Manifest downloaded: {os.path.basename(zip_path) if zip_path else 'Unknown'}")
 
-    def get_destination_path_cli():
-        """Get destination path based on settings (same logic as TaskManager)"""
-        slssteam_mode = settings.value("slssteam_mode", False, type=bool)
-        library_mode = settings.value("library_mode", False, type=bool)
-
-        if slssteam_mode or library_mode:
-            libraries = get_steam_libraries()
-            if libraries:
-                path = select_steam_library(libraries)
-                if path:
-                    return path
-                return None
-
-        # Use text-based destination path selection
-        default_path = os.path.expanduser("~")
-        path = select_destination_path(default_path)
-        return path
-
     total_zips = len(command_line_zips)
 
     for index, zip_path in enumerate(command_line_zips):
-        current_job = index + 1
-        logger.info(f"\n({current_job}/{total_zips}) Processing: {os.path.basename(zip_path) if zip_path else 'Unknown'}")
-
-        # Step 1: Process ZIP file
-        logger.info("Parsing archive...")
-        zip_task = ProcessZipTask()
-
-        game_data_holder = [None]
-
-        def on_zip_processed(result):
-            game_data_holder[0] = result
-            loop.quit()
-
-        # TaskRunner.run() returns the worker
-        zip_task_runner = TaskRunner()
-        zip_task_runner.run(zip_task.run, zip_path).finished.connect(on_zip_processed)
-
-        # Create a local event loop to wait for ZIP processing
-        loop = QEventLoop()
-        zip_task_runner.cleanup_complete.connect(loop.quit)
-        loop.exec()
-
-        game_data = game_data_holder[0]
-
-        if not game_data or not game_data.get("depots"):
-            logger.warning(f"No depots found in {os.path.basename(zip_path) if zip_path else 'Unknown'}")
-            continue
-
-        # Step 2: Show depot selection menu
-        logger.info(f"Showing depot selection for: {game_data.get('game_name', 'Unknown')}")
-
-        selected_depots = select_depots(
-            game_data["appid"],
-            game_data["game_name"],
-            game_data["depots"],
-            game_data.get("header_url"),
-        )
-
-        if not selected_depots:
-            logger.info("Depot selection cancelled or no depots selected, skipping this ZIP")
-            continue
-
-        logger.info(f"Selected {len(selected_depots)} depots")
-
-        # Step 3: Get destination path (respects SLSsteam/library mode settings)
-        dest_path = get_destination_path_cli()
-
-        if not dest_path:
-            logger.info("Destination folder not selected, skipping this ZIP")
-            continue
-
-        logger.info(f"Target installation path set to: {dest_path}")
-
-        # Step 4: Start download
-        logger.info("\n" + "=" * 40)
-        logger.info("Starting download...")
-        logger.info("=" * 40)
-
-        game_data["selected_depots_list"] = selected_depots
-
-        download_task = DownloadDepotsTask()
-
-        last_log_time = {"value": 0.0}
-        last_log_bucket = {"value": -1}
-        last_log_line = {"value": ""}
-
-        def _handle_download_progress(message):
-            if not message:
-                return
-
-            text = message.strip()
-            if not text:
-                return
-
-            lowered = text.lower()
-            now = time.monotonic()
-
-            if text.startswith("ERROR:") or " failed" in lowered or "error" in lowered:
-                logger.error(f"{text}")
-                last_log_time["value"] = now
-                last_log_line["value"] = text
-                return
-
-            if text.startswith("Warning:") or "warning" in lowered:
-                logger.warning(f"{text}")
-                last_log_time["value"] = now
-                last_log_line["value"] = text
-                return
-
-            important_markers = (
-                "starting download for depot",
-                "cleaning up temporary files",
-                "removed temp",
-                "skipped",
-                "download destination set to",
-                "checking .net 10 runtime",
-            )
-            if any(marker in lowered for marker in important_markers):
-                logger.info(f"{text}")
-                last_log_time["value"] = now
-                last_log_line["value"] = text
-                return
-
-            percent_match = re.search(r"(\d{1,3}(?:\.\d{1,2})?)%", text)
-            if percent_match:
-                try:
-                    percent = int(float(percent_match.group(1)))
-                except ValueError:
-                    percent = None
-
-                if percent is not None:
-                    percent = max(0, min(100, percent))
-
-                    # Emit when the percentage changes, with explicit completion safeguard.
-                    if percent > last_log_bucket["value"] or percent == 100:
-                        logger.info(f"{text}")
-                        last_log_bucket["value"] = percent
-                        last_log_time["value"] = now
-                        last_log_line["value"] = text
-                return
-
-            if now - last_log_time["value"] >= 15 and text != last_log_line["value"]:
-                logger.info(f"{text}")
-                last_log_time["value"] = now
-                last_log_line["value"] = text
-
-        download_task.progress.connect(_handle_download_progress)
-
-        # TaskRunner.run() returns the worker, store it
-        download_task_runner = TaskRunner()
-        download_worker = download_task_runner.run(
-            download_task.run, game_data, selected_depots, dest_path
-        )
-
-        # Wait for download to complete
-        download_loop = QEventLoop()
-
-        def on_download_complete():
-            download_loop.quit()
-
-        download_worker.finished.connect(on_download_complete)
-        download_loop.exec()
-
-        # Step 5: Run all post-processing steps
-        logger.info("\n" + "=" * 40)
-        logger.info("Running post-processing...")
-        logger.info("=" * 40)
-
-        # Create a CLI task manager to handle all post-processing
-        cli_task_manager = CLITaskManager(settings, logger)
-        cli_task_manager.run_post_processing(game_data, download_task, dest_path)
-
-        logger.info("\n" + "=" * 40)
-        logger.info(f"Download complete: {game_data.get('game_name', 'Unknown')}")
-        logger.info("=" * 40)
+        _process_single_zip(zip_path, index, total_zips, settings, logger)
 
     logger.info(f"\n{'=' * 50}")
     logger.info(f"All {total_zips} ZIP(s) processed")
@@ -368,6 +470,27 @@ class CLITaskManager:
         self.current_dest_path = None
         self.slssteam_mode_was_active = False
 
+    def _get_install_folder_name(self):
+        """Helper to safely calculate the installation folder name."""
+        if not self.game_data:
+            return "UnknownApp"
+            
+        game_name = self.game_data.get("game_name", "")
+        if game_name is None:
+            game_name = ""
+            
+        safe_game_name_fallback = (
+            re.sub(r"[^\w\s-]", "", game_name)
+            .strip()
+            .replace(" ", "_")
+        )
+        
+        install_folder_name = self.game_data.get("installdir", safe_game_name_fallback)
+        if not install_folder_name:
+            install_folder_name = f"App_{self.game_data['appid']}"
+            
+        return install_folder_name
+
     def run_post_processing(self, game_data, download_task, dest_path):
         """Run all post-processing steps after download completion."""
         self.game_data = game_data
@@ -404,16 +527,7 @@ class CLITaskManager:
         # Auto-apply Goldberg after download completion
         auto_apply_goldberg = self.settings.value("auto_apply_goldberg", False, type=bool)
         if auto_apply_goldberg and self.game_data and self.current_dest_path:
-            safe_game_name_fallback = (
-                re.sub(r"[^\w\s-]", "", self.game_data.get("game_name", ""))
-                .strip()
-                .replace(" ", "_")
-            )
-            install_folder_name = self.game_data.get(
-                "installdir", safe_game_name_fallback
-            )
-            if not install_folder_name:
-                install_folder_name = f"App_{self.game_data['appid']}"
+            install_folder_name = self._get_install_folder_name()
 
             game_directory = os.path.join(
                 self.current_dest_path, "steamapps", "common", install_folder_name
@@ -455,14 +569,7 @@ class CLITaskManager:
             self.logger.warning("Missing game data or destination path. Cannot create .acf.")
             return
 
-        safe_game_name_fallback = (
-            re.sub(r"[^\w\s-]", "", self.game_data.get("game_name", ""))
-            .strip()
-            .replace(" ", "_")
-        )
-        install_folder_name = self.game_data.get("installdir", safe_game_name_fallback)
-        if not install_folder_name:
-            install_folder_name = f"App_{self.game_data['appid']}"
+        install_folder_name = self._get_install_folder_name()
 
         acf_path = os.path.join(
             self.current_dest_path,
@@ -572,14 +679,7 @@ class CLITaskManager:
         if not app_token:
             return
 
-        safe_game_name_fallback = (
-            re.sub(r"[^\w\s-]", "", self.game_data.get("game_name", ""))
-            .strip()
-            .replace(" ", "_")
-        )
-        install_folder_name = self.game_data.get("installdir") or safe_game_name_fallback
-        if not install_folder_name:
-            install_folder_name = f"App_{self.game_data['appid']}"
+        install_folder_name = self._get_install_folder_name()
 
         game_dir = os.path.join(dest_path, "steamapps", "common", install_folder_name)
         token_file = os.path.join(game_dir, "apptoken.txt")
@@ -667,14 +767,7 @@ class CLITaskManager:
         if not self.game_data or not self.current_dest_path:
             return
 
-        safe_game_name_fallback = (
-            re.sub(r"[^\w\s-]", "", self.game_data.get("game_name", ""))
-            .strip()
-            .replace(" ", "_")
-        )
-        install_folder_name = self.game_data.get("installdir", safe_game_name_fallback)
-        if not install_folder_name:
-            install_folder_name = f"App_{self.game_data['appid']}"
+        install_folder_name = self._get_install_folder_name()
 
         game_directory = os.path.join(
             self.current_dest_path, "steamapps", "common", install_folder_name
@@ -872,14 +965,7 @@ class CLITaskManager:
         if not self.current_dest_path or not self.game_data:
             return
 
-        safe_game_name_fallback = (
-            re.sub(r"[^\w\s-]", "", self.game_data.get("game_name", ""))
-            .strip()
-            .replace(" ", "_")
-        )
-        install_folder_name = self.game_data.get("installdir", safe_game_name_fallback)
-        if not install_folder_name:
-            install_folder_name = f"App_{self.game_data['appid']}"
+        install_folder_name = self._get_install_folder_name()
 
         game_directory = os.path.join(
             self.current_dest_path, "steamapps", "common", install_folder_name
@@ -974,5 +1060,3 @@ class CLITaskManager:
             lambda r: on_achievement_complete(r)
         )
         loop.exec()
-
-

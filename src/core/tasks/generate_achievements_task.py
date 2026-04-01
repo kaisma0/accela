@@ -4,7 +4,7 @@ import subprocess
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
-from utils.helpers import get_venv_python, _get_slscheevo_path, _get_slscheevo_save_path#, _ensure_template_file, resource_path, get_base_path, is_running_in_pyinstaller
+from utils.helpers import get_venv_python, _get_slscheevo_path, _get_slscheevo_save_path
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,20 @@ class GenerateAchievementsTask(QObject):
         # Path to SLScheevo executable
         self.slscheevo_path = _get_slscheevo_path()
 
+    def _fail_and_return(self, error_msg, return_code=-1, log_exc=False):
+        self.progress.emit(error_msg)
+        if log_exc:
+            logger.error(error_msg, exc_info=True)
+            
+        self.error.emit(error_msg)
+        result = {
+            "success": False,
+            "return_code": return_code,
+            "message": error_msg,
+        }
+        self.completed.emit(result)
+        return result
+
     def run(self, app_ids=None):
         """Run SLScheevo to generate achievement stats"""
         logger.info("Starting achievement generation task")
@@ -38,21 +52,12 @@ class GenerateAchievementsTask(QObject):
                     f"SLScheevo executable not found at {self.slscheevo_path}. "
                     "Please ensure it's properly installed in src/deps/SLScheevo/"
                 )
-                self.progress.emit(f"{error_msg}")
-                self.error.emit(error_msg)
-                result = {
-                    "success": False,
-                    "return_code": -1,
-                    "message": "SLScheevo executable not found",
-                }
-                self.completed.emit(result)
-                return result
+                return self._fail_and_return(error_msg)
 
             self.progress.emit("SLScheevo executable found")
             logger.info(f"SLScheevo executable found at: {self.slscheevo_path}")
 
             save_dir = _get_slscheevo_save_path()
-
             logger.info(f"SLScheevo save directory: {save_dir}")
 
             # Prepare command
@@ -101,7 +106,7 @@ class GenerateAchievementsTask(QObject):
 
             self.process_pid = self.process.pid
 
-            # Read output line by line (simpler approach without QThread)
+            # Read output line by line
             while True:
                 if not self._is_running:
                     self.process.terminate()
@@ -120,11 +125,6 @@ class GenerateAchievementsTask(QObject):
 
                 line = line.rstrip()
                 self._handle_output(line)
-
-                # Check for timeout (simple check)
-                if line.startswith("Progress:"):
-                    # Could implement more sophisticated timeout handling here
-                    pass
 
             # Wait for process to complete
             return_code = self.process.wait()
@@ -152,52 +152,22 @@ class GenerateAchievementsTask(QObject):
                 }
                 self.completed.emit(result)
             else:
-                error_msg = f"SLScheevo exited with code {return_code}"
-                self.progress.emit(f"{error_msg}")
-                self.error.emit(error_msg)
-                result = {
-                    "success": False,
-                    "return_code": return_code,
-                    "message": error_msg,
-                }
-                self.completed.emit(result)
+                return self._fail_and_return(f"SLScheevo exited with code {return_code}", return_code)
 
             return result
 
-        except subprocess.TimeoutExpired:
-            error_msg = "SLScheevo timed out after 30 seconds"
-            self.progress.emit(f"{error_msg}")
-            if self.process:
-                self.process.terminate()
-                try:
-                    self.process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    self.process.kill()
-            result = {"success": False, "return_code": -1, "message": error_msg}
-            self.completed.emit(result)
-            return result
         except FileNotFoundError:
-            error_msg = (
-                "Python interpreter not found. Make sure Python is properly installed."
+            return self._fail_and_return(
+                "Python interpreter not found. Make sure Python is properly installed.",
+                log_exc=True
             )
-            self.progress.emit(f"{error_msg}")
-            logger.error(error_msg, exc_info=True)
-            self.error.emit(error_msg)
-            result = {"success": False, "return_code": -1, "message": error_msg}
-            self.completed.emit(result)
-            return result
         except Exception as e:
-            error_msg = f"Unexpected error during achievement generation: {e}"
-            self.progress.emit(f"{error_msg}")
-            logger.error(error_msg, exc_info=True)
             if self.process:
                 self.process.terminate()
             self.process = None
             self.process_pid = None
-            self.error.emit(error_msg)
-            result = {"success": False, "return_code": -1, "message": error_msg}
-            self.completed.emit(result)
-            return result
+            
+            return self._fail_and_return(f"Unexpected error during achievement generation: {e}", log_exc=True)
 
     def _handle_output(self, line):
         """Handle output from SLScheevo process"""
@@ -225,8 +195,6 @@ class GenerateAchievementsTask(QObject):
 
         if self.process_pid:
             try:
-                import psutil
-
                 parent = psutil.Process(self.process_pid)
                 children = parent.children(recursive=True)
                 processes = [parent] + children
@@ -241,14 +209,10 @@ class GenerateAchievementsTask(QObject):
                 gone, alive = psutil.wait_procs(processes, timeout=3)
                 for p in alive:
                     p.kill()  # Force kill if still alive
-            except ImportError:
-                # psutil not available, try direct termination
-                if self.process:
-                    try:
-                        self.process.terminate()
-                        self.process.wait(timeout=3)
-                    except (subprocess.TimeoutExpired, ProcessLookupError, OSError):
-                        pass
+            except psutil.NoSuchProcess:
+                # Parent process already died before psutil could attach to it
+                pass
+
             except Exception as e:
                 logger.error(f"Error stopping process: {e}")
 

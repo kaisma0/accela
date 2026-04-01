@@ -1,6 +1,7 @@
 from ui.custom_titlebar import CustomTitleBar
 import logging
 import re
+import time
 
 from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QIcon, QPixmap
@@ -26,11 +27,28 @@ logger = logging.getLogger(__name__)
 _api_stats_cache = {"data": None, "timestamp": 0}
 _API_STATS_CACHE_DURATION = 60  # seconds
 
+# Pre-compile the blacklist regex to avoid compiling it repeatedly in loops
+_BLACKLIST_KEYWORDS = [
+    "soundtrack",
+    "ost",
+    "original soundtrack",
+    "artbook",
+    "graphic novel",
+    "demo",
+    "server",
+    "dedicated server",
+    "tool",
+    "sdk",
+    "3d print model",
+]
+_BLACKLIST_PATTERN = re.compile(
+    rf"\b(?:{'|'.join(re.escape(k) for k in _BLACKLIST_KEYWORDS)})\b", 
+    re.IGNORECASE
+)
+
 
 def _get_cached_stats():
     """Returns cached stats if still valid, otherwise None."""
-    import time
-
     if _api_stats_cache["data"] is not None:
         if time.time() - _api_stats_cache["timestamp"] < _API_STATS_CACHE_DURATION:
             return _api_stats_cache["data"]
@@ -39,8 +57,6 @@ def _get_cached_stats():
 
 def _cache_stats(data):
     """Store stats in cache."""
-    import time
-
     _api_stats_cache["data"] = data
     _api_stats_cache["timestamp"] = time.time()
 
@@ -53,14 +69,12 @@ class FetchManifestDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
-        self.parent_window = parent
         self.setWindowTitle("Fetch Manifest from Morrenus API")
         self.setMinimumWidth(600)
         self.setMinimumHeight(500)
         self.task_runner = TaskRunner()
         self._active_image_fetchers = {}  # Keep track of active fetchers to prevent GC
 
-        
         CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
         
         layout = QVBoxLayout(self._tb_content_widget)
@@ -216,43 +230,27 @@ class FetchManifestDialog(QDialog):
         if game_results:
             logger.info(f"Found {len(game_results)} results.")
 
-            blacklist_keywords = [
-                "soundtrack",
-                "ost",
-                "original soundtrack",
-                "artbook",
-                "graphic novel",
-                "demo",
-                "server",
-                "dedicated server",
-                "tool",
-                "sdk",
-                "3d print model",
-            ]
-
             filtered_count = 0
             for game in game_results:
-                try:
-                    name_lower = game.get("game_name", "").lower()
-                except AttributeError:
-                    name_lower = "None"
-                is_blacklisted = False
-                for keyword in blacklist_keywords:
-                    if re.search(rf"\b{re.escape(keyword)}\b", name_lower):
-                        is_blacklisted = True
-                        break
-
-                if not is_blacklisted:
-                    app_id = str(game["game_id"])
-                    item_text = f"{game['game_name']} (AppID: {app_id})"
-                    item = QListWidgetItem(item_text)
-                    item.setData(Qt.ItemDataRole.UserRole, app_id)
-                    self.results_list.addItem(item)
-
-                    # Initiate async image fetch for this item
-                    self._fetch_item_image(item, app_id)
-                else:
+                # Safely parse strings to prevent KeyError/AttributeError crashes
+                name = str(game.get("game_name", ""))
+                
+                # Check against pre-compiled regex pattern
+                if _BLACKLIST_PATTERN.search(name):
                     filtered_count += 1
+                    continue
+                
+                app_id = str(game.get("game_id", ""))
+                if not app_id:
+                    continue  # Skip invalid entries lacking an ID
+
+                item_text = f"{name} (AppID: {app_id})"
+                item = QListWidgetItem(item_text)
+                item.setData(Qt.ItemDataRole.UserRole, app_id)
+                self.results_list.addItem(item)
+
+                # Initiate async image fetch for this item
+                self._fetch_item_image(item, app_id)
 
             self.status_label.setText(
                 f"Found {len(game_results)} results ({filtered_count} filtered). Double-click to download"
@@ -315,8 +313,10 @@ class FetchManifestDialog(QDialog):
         if temp_zip_path:
             logger.info(f"Manifest downloaded successfully to {temp_zip_path}")
             self.status_label.setText("Download complete! Adding to queue")
-            if self.parent_window:
-                self.parent_window.job_queue.add_job(temp_zip_path)
+            
+            parent_widget = self.parent()
+            if parent_widget and hasattr(parent_widget, 'job_queue'):
+                parent_widget.job_queue.add_job(temp_zip_path)
             self.accept()
 
     def on_task_error(self, error_info):
@@ -336,7 +336,7 @@ class FetchManifestDialog(QDialog):
             return
         super().keyPressEvent(event)
 
-    def closeEvent(self, a0):
+    def closeEvent(self, event):
         # Ensure all image fetchers are cleaned up when dialog closes
         self._stop_active_image_fetchers()
 
@@ -345,10 +345,9 @@ class FetchManifestDialog(QDialog):
             try:
                 self.task_runner.stop()
             except RuntimeError:
-                # Thread may have already been deleted by Qt
                 logger.debug("TaskRunner thread was already deleted, skipping cleanup.")
 
-        super().closeEvent(a0)
+        super().closeEvent(event)
 
     def _stop_active_image_fetchers(self):
         for fetcher in list(self._active_image_fetchers.values()):

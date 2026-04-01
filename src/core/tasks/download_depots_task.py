@@ -5,20 +5,12 @@ import shutil
 import subprocess
 import tempfile
 import time
+import psutil
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
 from utils.paths import Paths
-
 from utils.settings import get_settings
-
-try:
-    import psutil
-except ImportError:
-    logging.critical(
-        "Failed to import 'psutil'. Pausing/resuming downloads will not work."
-    )
-    psutil = None
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +23,8 @@ class StreamReader(QObject):
         self.stream = stream
         self._is_running = True
         self.task_instance = task_instance
-        self.collected_lines = []
+        self.downloaded_bytes = 0
+        self.dl_regex = re.compile(r"Total downloaded:\s+(\d+)\s+bytes")
 
     def run(self):
         try:
@@ -40,7 +33,11 @@ class StreamReader(QObject):
                     break
                 if not self.task_instance._is_running:
                     break
-                self.collected_lines.append(line)
+                # Parse byte counts on the fly inside the thread to avoid storing log lines
+                match = self.dl_regex.search(line)
+                if match:
+                    self.downloaded_bytes = int(match.group(1))
+
                 self.new_line.emit(line)
         except ValueError:
             logger.debug(
@@ -81,10 +78,7 @@ class DownloadDepotsTask(QObject):
         self._current_depot_started_at = None
         self._current_depot_id = None
 
-        # Regex for parsing "Total downloaded:" from collected output lines
-        self._total_downloaded_regex = re.compile(
-            r"Total downloaded:\s+(\d+)\s+bytes"
-        )
+
 
         # Run metrics for end-of-job summary logging
         self._run_started_at = None
@@ -126,7 +120,6 @@ class DownloadDepotsTask(QObject):
         logger.info(
             f"Starting depot download task for app {appid} ({game_name}) with {len(selected_depots)} selected depots."
         )
-
 
         commands, skipped_depots, depot_sizes, dotnet_env = self._prepare_downloads(
             game_data, selected_depots, dest_path
@@ -304,7 +297,7 @@ class DownloadDepotsTask(QObject):
                 self.completed.emit()
                 return True, total_bytes_downloaded
 
-            depot_id = command[5]
+            depot_id = command[4]
             self._current_depot_id = str(depot_id)
             self._current_depot_started_at = time.monotonic()
             self.current_depot_size = depot_sizes[i]
@@ -312,7 +305,7 @@ class DownloadDepotsTask(QObject):
                 f"--- Starting {label} for depot {depot_id} ({i + 1}/{total_depots}) [Size: {self.current_depot_size} bytes] ---"
             )
             logger.info(
-                f"Launching DepotDownloader ({label}) for depot {depot_id} ({i + 1}/{total_depots}) with manifest {command[7]}."
+                f"Launching DepotDownloader ({label}) for depot {depot_id} ({i + 1}/{total_depots}) with manifest {command[6]}."
             )
             self.last_percentage = -1
             self._attempted_depots += 1
@@ -342,12 +335,8 @@ class DownloadDepotsTask(QObject):
             reader_thread.quit()
             reader_thread.wait()
 
-            # Parse "Total downloaded:" from collected lines synchronously
-            # on the worker thread — no cross-thread timing dependency.
-            for collected_line in stream_reader.collected_lines:
-                dl_match = self._total_downloaded_regex.search(collected_line)
-                if dl_match:
-                    total_bytes_downloaded += int(dl_match.group(1))
+            # Read the final parsed integer directly from the reader object
+            total_bytes_downloaded += stream_reader.downloaded_bytes
 
             # Properly clean up thread and reader objects
             stream_reader.deleteLater()
@@ -530,16 +519,15 @@ class DownloadDepotsTask(QObject):
         if self.process:
             try:
                 # If paused, we need to resume to allow it to terminate
-                if psutil:
-                    try:
-                        parent = psutil.Process(self.process_pid)
-                        for proc in [parent] + parent.children(recursive=True):
-                            try:
-                                proc.resume()  # Resume in case it was suspended
-                            except psutil.NoSuchProcess:
-                                pass
-                    except psutil.NoSuchProcess:
-                        pass
+                try:
+                    parent = psutil.Process(self.process_pid)
+                    for proc in [parent] + parent.children(recursive=True):
+                        try:
+                            proc.resume()  # Resume in case it was suspended
+                        except psutil.NoSuchProcess:
+                            pass
+                except psutil.NoSuchProcess:
+                    pass
                 
                 self.process.terminate()
                 self.process.kill()  # Ensure it dies
@@ -547,11 +535,6 @@ class DownloadDepotsTask(QObject):
                 logger.error(f"Error terminating download process: {e}")
 
     def toggle_pause(self, pause):
-        global status
-        if not psutil:
-            logger.error("psutil not found. Cannot pause or resume.")
-            raise Exception("psutil library is not loaded.")
-
         if not self.process_pid:
             logger.warning("Attempted to pause/resume, but no process is running.")
             return
@@ -578,5 +561,6 @@ class DownloadDepotsTask(QObject):
             self.process_pid = None
             self.process = None
         except Exception as e:
+            status = "pause" if pause else "resume"
             logger.error(f"An error occurred while trying to {status} process: {e}")
             raise

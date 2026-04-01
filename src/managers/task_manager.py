@@ -2,18 +2,15 @@ import logging
 import os
 import re
 import shutil
+import stat
 import tempfile
 import time
+import psutil
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
-
-try:
-    import psutil
-except ImportError:
-    psutil = None
 
 from core import steam_helpers
 from core.tasks.application_shortcuts import ApplicationShortcutsTask
@@ -122,7 +119,19 @@ class TaskManager:
         self.STATUS_OK = "#00FF00"
         self.STATUS_IN_PROGRESS = "#FFA500"
         self.STATUS_ERROR = "#FF0000"
-        self.STATUS_NOT_RUN = "accent"  # Will be replaced with accent_color from settings
+
+
+    def _get_install_folder_name(self) -> str:
+        """Return the sanitised install folder name derived from game_data."""
+        if not self.game_data:
+            return ""
+        safe_fallback = (
+            re.sub(r"[^\w\s-]", "", self.game_data.get("game_name", ""))
+            .strip()
+            .replace(" ", "_")
+        )
+        name = self.game_data.get("installdir") or safe_fallback
+        return name or f"App_{self.game_data['appid']}"
 
     def start_zip_processing(self, zip_path, metadata=None):
         """Start processing a ZIP file
@@ -348,15 +357,7 @@ class TaskManager:
         if not self.slssteam_mode_was_active:
             app_token = self.game_data.get("app_token")
             if app_token:
-                # Match download_depots_task.py sanitization logic
-                safe_game_name_fallback = (
-                    re.sub(r"[^\w\s-]", "", self.game_data.get("game_name", ""))
-                    .strip()
-                    .replace(" ", "_")
-                )
-                install_folder_name = self.game_data.get("installdir") or safe_game_name_fallback
-                if not install_folder_name:
-                    install_folder_name = f"App_{self.game_data['appid']}"
+                install_folder_name = self._get_install_folder_name()
                 game_dir = os.path.join(dest_path, "steamapps", "common", install_folder_name)
                 token_file = os.path.join(game_dir, "apptoken.txt")
                 try:
@@ -386,11 +387,10 @@ class TaskManager:
             logger.debug("Sending stop signal to SpeedMonitorTask.")
             self.speed_monitor_task.stop()
             self.speed_monitor_task = None
-        else:
-            if self.is_awaiting_speed_monitor_stop:
-                logger.debug("Speed monitor was already stopped. Updating flag.")
-                self.is_awaiting_speed_monitor_stop = False
-                self.main_window.job_queue._check_if_safe_to_start_next_job()
+        elif self.is_awaiting_speed_monitor_stop:
+            logger.debug("Speed monitor already stopped; clearing wait flag manually.")
+            self.is_awaiting_speed_monitor_stop = False
+            self.main_window.job_queue._check_if_safe_to_start_next_job()
 
     def _handle_download_progress_log(self, message):
         """Log downloader output with throttling so progress stays readable."""
@@ -503,6 +503,7 @@ class TaskManager:
             self.job_finished()
             return
 
+        self.is_awaiting_speed_monitor_stop = True
         self._stop_speed_monitor()
         self.main_window.progress_bar.setValue(100)
 
@@ -550,17 +551,7 @@ class TaskManager:
             and self.game_data
             and self.current_dest_path
         ):
-            safe_game_name_fallback = (
-                re.sub(r"[^\w\s-]", "", self.game_data.get("game_name", ""))
-                .strip()
-                .replace(" ", "_")
-            )
-            install_folder_name = self.game_data.get(
-                "installdir", safe_game_name_fallback
-            )
-            if not install_folder_name:
-                install_folder_name = f"App_{self.game_data['appid']}"
-
+            install_folder_name = self._get_install_folder_name()
             game_directory = os.path.join(
                 self.current_dest_path, "steamapps", "common", install_folder_name
             )
@@ -594,7 +585,6 @@ class TaskManager:
         if (
             shortcuts_enabled
             and slssteam_mode
-           
             and not self.is_cancelling
         ):
             logger.info(
@@ -610,7 +600,7 @@ class TaskManager:
                 "Application shortcuts creation is enabled but SLSsteam mode is disabled, skipping"
             )
 
-        # If application shortcuts are not enabled, check for achievements
+        # Check if achievements are enabled
         achievements_enabled = self.settings.value(
             "generate_achievements", False, type=bool
         )
@@ -624,31 +614,7 @@ class TaskManager:
             self._start_achievement_generation()
             return
 
-        # If achievements are not enabled, check for application shortcuts
-        shortcuts_enabled = self.settings.value(
-            "create_application_shortcuts", False, type=bool
-        )
-        if shortcuts_enabled and not self.is_cancelling:
-            logger.info(
-                "Generating application shortcuts..."
-            )
-            self.main_window.drop_text_label.setText(
-                f"Creating Application Shortcuts: {self.game_data.get('game_name', '')}"
-            )
-            self._start_application_shortcuts_processing()
-            return
-
-        if self.slssteam_mode_was_active:
-            self.main_window.job_queue.slssteam_prompt_pending = True
-
-        self.main_window.job_queue.jobs_completed_count += 1
-
-        # Auto-scan the game library after download completes
-        if not self.is_cancelling:
-            logger.info("Auto-scanning game library for updated games...")
-            self.main_window.game_manager.scan_steam_libraries_async()
-
-        self.job_finished()
+        self._continue_after_download()
 
     def _save_main_depot_info(self, game_data, selected_depots, all_manifests):
         """
@@ -713,17 +679,10 @@ class TaskManager:
 
         logger.info("Generating Steam .acf manifest file...")
 
-        safe_game_name_fallback = (
-            re.sub(r"[^\w\s-]", "", self.game_data.get("game_name", ""))
-            .strip()
-            .replace(" ", "_")
-        )
-        install_folder_name = self.game_data.get("installdir", safe_game_name_fallback)
-        if not install_folder_name:
-            install_folder_name = f"App_{self.game_data['appid']}"
+        install_folder_name = self._get_install_folder_name()
 
         self.main_window.drop_text_label.setText(
-            f"Generating .acf for {safe_game_name_fallback}"
+            f"Generating .acf for {install_folder_name}"
         )
 
         acf_path = os.path.join(
@@ -919,16 +878,7 @@ class TaskManager:
             )
             return
 
-        # Get the game directory using the same logic as download task
-        safe_game_name_fallback = (
-            re.sub(r"[^\w\s-]", "", self.game_data.get("game_name", ""))
-            .strip()
-            .replace(" ", "_")
-        )
-        install_folder_name = self.game_data.get("installdir", safe_game_name_fallback)
-        if not install_folder_name:
-            install_folder_name = f"App_{self.game_data['appid']}"
-
+        install_folder_name = self._get_install_folder_name()
         game_directory = os.path.join(
             self.current_dest_path, "steamapps", "common", install_folder_name
         )
@@ -962,16 +912,7 @@ class TaskManager:
                 self._continue_after_download()
             return
 
-        # Get the game directory using the same logic as download task
-        safe_game_name_fallback = (
-            re.sub(r"[^\w\s-]", "", self.game_data.get("game_name", ""))
-            .strip()
-            .replace(" ", "_")
-        )
-        install_folder_name = self.game_data.get("installdir", safe_game_name_fallback)
-        if not install_folder_name:
-            install_folder_name = f"App_{self.game_data['appid']}"
-
+        install_folder_name = self._get_install_folder_name()
         game_directory = os.path.join(
             self.current_dest_path, "steamapps", "common", install_folder_name
         )
@@ -1296,11 +1237,9 @@ class TaskManager:
 
     def _run_chmod_recursive(self, game_directory: str) -> int:
         """Recursively find and chmod executable files in game directory"""
-        import stat
-
         # Common Linux binary/script extensions used by games
         linux_binary_extensions = {
-            ".sh", ".bash", ".x86", ".x86_64", 
+            ".sh", ".bash", ".x86", ".x86_64",
             ".bin", ".run", ".elf", ".pck"
         }
 
@@ -1323,7 +1262,7 @@ class TaskManager:
 
                 if any(filename_lower.endswith(ext) for ext in linux_binary_extensions):
                     should_chmod = True
-                
+
                 elif "." not in filename:
                     try:
                         with open(file_path, "rb") as f:
@@ -1336,7 +1275,7 @@ class TaskManager:
                 if should_chmod:
                     try:
                         file_stat = os.stat(file_path)
-                        current_mode = file_stat.st_mode                   
+                        current_mode = file_stat.st_mode
                         if not (current_mode & stat.S_IXUSR):
                             new_mode = current_mode | 0o755
                             os.chmod(file_path, new_mode)
@@ -1418,7 +1357,6 @@ class TaskManager:
             if (
                 shortcuts_enabled
                 and slssteam_mode
-               
                 and not self.is_cancelling
             ):
                 logger.info("Generating application shortcuts...")
@@ -1532,8 +1470,12 @@ class TaskManager:
             logger.debug("Steamless thread error, scheduling cleanup")
             QTimer.singleShot(0, self._clear_steamless_task)
 
-        # Note: steamless_task_runner and steamless_worker are not used for SteamlessTask
-        # SteamlessTask is a QThread, not managed by TaskRunner
+        if self._steamless_manual_run:
+            logger.info("Manual processing failed")
+            self._show_steamless_resume_dialog()
+            self._steamless_manual_run = False
+            self._steamless_success = None
+            return
 
         # Continue to achievement generation even if Steamless failed
         achievements_enabled = self.settings.value(
@@ -1836,8 +1778,11 @@ class TaskManager:
         QMessageBox.critical(
             self.main_window, "Error", f"An error occurred: {error_value}"
         )
-        if not self.is_cancelling:
-            self.job_finished()
+
+        self._last_ddm_status = "error"
+        self._last_ddm_status_text = "Failed"
+
+        self.job_finished()
 
     def job_finished(self):
         """Clean up after job completion"""
@@ -1873,11 +1818,19 @@ class TaskManager:
         else:
             steamless_ok = True  # Ran successfully (DRM removed or not found)
 
-        self._update_status_for_job(
-            ddm_ok=ddm_ok,
-            slscheevo_ok=slscheevo_ok,
-            steamless_ok=steamless_ok,
-        )
+        if self._last_ddm_status != "error":
+            self._update_status_for_job(
+                ddm_ok=ddm_ok,
+                slscheevo_ok=slscheevo_ok,
+                steamless_ok=steamless_ok,
+            )
+        else:
+            # DDM already marked failed; only update the sub-task statuses.
+            self._update_status_for_job(
+                ddm_ok=False,
+                slscheevo_ok=slscheevo_ok,
+                steamless_ok=steamless_ok,
+            )
 
         # Clear state BEFORE updating button color
         # This ensures get_component_status() returns the final status, not "in_progress"
@@ -1905,9 +1858,13 @@ class TaskManager:
         logger.info("\n" + "=" * 40 + "\n")
 
         if self.speed_monitor_task:
+            # Speed monitor is still running; stop it and wait for cleanup.
             logger.debug("Job finished, telling speed monitor to stop.")
             self.is_awaiting_speed_monitor_stop = True
             self._stop_speed_monitor()
+        elif self.speed_monitor_runner:
+            logger.debug("Job finished, speed monitor stopping (runner still active).")
+            self.is_awaiting_speed_monitor_stop = True
         else:
             self.is_awaiting_speed_monitor_stop = False
             logger.debug("Job finished, no speed monitor running.")
@@ -1936,17 +1893,16 @@ class TaskManager:
         # Priority:
         # 1. Any error → red
         # 2. Any in_progress → orange
-        # 3. All components that ran are "ok" → green
+        # 3. At least one component that ran is "ok" → green
         # 4. All are "not_run" (nothing ran yet) → accent_color
         if ddm_status == "error" or slscheevo_status == "error" or steamless_status == "error":
             overall_color = self.STATUS_ERROR
         elif ddm_status == "in_progress" or slscheevo_status == "in_progress" or steamless_status == "in_progress":
             overall_color = self.STATUS_IN_PROGRESS
         elif ddm_status == "ok" or slscheevo_status == "ok" or steamless_status == "ok":
-            # At least one component ran and succeeded → green
             overall_color = self.STATUS_OK
         else:
-            # All are "not_run" - nothing has run yet → accent_color
+            # All are "not_run" — nothing has run yet
             overall_color = accent_color
 
         # Update the button color
@@ -2004,7 +1960,7 @@ class TaskManager:
         reply = QMessageBox.question(
             self.main_window,
             "Cancel Job",
-            f"Are you sure you want to cancel the download for '{os.path.basename(self.current_job)}'?\n\nThis will delete all downloaded files for this job.",
+            f"Are you sure you want to cancel the download for '{os.path.basename(self.current_job)}'?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -2027,16 +1983,10 @@ class TaskManager:
         if self.achievement_task:
             logger.info("Stopping achievement generation task...")
             self.achievement_task.stop()
-            # Don't set to None immediately - wait for TaskRunner cleanup
-            # self.achievement_task = None
-            # self.achievement_task_runner = None
-            # self.achievement_worker = None
 
         if self.steamless_task:
             logger.info("Stopping Steamless task...")
             self.steamless_task.stop()
-            # SteamlessTask will be cleaned up via the finished/error signals
-            # Wait for it to finish before clearing the reference
 
     def _detect_existing_installation(self) -> bool:
         """Detect if there is an existing install for this job."""
@@ -2048,14 +1998,7 @@ class TaskManager:
         if install_path and os.path.exists(install_path):
             return True
 
-        safe_game_name_fallback = (
-            re.sub(r"[^\w\s-]", "", self.game_data.get("game_name", ""))
-            .strip()
-            .replace(" ", "_")
-        )
-        install_folder_name = self.game_data.get("installdir", safe_game_name_fallback)
-        if not install_folder_name:
-            install_folder_name = f"App_{self.game_data.get('appid', '')}"
+        install_folder_name = self._get_install_folder_name()
 
         steamapps_dir = os.path.join(self.current_dest_path, "steamapps")
         appmanifest_path = os.path.join(
@@ -2134,16 +2077,7 @@ class TaskManager:
             return
 
         try:
-            safe_game_name_fallback = (
-                re.sub(r"[^\w\s-]", "", self.game_data.get("game_name", ""))
-                .strip()
-                .replace(" ", "_")
-            )
-            install_folder_name = self.game_data.get(
-                "installdir", safe_game_name_fallback
-            )
-            if not install_folder_name:
-                install_folder_name = f"App_{self.game_data['appid']}"
+            install_folder_name = self._get_install_folder_name()
 
             steamapps_dir = os.path.join(self.current_dest_path, "steamapps")
             common_dir = os.path.join(steamapps_dir, "common")
@@ -2233,6 +2167,9 @@ class TaskManager:
         self.slssteam_download_task.error.connect(self._handle_slssteam_download_error)
 
         self.slssteam_download_runner = TaskRunner()
+        self.slssteam_download_runner.cleanup_complete.connect(
+            self._on_slssteam_download_task_cleanup
+        )
         worker = self.slssteam_download_runner.run(self.slssteam_download_task.run)
         worker.error.connect(self._handle_task_error)
 
@@ -2250,10 +2187,14 @@ class TaskManager:
         QMessageBox.information(
             self.main_window, "SLSsteam Installation Complete", message
         )
-        self.slssteam_download_task = None
-        self.slssteam_download_runner = None
 
-    def _handle_slssteam_download_error(self):
+    def _on_slssteam_download_task_cleanup(self):
+        """Handle SLSsteam download task cleanup completion"""
+        logger.debug("SLSsteamDownloadTask's worker has officially completed cleanup.")
+        self.slssteam_download_runner = None
+        self.slssteam_download_task = None
+
+    def _handle_slssteam_download_error(self, *args):
         """Handle SLSsteam install errors"""
         logger.error("SLSsteam installation failed")
         QMessageBox.critical(
@@ -2261,8 +2202,6 @@ class TaskManager:
             "Error",
             "Failed to install/update SLSsteam. See the progress output above for details or check application logs.",
         )
-        self.slssteam_download_task = None
-        self.slssteam_download_runner = None
 
     def cleanup(self):
         """Clean up all tasks during shutdown"""
@@ -2274,15 +2213,9 @@ class TaskManager:
 
         if self.achievement_task:
             self.achievement_task.stop()
-            # Don't set to None immediately - wait for TaskRunner cleanup
-            # self.achievement_task = None
-            # self.achievement_task_runner = None
-            # self.achievement_worker = None
 
         if self.steamless_task:
             self.steamless_task.stop()
-            # SteamlessTask will be cleaned up via the finished/error signals
-            # Wait for it to finish before the window closes
 
         if self.application_shortcuts_task:
             self.application_shortcuts_task.stop()
@@ -2301,28 +2234,28 @@ class TaskManager:
 
         Returns:
             dict: Status information for each component with keys:
-                - ddm_status: "ok", "in_progress", or "error"
+                - ddm_status: "ok", "in_progress", "error", or "not_run"
                 - ddm_status_text: Human-readable status text
-                - slscheevo_status: "ok", "in_progress", or "error"
+                - slscheevo_status: "ok", "in_progress", "error", or "not_run"
                 - slscheevo_status_text: Human-readable status text
-                - steamless_status: "ok", "in_progress", or "error"
+                - steamless_status: "ok", "in_progress", "error", or "not_run"
                 - steamless_status_text: Human-readable status text
         """
-        # Determine actual status based on current processing state
+
+        ddm_status = self._last_ddm_status
+        ddm_status_text = self._last_ddm_status_text
+        slscheevo_status = self._last_slscheevo_status
+        slscheevo_status_text = self._last_slscheevo_status_text
+        steamless_status = self._last_steamless_status
+        steamless_status_text = self._last_steamless_status_text
+
         if self.is_processing:
-            # Currently processing - check what's active
             if self.download_task or self.zip_task:
                 ddm_status = "in_progress"
                 ddm_status_text = "Downloading..."
-                slscheevo_status = self._last_slscheevo_status
-                slscheevo_status_text = self._last_slscheevo_status_text
-                steamless_status = self._last_steamless_status
-                steamless_status_text = self._last_steamless_status_text
             elif self.steamless_task:
                 ddm_status = "ok"
                 ddm_status_text = "Completed"
-                slscheevo_status = self._last_slscheevo_status
-                slscheevo_status_text = self._last_slscheevo_status_text
                 steamless_status = "in_progress"
                 steamless_status_text = "Running..."
             elif self.achievement_task:
@@ -2330,24 +2263,6 @@ class TaskManager:
                 ddm_status_text = "Completed"
                 slscheevo_status = "in_progress"
                 slscheevo_status_text = "Generating achievements..."
-                steamless_status = self._last_steamless_status
-                steamless_status_text = self._last_steamless_status_text
-            else:
-                # Fallback to last status
-                ddm_status = self._last_ddm_status
-                ddm_status_text = self._last_ddm_status_text
-                slscheevo_status = self._last_slscheevo_status
-                slscheevo_status_text = self._last_slscheevo_status_text
-                steamless_status = self._last_steamless_status
-                steamless_status_text = self._last_steamless_status_text
-        else:
-            # Not processing - return last job status
-            ddm_status = self._last_ddm_status
-            ddm_status_text = self._last_ddm_status_text
-            slscheevo_status = self._last_slscheevo_status
-            slscheevo_status_text = self._last_slscheevo_status_text
-            steamless_status = self._last_steamless_status
-            steamless_status_text = self._last_steamless_status_text
 
         return {
             "ddm_status": ddm_status,
@@ -2359,11 +2274,11 @@ class TaskManager:
         }
 
     def _get_steamless_status_text(self):
-        """Get Steamless status text based on current state"""
+        """Get Steamless status text based on _last_steamless_success."""
         if self._last_steamless_success is None:
             return "Ready"
         elif self._last_steamless_success:
-            return "Success"
+            return "DRM removed"
         else:
             return "Completed (no DRM found)"
 
@@ -2378,7 +2293,7 @@ class TaskManager:
         self._last_ddm_status = "ok" if ddm_ok else "error"
         self._last_ddm_status_text = "Completed" if ddm_ok else "Failed"
 
-        # SLScheevo status: None means it didn't run, use "not_run" status
+        # SLScheevo status
         if slscheevo_ok is None:
             self._last_slscheevo_status = "not_run"
             self._last_slscheevo_status_text = "N/A"
@@ -2386,10 +2301,13 @@ class TaskManager:
             self._last_slscheevo_status = "ok" if slscheevo_ok else "error"
             self._last_slscheevo_status_text = "Completed" if slscheevo_ok else "Failed"
 
-        # Steamless status: None means it didn't run, use "not_run" status
+
         if steamless_ok is None:
             self._last_steamless_status = "not_run"
             self._last_steamless_status_text = "N/A"
-        else:
-            self._last_steamless_status = "ok" if steamless_ok else "error"
+        elif steamless_ok:
+            self._last_steamless_status = "ok"
             self._last_steamless_status_text = self._get_steamless_status_text()
+        else:
+            self._last_steamless_status = "error"
+            self._last_steamless_status_text = "Failed"

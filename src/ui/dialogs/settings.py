@@ -1,11 +1,11 @@
-from ui.custom_titlebar import CustomTitleBar
 import logging
 import os
 import shutil
 import subprocess
+from datetime import datetime
 from typing import Optional
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ui.custom_titlebar import CustomTitleBar
 from core import morrenus_api
 from ui.dialogs.custom_gifs import CustomGifsDialog
 from utils.helpers import (
@@ -53,12 +54,41 @@ from utils.yaml_config_manager import (
 logger = logging.getLogger(__name__)
 
 
+class StatsFetchWorker(QThread):
+    """Background thread to fetch API stats without freezing the GUI."""
+    stats_ready = pyqtSignal(dict)
+
+    def run(self):
+        try:
+            stats = morrenus_api.get_user_stats()
+            self.stats_ready.emit(stats)
+        except Exception as e:
+            logger.error(f"Failed to fetch user stats: {e}")
+            self.stats_ready.emit({"error": True})
+
+
+class SLSsteamStatusWorker(QThread):
+    """Background thread to check SLSsteam update status."""
+    status_ready = pyqtSignal(dict)
+
+    def run(self):
+        try:
+            from core.tasks.download_slssteam_task import DownloadSLSsteamTask
+            status = DownloadSLSsteamTask.check_update_available()
+            self.status_ready.emit(status)
+        except Exception as e:
+            logger.error(f"Failed to check SLSsteam status: {e}")
+            self.status_ready.emit({"error": True})
+
+
 class MorrenusStatsWidget(QWidget):
     """Widget displaying Morrenus API user statistics"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.settings = get_settings()
+        self._stats_worker = None  # Hold reference to prevent garbage collection
+
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 5, 0, 5)
 
@@ -119,12 +149,17 @@ class MorrenusStatsWidget(QWidget):
         main_layout.addWidget(self.refresh_button)
 
     def refresh_stats(self):
-        """Fetch and display latest stats from the API"""
+        """Fetch and display latest stats from the API without blocking."""
         self.refresh_button.setEnabled(False)
         self.refresh_button.setText("Loading...")
 
-        stats = morrenus_api.get_user_stats()
+        # Run the network request in a separate thread
+        self._stats_worker = StatsFetchWorker()
+        self._stats_worker.stats_ready.connect(self._on_stats_loaded)
+        self._stats_worker.start()
 
+    def _on_stats_loaded(self, stats):
+        """Slot called when the background thread finishes fetching stats."""
         self.refresh_button.setEnabled(True)
         self.refresh_button.setText("Refresh")
 
@@ -160,8 +195,6 @@ class MorrenusStatsWidget(QWidget):
             expires_at = stats.get("api_key_expires_at", "")
             if expires_at:
                 try:
-                    from datetime import datetime
-
                     dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
                     self.expiration_label.setText(f"Expires: {dt.strftime('%d/%m/%Y')}")
                 except ValueError:
@@ -174,8 +207,6 @@ class MorrenusStatsWidget(QWidget):
 
 
 class SettingsDialog(QDialog):
-    slssteam_status_ready = pyqtSignal(dict)
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
@@ -184,6 +215,7 @@ class SettingsDialog(QDialog):
         self.setMinimumHeight(700)
         self.resize(610, 700)
         self.settings = get_settings()
+        self._sls_status_worker = None  # Prevent garbage collection of worker
         
         CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
         
@@ -194,7 +226,6 @@ class SettingsDialog(QDialog):
         # Save original API keys for restore on cancel
         self._original_morrenus_key = self.settings.value("morrenus_api_key", "", type=str)
         self._original_sgdb_key = self.settings.value("sgdb_api_key", "", type=str)
-        self.slssteam_status_ready.connect(self._apply_slssteam_status)
 
         self._user_accent_color = self.settings.value(
             "user_accent_color", 
@@ -474,9 +505,6 @@ class SettingsDialog(QDialog):
 
         morrenus_layout.addStretch()
 
-        # Load stats when tab is shown
-        from PyQt6.QtCore import QTimer
-
         self.morrenus_tab_initialized = False
 
         def on_tab_changed(index):
@@ -598,6 +626,7 @@ class SettingsDialog(QDialog):
         download_slssteam_ex.setStyleSheet("color: #888888; font-size: 11px;")
         download_slssteam_ex.setWordWrap(True)
         tools_button_layout.addWidget(download_slssteam_ex)
+        
         # Update status indicator
         self.slssteam_status_label = QLabel()
         self.slssteam_status_label.setStyleSheet(
@@ -620,6 +649,28 @@ class SettingsDialog(QDialog):
 
         tools_layout.addStretch()
         self.tab_widget.addTab(tools_tab, "Tools")
+
+    # Helper for repetitive spinbox rows
+    def _add_spinbox_row(self, layout, label, tooltip, setting_key, default_val=0):
+        spinbox = QSpinBox()
+        spinbox.setRange(0, 2_147_483_647)
+        spinbox.setToolTip(tooltip)
+        try:
+            val = int(self.settings.value(setting_key, default_val, type=int))
+        except (TypeError, ValueError):
+            val = default_val
+        spinbox.setValue(val)
+        layout.addRow(label, spinbox)
+        return spinbox
+
+    # Helper for repetitive lineedit rows
+    def _add_lineedit_row(self, layout, label, tooltip, placeholder, setting_key, default_val=""):
+        lineedit = QLineEdit()
+        lineedit.setPlaceholderText(placeholder)
+        lineedit.setToolTip(tooltip)
+        lineedit.setText(str(self.settings.value(setting_key, default_val, type=str)).strip())
+        layout.addRow(label, lineedit)
+        return lineedit
 
     def _create_slssteam_tab(self):
         """Create SLSsteam settings tab."""
@@ -676,25 +727,14 @@ class SettingsDialog(QDialog):
         identity_group = QGroupBox("Client Overrides")
         identity_layout = QFormLayout()
 
-        self.sls_fake_email_input = QLineEdit()
-        self.sls_fake_email_input.setPlaceholderText("Leave empty to disable")
-        self.sls_fake_email_input.setToolTip(
-            "Override account e-mail on the client side only."
+        self.sls_fake_email_input = self._add_lineedit_row(
+            identity_layout, "Fake Email:", "Override account e-mail on the client side only.",
+            "Leave empty to disable", "sls_fake_email"
         )
-        self.sls_fake_email_input.setText(
-            self.settings.value("sls_fake_email", "", type=str)
+        self.sls_fake_wallet_spinbox = self._add_spinbox_row(
+            identity_layout, "Fake Wallet Balance:", "Client-side wallet balance override. Use 0 to disable.",
+            "sls_fake_wallet_balance"
         )
-        identity_layout.addRow("Fake Email:", self.sls_fake_email_input)
-
-        self.sls_fake_wallet_spinbox = QSpinBox()
-        self.sls_fake_wallet_spinbox.setRange(0, 2_147_483_647)
-        self.sls_fake_wallet_spinbox.setToolTip(
-            "Client-side wallet balance override. Use 0 to disable."
-        )
-        self.sls_fake_wallet_spinbox.setValue(
-            self.settings.value("sls_fake_wallet_balance", 0, type=int)
-        )
-        identity_layout.addRow("Fake Wallet Balance:", self.sls_fake_wallet_spinbox)
 
         identity_group.setLayout(identity_layout)
         slssteam_layout.addWidget(identity_group)
@@ -702,48 +742,21 @@ class SettingsDialog(QDialog):
         status_group = QGroupBox("Custom In-Game Status")
         status_layout = QFormLayout()
 
-        self.sls_idle_status_appid_spinbox = QSpinBox()
-        self.sls_idle_status_appid_spinbox.setRange(0, 2_147_483_647)
-        self.sls_idle_status_appid_spinbox.setToolTip(
-            "Idle status AppId override. Use 0 to disable."
+        self.sls_idle_status_appid_spinbox = self._add_spinbox_row(
+            status_layout, "Idle Status AppId:", "Idle status AppId override. Use 0 to disable.",
+            "sls_idle_status_appid"
         )
-        self.sls_idle_status_appid_spinbox.setValue(
-            self.settings.value("sls_idle_status_appid", 0, type=int)
+        self.sls_idle_status_title_input = self._add_lineedit_row(
+            status_layout, "Idle Status Title:", "Idle status title override.",
+            "Leave empty to disable", "sls_idle_status_title"
         )
-        status_layout.addRow("Idle Status AppId:", self.sls_idle_status_appid_spinbox)
-
-        self.sls_idle_status_title_input = QLineEdit()
-        self.sls_idle_status_title_input.setPlaceholderText("Leave empty to disable")
-        self.sls_idle_status_title_input.setToolTip(
-            "Idle status title override."
+        self.sls_unowned_status_appid_spinbox = self._add_spinbox_row(
+            status_layout, "Unowned Status AppId:", "Unowned status AppId override. Use 0 to disable.",
+            "sls_unowned_status_appid"
         )
-        self.sls_idle_status_title_input.setText(
-            self.settings.value("sls_idle_status_title", "", type=str)
-        )
-        status_layout.addRow("Idle Status Title:", self.sls_idle_status_title_input)
-
-        self.sls_unowned_status_appid_spinbox = QSpinBox()
-        self.sls_unowned_status_appid_spinbox.setRange(0, 2_147_483_647)
-        self.sls_unowned_status_appid_spinbox.setToolTip(
-            "Unowned status AppId override. Use 0 to disable."
-        )
-        self.sls_unowned_status_appid_spinbox.setValue(
-            self.settings.value("sls_unowned_status_appid", 0, type=int)
-        )
-        status_layout.addRow(
-            "Unowned Status AppId:", self.sls_unowned_status_appid_spinbox
-        )
-
-        self.sls_unowned_status_title_input = QLineEdit()
-        self.sls_unowned_status_title_input.setPlaceholderText("Leave empty to disable")
-        self.sls_unowned_status_title_input.setToolTip(
-            "Unowned status title override."
-        )
-        self.sls_unowned_status_title_input.setText(
-            self.settings.value("sls_unowned_status_title", "", type=str)
-        )
-        status_layout.addRow(
-            "Unowned Status Title:", self.sls_unowned_status_title_input
+        self.sls_unowned_status_title_input = self._add_lineedit_row(
+            status_layout, "Unowned Status Title:", "Unowned status title override.",
+            "Leave empty to disable", "sls_unowned_status_title"
         )
 
         status_group.setLayout(status_layout)
@@ -767,96 +780,40 @@ class SettingsDialog(QDialog):
             if not config_path.exists():
                 return
 
-            safe_mode = self.settings.value("sls_safe_mode", False, type=bool)
-            notifications = self.settings.value("sls_notifications", True, type=bool)
-            warn_hash_missmatch = self.settings.value(
-                "sls_warn_hash_missmatch", False, type=bool
-            )
-            notify_init = self.settings.value("sls_notify_init", True, type=bool)
-            fake_email = self.settings.value("sls_fake_email", "", type=str).strip()
+            # Helper to safely fetch ints
+            def _get_safe_int(key, default=0):
+                try:
+                    return int(self.settings.value(key, default, type=int))
+                except (TypeError, ValueError):
+                    return default
 
-            try:
-                fake_wallet_balance = int(
-                    self.settings.value("sls_fake_wallet_balance", 0, type=int)
-                )
-            except Exception:
-                fake_wallet_balance = 0
+            # Define scalar values to update
+            scalar_updates = {
+                "SafeMode": self.settings.value("sls_safe_mode", False, type=bool),
+                "Notifications": self.settings.value("sls_notifications", True, type=bool),
+                "WarnHashMissmatch": self.settings.value("sls_warn_hash_missmatch", False, type=bool),
+                "NotifyInit": self.settings.value("sls_notify_init", True, type=bool),
+                "FakeEmail": self.settings.value("sls_fake_email", "", type=str).strip(),
+                "FakeWalletBalance": _get_safe_int("sls_fake_wallet_balance", 0)
+            }
 
-            try:
-                idle_status_appid = int(
-                    self.settings.value("sls_idle_status_appid", 0, type=int)
-                )
-            except Exception:
-                idle_status_appid = 0
-
-            idle_status_title = self.settings.value(
-                "sls_idle_status_title", "", type=str
-            ).strip()
-
-            try:
-                unowned_status_appid = int(
-                    self.settings.value("sls_unowned_status_appid", 0, type=int)
-                )
-            except Exception:
-                unowned_status_appid = 0
-
-            unowned_status_title = self.settings.value(
-                "sls_unowned_status_title", "", type=str
-            ).strip()
+            # Define nested values to update (Parent, Child, Value)
+            nested_updates = [
+                ("IdleStatus", "AppId", _get_safe_int("sls_idle_status_appid", 0)),
+                ("IdleStatus", "Title", self.settings.value("sls_idle_status_title", "", type=str).strip()),
+                ("UnownedStatus", "AppId", _get_safe_int("sls_unowned_status_appid", 0)),
+                ("UnownedStatus", "Title", self.settings.value("sls_unowned_status_title", "", type=str).strip()),
+            ]
 
             changed = 0
-            changed += int(update_yaml_scalar_value(config_path, "SafeMode", safe_mode))
-            changed += int(
-                update_yaml_scalar_value(config_path, "Notifications", notifications)
-            )
-            changed += int(
-                update_yaml_scalar_value(
-                    config_path,
-                    "WarnHashMissmatch",
-                    warn_hash_missmatch,
-                )
-            )
-            changed += int(update_yaml_scalar_value(config_path, "NotifyInit", notify_init))
-            changed += int(update_yaml_scalar_value(config_path, "FakeEmail", fake_email))
-            changed += int(
-                update_yaml_scalar_value(
-                    config_path,
-                    "FakeWalletBalance",
-                    fake_wallet_balance,
-                )
-            )
-            changed += int(
-                update_yaml_nested_scalar_value(
-                    config_path,
-                    "IdleStatus",
-                    "AppId",
-                    idle_status_appid,
-                )
-            )
-            changed += int(
-                update_yaml_nested_scalar_value(
-                    config_path,
-                    "IdleStatus",
-                    "Title",
-                    idle_status_title,
-                )
-            )
-            changed += int(
-                update_yaml_nested_scalar_value(
-                    config_path,
-                    "UnownedStatus",
-                    "AppId",
-                    unowned_status_appid,
-                )
-            )
-            changed += int(
-                update_yaml_nested_scalar_value(
-                    config_path,
-                    "UnownedStatus",
-                    "Title",
-                    unowned_status_title,
-                )
-            )
+            
+            # Loop and apply scalars
+            for key, val in scalar_updates.items():
+                changed += int(update_yaml_scalar_value(config_path, key, val))
+                
+            # Loop and apply nested
+            for parent, child, val in nested_updates:
+                changed += int(update_yaml_nested_scalar_value(config_path, parent, child, val))
 
             if changed > 0:
                 logger.info(f"Synced {changed} SLSsteam setting(s) to config.yaml")
@@ -1131,11 +1088,12 @@ class SettingsDialog(QDialog):
                     "This color is too dark and will make the interface unusable.",
                 )
                 return
-        hex_color = color.name()
-        self.accent_color_button.setStyleSheet(f"background-color: {hex_color};")
+        self._user_accent_color = color.name()
+        self.accent_color_button.setStyleSheet(f"background-color: {self._user_accent_color};")
 
     def reset_accent_color(self):
         default = "#C06C84"
+        self._user_accent_color = default
         self.settings.setValue("accent_color", default)
         self.accent_color_button.setStyleSheet(f"background-color: {default};")
 
@@ -1143,11 +1101,12 @@ class SettingsDialog(QDialog):
         color = QColorDialog.getColor()
         if not color.isValid():
             return
-        hex_color = color.name()
-        self.bg_color_button.setStyleSheet(f"background-color: {hex_color};")
+        self._user_background_color = color.name()
+        self.bg_color_button.setStyleSheet(f"background-color: {self._user_background_color};")
 
     def reset_bg_color(self):
         default = "#000000"
+        self._user_background_color = default
         self.settings.setValue("background_color", default)
         self.bg_color_button.setStyleSheet(f"background-color: {default};")
 
@@ -1213,225 +1172,141 @@ class SettingsDialog(QDialog):
 
         return distance < threshold
 
+    # --- DRY Helper Methods for accept() ---
+    def _save_bool(self, widget, setting_key: str, log_msg: str = ""):
+        """Helper to extract bool from a QCheckBox and save it."""
+        if not hasattr(self, widget):
+            return
+        val = getattr(self, widget).isChecked()
+        self.settings.setValue(setting_key, val)
+        if log_msg:
+            logger.info(f"{log_msg}: {val}")
+        return val
+
+    def _save_text(self, widget, setting_key: str, log_msg: str = ""):
+        """Helper to extract text from a QLineEdit and save it."""
+        if not hasattr(self, widget) or getattr(self, widget) is None:
+            return ""
+        val = getattr(self, widget).text().strip()
+        self.settings.setValue(setting_key, val)
+        if log_msg:
+            logger.info(f"{log_msg}: {'[HIDDEN]' if 'api_key' in setting_key else val}")
+        return val
+
+    def _save_int(self, widget, setting_key: str, log_msg: str = ""):
+        """Helper to extract int from a QSpinBox/QSlider and save it."""
+        if not hasattr(self, widget):
+            return 0
+        val = int(getattr(self, widget).value())
+        self.settings.setValue(setting_key, val)
+        if log_msg:
+            logger.info(f"{log_msg}: {val}")
+        return val
+
     def accept(self):
-        # --- General Settings ---
-        # API Keys
-        api_key = self.api_key_input.text().strip()
-        self.settings.setValue("morrenus_api_key", api_key)
-        if api_key:
-            logger.info("Morrenus API key saved.")
-        else:
-            logger.info("Morrenus API key cleared.")
+        # --- API Keys ---
+        self._save_text("api_key_input", "morrenus_api_key", "Morrenus API key saved")
+        self._save_text("sgdb_api_key_input", "sgdb_api_key", "Steam Grid DB API key saved")
+        self._save_bool("auto_refresh_morrenus_api_key_checkbox", "auto_refresh_morrenus_api_key", "Auto Refresh Morrenus API Key set to")
 
-        if self.sgdb_api_key_input:
-            sgdb_api_key = self.sgdb_api_key_input.text().strip()
-            self.settings.setValue("sgdb_api_key", sgdb_api_key)
-            if sgdb_api_key:
-                logger.info("Steam Grid DB API key saved.")
-            else:
-                logger.info("Steam Grid DB API key cleared.")
+        # --- Download Settings ---
+        self._save_bool("sls_mode_checkbox", "slssteam_mode", "SLSsteam mode")
+        self._save_bool("sls_config_management_checkbox", "sls_config_management", "SLSsteam Config Management")
+        self._save_bool("library_mode_checkbox", "library_mode", "Library mode setting")
+        self._save_bool("auto_skip_single_choice_checkbox", "auto_skip_single_choice", "Auto-skip single-choice selection")
+        self._save_bool("prompt_steam_restart_checkbox", "prompt_steam_restart", "Prompt Steam Restart")
+        
+        try:
+            val = int(getattr(self, "max_downloads_spinbox").value())
+        except Exception:
+            val = 255
+        self.settings.setValue("max_downloads", max(0, min(255, val)))
 
-        auto_refresh_morrenus_api_key = (
-            self.auto_refresh_morrenus_api_key_checkbox.isChecked()
-        )
-        self.settings.setValue(
-            "auto_refresh_morrenus_api_key", auto_refresh_morrenus_api_key
-        )
-        logger.info(
-            "Auto Refresh Morrenus API Key set to: "
-            f"{auto_refresh_morrenus_api_key}"
-        )
+        # --- SLSsteam Config Options ---
+        self._save_bool("sls_safe_mode_checkbox", "sls_safe_mode")
+        self._save_bool("sls_notifications_checkbox", "sls_notifications")
+        self._save_bool("sls_warn_hash_missmatch_checkbox", "sls_warn_hash_missmatch")
+        self._save_bool("sls_notify_init_checkbox", "sls_notify_init")
+        self._save_text("sls_fake_email_input", "sls_fake_email")
+        self._save_int("sls_fake_wallet_spinbox", "sls_fake_wallet_balance")
+        self._save_int("sls_idle_status_appid_spinbox", "sls_idle_status_appid")
+        self._save_text("sls_idle_status_title_input", "sls_idle_status_title")
+        self._save_int("sls_unowned_status_appid_spinbox", "sls_unowned_status_appid")
+        self._save_text("sls_unowned_status_title_input", "sls_unowned_status_title")
 
-        # Download Settings
-        is_sls_mode = self.sls_mode_checkbox.isChecked()
-        self.settings.setValue("slssteam_mode", is_sls_mode)
-        if is_sls_mode:
-            logger.info("SLSsteam mode enabled - games will sync to config.yaml")
-        else:
-            logger.info("SLSsteam mode disabled")
+        # --- Post-Processing Settings ---
+        self._save_bool("achievements_checkbox", "generate_achievements", "Generate Achievements")
+        self._save_bool("steamless_checkbox", "use_steamless", "Use Steamless")
+        self._save_bool("auto_apply_goldberg_checkbox", "auto_apply_goldberg", "Auto-apply Goldberg")
+        self._save_bool("application_shortcuts_checkbox", "create_application_shortcuts", "Create Application Shortcuts")
 
-        # SLSsteam Config Management
-        sls_config_management = self.sls_config_management_checkbox.isChecked()
-        self.settings.setValue("sls_config_management", sls_config_management)
-        logger.info(f"SLSsteam Config Management set to: {sls_config_management}")
-
-        # SLSsteam Config Options
-        sls_safe_mode = self.sls_safe_mode_checkbox.isChecked()
-        self.settings.setValue("sls_safe_mode", sls_safe_mode)
-
-        sls_notifications = self.sls_notifications_checkbox.isChecked()
-        self.settings.setValue("sls_notifications", sls_notifications)
-
-        sls_warn_hash_missmatch = self.sls_warn_hash_missmatch_checkbox.isChecked()
-        self.settings.setValue("sls_warn_hash_missmatch", sls_warn_hash_missmatch)
-
-        sls_notify_init = self.sls_notify_init_checkbox.isChecked()
-        self.settings.setValue("sls_notify_init", sls_notify_init)
-
-        sls_fake_email = self.sls_fake_email_input.text().strip()
-        self.settings.setValue("sls_fake_email", sls_fake_email)
-
-        sls_fake_wallet_balance = int(self.sls_fake_wallet_spinbox.value())
-        self.settings.setValue("sls_fake_wallet_balance", sls_fake_wallet_balance)
-
-        sls_idle_status_appid = int(self.sls_idle_status_appid_spinbox.value())
-        self.settings.setValue("sls_idle_status_appid", sls_idle_status_appid)
-
-        sls_idle_status_title = self.sls_idle_status_title_input.text().strip()
-        self.settings.setValue("sls_idle_status_title", sls_idle_status_title)
-
-        sls_unowned_status_appid = int(self.sls_unowned_status_appid_spinbox.value())
-        self.settings.setValue("sls_unowned_status_appid", sls_unowned_status_appid)
-
-        sls_unowned_status_title = self.sls_unowned_status_title_input.text().strip()
-        self.settings.setValue("sls_unowned_status_title", sls_unowned_status_title)
-
-        library_mode_enabled = self.library_mode_checkbox.isChecked()
-        self.settings.setValue("library_mode", library_mode_enabled)
-        logger.info(f"Library mode setting changed to: {library_mode_enabled}")
-
-        auto_skip_single_choice = self.auto_skip_single_choice_checkbox.isChecked()
-        self.settings.setValue("auto_skip_single_choice", auto_skip_single_choice)
-        logger.info(
-            f"Auto-skip single-choice selection set to: {auto_skip_single_choice}"
-        )
-
-        prompt_steam_restart = self.prompt_steam_restart_checkbox.isChecked()
-        self.settings.setValue("prompt_steam_restart", prompt_steam_restart)
-        logger.info(f"Prompt Steam Restart set to: {prompt_steam_restart}")
-
-        # Post-Processing Settings
-        achievements_enabled = self.achievements_checkbox.isChecked()
-        self.settings.setValue("generate_achievements", achievements_enabled)
-        logger.info(f"Generate Achievements is set to: {achievements_enabled}")
-
-        steamless_enabled = self.steamless_checkbox.isChecked()
-        self.settings.setValue("use_steamless", steamless_enabled)
-        logger.info(f"Use Steamless is set to: {steamless_enabled}")
-
-        auto_apply_goldberg = self.auto_apply_goldberg_checkbox.isChecked()
-        self.settings.setValue("auto_apply_goldberg", auto_apply_goldberg)
-        logger.info(f"Auto-apply Goldberg is set to: {auto_apply_goldberg}")
-
-        # Application Shortcuts
-        if (
-            hasattr(self, "application_shortcuts_checkbox")
-            and self.application_shortcuts_checkbox
-        ):
-            shortcuts_enabled = self.application_shortcuts_checkbox.isChecked()
-            self.settings.setValue("create_application_shortcuts", shortcuts_enabled)
-            logger.info(f"Create Application Shortcuts is set to: {shortcuts_enabled}")
-
-        # System Settings
-        block_steam_updates = self.block_steam_updates_checkbox.isChecked()
-        self.settings.setValue("block_steam_updates", block_steam_updates)
-        logger.info(f"Block Steam Updates set to: {block_steam_updates}")
+        # --- System Settings ---
+        block_steam_updates = self._save_bool("block_steam_updates_checkbox", "block_steam_updates", "Block Steam Updates")
         self._apply_steam_updates_block(block_steam_updates)
 
         # --- Audio Settings ---
-        # Playback settings
-        self.settings.setValue("play_etw", self.play_etw_checkbox.isChecked())
-        self.settings.setValue("play_lall", self.play_lall_checkbox.isChecked())
-        self.settings.setValue("play_50hz_hum", self.play_50hz_hum_checkbox.isChecked())
-
-        # Volume settings
-        self.settings.setValue("master_volume", self.master_volume_slider.value())
-        self.settings.setValue("effects_volume", self.effects_volume_slider.value())
-        self.settings.setValue("hum_volume", self.hum_volume_slider.value())
+        self._save_bool("play_etw_checkbox", "play_etw")
+        self._save_bool("play_lall_checkbox", "play_lall")
+        self._save_bool("play_50hz_hum_checkbox", "play_50hz_hum")
+        self._save_int("master_volume_slider", "master_volume")
+        self._save_int("effects_volume_slider", "effects_volume")
+        self._save_int("hum_volume_slider", "hum_volume")
 
         # Apply final audio settings
         if self.main_window and hasattr(self.main_window, "audio_manager"):
             self.main_window.audio_manager.apply_audio_settings()
 
         # --- Style Settings ---
-        user_accent_color = (
-            self.accent_color_button.styleSheet()
-            .split("background-color: ")[1]
-            .split(";")[0]
-        )
-        user_bg_color = (
-            self.bg_color_button.styleSheet()
-            .split("background-color: ")[1]
-            .split(";")[0]
-        )
-
-        self.settings.setValue("user_accent_color", user_accent_color)
-        self.settings.setValue("user_background_color", user_bg_color)
+        self.settings.setValue("user_accent_color", self._user_accent_color)
+        self.settings.setValue("user_background_color", self._user_background_color)
 
         previous_ui_mode = self.settings.value("ui_mode", "default")
-        sonic_enabled = hasattr(self, "sonic_mode_checkbox") and self.sonic_mode_checkbox.isChecked()
+        sonic_enabled = self.sonic_mode_checkbox.isChecked() if hasattr(self, "sonic_mode_checkbox") else False
         new_ui_mode = "sonic" if sonic_enabled else "default"
         self.settings.setValue("ui_mode", new_ui_mode)
 
         if sonic_enabled:
-            # Use Sonic palette: blue background, yellow accent
             applied_accent = "#ffcc00"
             applied_bg = "#002c83"
             self.settings.setValue("font-file", "sonic/sonic-1-hud-font.otf")
         else:
-            applied_accent = user_accent_color
-            applied_bg = user_bg_color
+            applied_accent = self._user_accent_color
+            applied_bg = self._user_background_color
             self.settings.setValue("font-file", "")
 
-        # Reload audio assets if UI mode changed (Sonic mode affects sound paths)
-        if (
-            previous_ui_mode != new_ui_mode
-            and self.main_window
-            and hasattr(self.main_window, "audio_manager")
-        ):
+        # Reload audio assets if UI mode changed
+        if previous_ui_mode != new_ui_mode and self.main_window and hasattr(self.main_window, "audio_manager"):
             self.main_window.audio_manager.reload_sounds_for_ui_mode()
 
-        ignore_color_warnings = self.ignore_color_warnings_checkbox.isChecked()
-        self.settings.setValue("ignore_color_warnings", ignore_color_warnings)
+        ignore_color_warnings = self._save_bool("ignore_color_warnings_checkbox", "ignore_color_warnings")
 
         if not ignore_color_warnings and not sonic_enabled:
-            if self.is_too_close_to_accent_color(
-                QColor(user_accent_color), QColor(user_bg_color)
-            ):
-                QMessageBox.warning(
-                    self,
-                    "Invalid Color",
-                    "The background color is too similar to the accent color and will reduce contrast.",
-                )
+            if self.is_too_close_to_accent_color(QColor(self._user_accent_color), QColor(self._user_background_color)):
+                QMessageBox.warning(self, "Invalid Color", "The background color is too similar to the accent color and will reduce contrast.")
                 return
 
-        # Save the applied colors (either Sonic or user colors)
+        # Save the applied colors
         self.settings.setValue("accent_color", applied_accent)
         self.settings.setValue("background_color", applied_bg)
 
         # Font settings
-        self.settings.setValue("font", self.current_font.family())
-        self.settings.setValue("font-size", self.current_font.pointSize())
-
-        if self.current_font.bold() and self.current_font.italic():
-            font_style = "Bold Italic"
-        elif self.current_font.bold():
-            font_style = "Bold"
-        elif self.current_font.italic():
-            font_style = "Italic"
-        else:
+        if hasattr(self, 'current_font'):
+            self.settings.setValue("font", self.current_font.family())
+            self.settings.setValue("font-size", self.current_font.pointSize())
             font_style = "Normal"
-        self.settings.setValue("font-style", font_style)
+            if self.current_font.bold() and self.current_font.italic(): font_style = "Bold Italic"
+            elif self.current_font.bold(): font_style = "Bold"
+            elif self.current_font.italic(): font_style = "Italic"
+            self.settings.setValue("font-style", font_style)
 
         # Display settings
-        move_to_bottom = self.titlebar_position_checkbox.isChecked()
-        titlebar_position = "bottom" if move_to_bottom else "top"
+        titlebar_position = "bottom" if getattr(self, "titlebar_position_checkbox").isChecked() else "top"
         self.settings.setValue("titlebar_position", titlebar_position)
-
-        gif_display_enabled = self.gif_display_checkbox.isChecked()
-        self.settings.setValue("gif_display_enabled", gif_display_enabled)
+        self._save_bool("gif_display_checkbox", "gif_display_enabled")
 
         # Apply style settings
         if self.main_window and hasattr(self.main_window, "ui_state"):
             self.main_window.ui_state.apply_style_settings()
-
-        if hasattr(self, "max_downloads_spinbox"):
-            try:
-                val = int(self.max_downloads_spinbox.value())
-            except Exception:
-                val = 255
-            val = max(0, min(255, val))
-            self.settings.setValue("max_downloads", val)
 
         # Sync SLSsteam config only after all validations pass.
         self._sync_slssteam_config_from_stored_settings()
@@ -1443,7 +1318,7 @@ class SettingsDialog(QDialog):
         """Restores original settings if cancelled"""
         # Restore API keys
         self.settings.setValue("morrenus_api_key", self._original_morrenus_key)
-        if self.sgdb_api_key_input is not None:
+        if getattr(self, "sgdb_api_key_input", None) is not None:
             self.settings.setValue("sgdb_api_key", self._original_sgdb_key)
 
         # Restore audio settings
@@ -1451,64 +1326,48 @@ class SettingsDialog(QDialog):
             self.main_window.audio_manager.apply_audio_settings()
         super().reject()
 
-    def _is_steam_updates_blocked(self):
-        """Check if steam.cfg exists in Steam directory"""
+    def _get_steam_cfg_path(self):
+        """Helper to find the path to steam.cfg if steam is installed"""
         try:
             from core.steam_helpers import find_steam_install
-
             steam_path = find_steam_install()
-            if not steam_path:
-                return False
-
-            steam_cfg_path = os.path.join(steam_path, "steam.cfg")
-            return os.path.exists(steam_cfg_path)
+            if steam_path:
+                return os.path.join(steam_path, "steam.cfg")
         except Exception:
-            return False
+            pass
+        return None
+
+    def _is_steam_updates_blocked(self):
+        """Check if steam.cfg exists in Steam directory"""
+        steam_cfg_path = self._get_steam_cfg_path()
+        return os.path.exists(steam_cfg_path) if steam_cfg_path else False
 
     def _apply_steam_updates_block(self, block_enabled):
         """Apply steam.cfg configuration to Steam installation directory"""
         try:
-            from core.steam_helpers import find_steam_install
-
-            steam_path = find_steam_install()
-            if not steam_path:
-                logger.warning(
-                    "Could not find Steam installation. Skipping steam.cfg configuration."
-                )
+            steam_cfg_path = self._get_steam_cfg_path()
+            if not steam_cfg_path:
+                logger.warning("Could not find Steam installation. Skipping steam.cfg configuration.")
                 return
 
-            steam_cfg_path = os.path.join(steam_path, "steam.cfg")
             source_cfg_path = Paths.deps("steam.cfg")
 
             if block_enabled:
-                # Copy steam.cfg to Steam directory
                 if not source_cfg_path.exists():
-                    logger.error(
-                        f"Source steam.cfg not found at: {str(source_cfg_path)}"
-                    )
+                    logger.error(f"Source steam.cfg not found at: {str(source_cfg_path)}")
                     return
-
                 try:
                     shutil.copy2(str(source_cfg_path), steam_cfg_path)
                     logger.info(f"Successfully copied steam.cfg to: {steam_cfg_path}")
                 except Exception as e:
                     logger.error(f"Failed to copy steam.cfg to {steam_cfg_path}: {e}")
             else:
-                # Remove steam.cfg from Steam directory
                 if os.path.exists(steam_cfg_path):
                     try:
                         os.remove(steam_cfg_path)
-                        logger.info(
-                            f"Successfully removed steam.cfg from: {steam_cfg_path}"
-                        )
+                        logger.info(f"Successfully removed steam.cfg from: {steam_cfg_path}")
                     except Exception as e:
-                        logger.error(
-                            f"Failed to remove steam.cfg from {steam_cfg_path}: {e}"
-                        )
-                else:
-                    logger.info(
-                        "steam.cfg not found in Steam directory (already removed or never created)"
-                    )
+                        logger.error(f"Failed to remove steam.cfg from {steam_cfg_path}: {e}")
 
         except Exception as e:
             logger.error(f"Failed to apply steam.cfg configuration: {e}", exc_info=True)
@@ -1516,7 +1375,6 @@ class SettingsDialog(QDialog):
     def _update_slssteam_status(self):
         """Check and display SLSsteam installation status"""
         from pathlib import Path
-        from core.tasks.download_slssteam_task import DownloadSLSsteamTask
 
         # Check if SLSsteam is installed in either native or Flatpak path
         xdg_data_home = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
@@ -1537,22 +1395,10 @@ class SettingsDialog(QDialog):
         if hasattr(self, "slssteam_hash_warning_label"):
             self.slssteam_hash_warning_label.setVisible(True)
 
-        try:
-            # Run in a thread to avoid blocking UI
-            import threading
-
-            def check_status():
-                status = DownloadSLSsteamTask.check_update_available()
-
-                # Marshal updates back to the Qt main thread.
-                self.slssteam_status_ready.emit(status)
-
-            thread = threading.Thread(target=check_status, daemon=True)
-            thread.start()
-        except Exception as e:
-            logger.error(f"Failed to check SLSsteam status: {e}")
-            if hasattr(self, "slssteam_status_label"):
-                self.slssteam_status_label.setText("Error checking status")
+        # Run safely in a QThread
+        self._sls_status_worker = SLSsteamStatusWorker()
+        self._sls_status_worker.status_ready.connect(self._apply_slssteam_status)
+        self._sls_status_worker.start()
 
     def _apply_slssteam_status(self, status):
         """Apply async SLSsteam status update on the Qt main thread."""
@@ -1561,38 +1407,27 @@ class SettingsDialog(QDialog):
         if hasattr(self, "slssteam_hash_warning_label"):
             self._update_slssteam_hash_warning(status)
 
+    def _set_hash_warning(self, text, style="color: #C06C84; font-size: 11px;"):
+        self.slssteam_hash_warning_label.setText(text)
+        self.slssteam_hash_warning_label.setStyleSheet(style)
+        self.slssteam_hash_warning_label.setVisible(True)
+
     def _update_slssteam_hash_warning(self, status):
-        """Update the steamclient.so hash warning label"""
         if not hasattr(self, "slssteam_hash_warning_label"):
             return
 
         mismatch = status.get("steamclient_mismatch")
         found = status.get("steamclient_found")
         error = status.get("steamclient_error")
-        warning_style = "color: #C06C84; font-size: 11px;"  # Pink warning color
 
         if mismatch is True:
-            self.slssteam_hash_warning_label.setText(
-                "Your Steam client is not compatible."
-            )
-            self.slssteam_hash_warning_label.setStyleSheet(warning_style)
-            self.slssteam_hash_warning_label.setVisible(True)
+            self._set_hash_warning("Your Steam client is not compatible.")
         elif error and found:
-            # Found steamclient.so but couldn't check remote hashes
-            self.slssteam_hash_warning_label.setText("Could not verify compatibility.")
-            self.slssteam_hash_warning_label.setStyleSheet(warning_style)
-            self.slssteam_hash_warning_label.setVisible(True)
+            self._set_hash_warning("Could not verify compatibility.")
         elif not found:
-            self.slssteam_hash_warning_label.setText("Steam client not found.")
-            self.slssteam_hash_warning_label.setStyleSheet(warning_style)
-            self.slssteam_hash_warning_label.setVisible(True)
+            self._set_hash_warning("Steam client not found.")
         elif mismatch is False:
-            # Hash matches - show success message
-            self.slssteam_hash_warning_label.setText("Your Steam client is compatible.")
-            self.slssteam_hash_warning_label.setStyleSheet(
-                "color: #7FC97F; font-size: 11px;"  # Green success color
-            )
-            self.slssteam_hash_warning_label.setVisible(True)
+            self._set_hash_warning("Your Steam client is compatible.", "color: #7FC97F; font-size: 11px;")
 
     def _format_status_text(self, status):
         """Format the status text for display"""
@@ -1683,33 +1518,35 @@ class SettingsDialog(QDialog):
                 ["xterm", "-e"] + command,
                 ["kitty", "-e"] + command,
             ]
+            
             for cmd in linux_terminals:
-                try:
-                    logger.info(f"Trying: {cmd}")
-                    subprocess.Popen(cmd, cwd=working_dir)
-                    launched = True
-                    break
-                except FileNotFoundError:
-                    continue
+                # Safely check if executable exists in PATH
+                if shutil.which(cmd[0]):
+                    try:
+                        logger.info(f"Trying terminal: {cmd}")
+                        subprocess.Popen(cmd, cwd=working_dir)
+                        launched = True
+                        break
+                    except Exception as e:
+                        logger.warning(f"Failed to launch terminal {cmd}: {e}")
+                        continue
 
             if not launched:
                 venv_activate = get_venv_activate()
-                if venv_activate is not None:
-                    command_text = f'bash -c \'cd "{working_dir}" && source "{venv_activate}" && {" ".join(command)}\''
-                else:
-                    command_text = " ".join(command)
+                command_text = (
+                    f'bash -c \'cd "{working_dir}" && source "{venv_activate}" && {" ".join(command)}\'' 
+                    if venv_activate else " ".join(command)
+                )
 
                 msg_box = QMessageBox(self)
                 msg_box.setWindowTitle("Terminal Not Found")
                 msg_box.setText(
-                    "Could not automatically launch a terminal.\n"
-                    "Please open a terminal and run:\n"
+                    "Could not automatically launch a terminal emulator.\n"
+                    "Please open your terminal and run the following command:\n"
                 )
                 msg_box.setInformativeText(command_text)
                 msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-                msg_box.setTextInteractionFlags(
-                    Qt.TextInteractionFlag.TextSelectableByMouse
-                )
+                msg_box.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
                 msg_box.exec()
 
         except Exception as e:

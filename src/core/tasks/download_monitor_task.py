@@ -59,19 +59,24 @@ class DownloadMonitorTask(QObject):
     def _get_folder_size(path):
         total_size = 0
         try:
-            for dirpath, dirnames, filenames in os.walk(path):
-                for f in filenames:
-                    fp = os.path.join(dirpath, f)
-                    if os.path.exists(fp) and not os.path.islink(fp):
-                        try:
-                            total_size += os.path.getsize(fp)
-                        except OSError as e:
-                            logger.debug(f"Could not get size of file {fp}: {e}")
+            dirs_to_scan = [path]
+            while dirs_to_scan:
+                current_dir = dirs_to_scan.pop()
+                try:
+                    with os.scandir(current_dir) as it:
+                        for entry in it:
+                            if entry.is_file(follow_symlinks=False):
+                                total_size += entry.stat(follow_symlinks=False).st_size
+                            elif entry.is_dir(follow_symlinks=False):
+                                dirs_to_scan.append(entry.path)
+                except OSError as e:
+                    logger.debug(f"Could not access {current_dir}: {e}")
         except FileNotFoundError:
             logger.debug(f"Download path {path} not created yet. Current size is 0.")
             return 0
         except Exception as e:
-            logger.warning(f"Error walking directory {path}: {e}")
+            logger.warning(f"Error calculating directory size for {path}: {e}")
+            
         return total_size
 
     def stop(self):

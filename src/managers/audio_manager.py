@@ -10,6 +10,13 @@ from utils.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
+# Sound file constants
+SOUND_OPEN_FILE = "etw.wav"
+SOUND_CLOSE_FILE = "lall.wav"
+SOUND_LOOP_FILE_WAV = "50hz.wav"
+SOUND_LOOP_FILE_MP3 = "50hz.mp3"
+SOUND_LOOP_PREFIX = "50hz"
+
 
 class AudioManager:
     def __init__(self, main_window):
@@ -41,13 +48,13 @@ class AudioManager:
         logger.debug("Validating audio files...")
         # Prefer WAV files but accept MP3 for the loop hum if present
         audio_files = [
-            str(self._resolve_sound_path("etw.wav")),
-            str(self._resolve_sound_path("lall.wav")),
+            str(self._resolve_sound_path(SOUND_OPEN_FILE)),
+            str(self._resolve_sound_path(SOUND_CLOSE_FILE)),
         ]
 
         # Check for 50hz with multiple extensions
-        hz_wav = self._resolve_sound_path("50hz.wav")
-        hz_mp3 = self._resolve_sound_path("50hz.mp3")
+        hz_wav = self._resolve_sound_path(SOUND_LOOP_FILE_WAV)
+        hz_mp3 = self._resolve_sound_path(SOUND_LOOP_FILE_MP3)
         if hz_wav.exists():
             audio_files.append(str(hz_wav))
         elif hz_mp3.exists():
@@ -92,7 +99,7 @@ class AudioManager:
         try:
             # Open sound ("Entering The Wired")
             logger.debug("Setting up open sound...")
-            open_sound_path = self._resolve_sound_path("etw.wav")
+            open_sound_path = self._resolve_sound_path(SOUND_OPEN_FILE)
             if open_sound_path.exists():
                 logger.debug(f"Loading open sound: {str(open_sound_path)}")
                 self.open_sound = pygame.mixer.Sound(str(open_sound_path))
@@ -105,7 +112,7 @@ class AudioManager:
 
             # Close sound ("Let's All Love Lain")
             logger.debug("Setting up close sound...")
-            close_sound_path = self._resolve_sound_path("lall.wav")
+            close_sound_path = self._resolve_sound_path(SOUND_CLOSE_FILE)
             if close_sound_path.exists():
                 logger.debug(f"Loading close sound: {str(close_sound_path)}")
                 self.close_sound = pygame.mixer.Sound(str(close_sound_path))
@@ -121,7 +128,7 @@ class AudioManager:
             # Try WAV first, then MP3 for the 50Hz hum
             loop_sound_path = None
             for ext in ("wav", "mp3"):
-                candidate = self._resolve_sound_path(f"50hz.{ext}")
+                candidate = self._resolve_sound_path(f"{SOUND_LOOP_PREFIX}.{ext}")
                 if candidate.exists():
                     loop_sound_path = candidate
                     break
@@ -283,7 +290,9 @@ class AudioManager:
                     logger.warning("Sound playback timeout, continuing anyway")
                     break
 
-                time.sleep(0.05)
+                # Process Qt events to keep app responsive, with a small sleep to prevent 100% CPU usage
+                QApplication.processEvents()
+                time.sleep(0.01)
 
             logger.debug("Close sound finished, continuing shutdown")
         else:

@@ -9,9 +9,10 @@ logger = logging.getLogger(__name__)
 class SpeedMonitorTask(QObject):
     speed_update = pyqtSignal(str)
 
-    def __init__(self, interval=1):
+    def __init__(self, interval: float = 1.0):
         super().__init__()
-        self.interval = interval
+        # Prevent ZeroDivisionError and CPU thrashing if interval is 0 or negative
+        self.interval = max(0.1, interval) 
         self._is_running = True
 
     def run(self):
@@ -43,7 +44,9 @@ class SpeedMonitorTask(QObject):
             return f"{speed_bps:.2f} B/s"
         if speed_bps < 1024**2:
             return f"{(speed_bps / 1024):.2f} KB/s"
-        return f"{(speed_bps / 1024**2):.2f} MB/s"
+        if speed_bps < 1024**3:
+            return f"{(speed_bps / 1024**2):.2f} MB/s"
+        return f"{(speed_bps / 1024**3):.2f} GB/s"
 
     def stop(self):
         logger.debug("Stop signal received by speed monitor.")

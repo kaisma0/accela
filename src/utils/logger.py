@@ -15,7 +15,9 @@ class QtLogHandler(QObject, logging.Handler):
     flushOnClose = False
 
     def __init__(self):
-        super().__init__()
+        QObject.__init__(self)
+        logging.Handler.__init__(self)
+        
         formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
         self.setFormatter(formatter)
 
@@ -54,11 +56,12 @@ logger = logging.getLogger(__name__)
 
 def setup_logging():
     """Setup logging with timestamped log files"""
-    # Clean up old logs on launch
-    cleanup_old_logs()
+    from utils.settings import get_settings
 
-    # Get the timestamped log path
     log_path = get_log_path()
+
+    # Clean up old logs in the correctly resolved directory
+    cleanup_old_logs()
 
     formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
@@ -119,8 +122,6 @@ def setup_logging():
     for handler in handlers:
         root_logger.addHandler(handler)
 
-    logger = logging.getLogger(__name__)
-
     # Log configuration details
     settings = get_settings()
     debug_mode = settings.value("ui_debug_mode", False, type=bool)
@@ -144,7 +145,6 @@ def open_log_directory():
         subprocess.run(["xdg-open", str(log_dir)], check=False)
         return True
     except Exception as e:
-        logger = logging.getLogger(__name__)
         logger.error("Failed to open log directory: %s", e)
         return False
 
@@ -184,10 +184,7 @@ def get_log_path():
 
 def cleanup_old_logs():
     """Clean up old log files on startup."""
-    global _MAX_PREVIOUS_LOGS
-
-    base_path = get_base_path()
-    log_dir = base_path / "logs"
+    global _MAX_PREVIOUS_LOGS, log_dir
 
     if not log_dir.exists():
         return

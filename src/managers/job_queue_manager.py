@@ -2,6 +2,7 @@ import os
 import logging
 import time
 from PyQt6.QtWidgets import QMessageBox, QFileDialog
+from PyQt6.QtCore import QTimer
 
 from core import steam_helpers
 
@@ -143,23 +144,38 @@ class JobQueueManager:
 
     def _check_if_safe_to_start_next_job(self):
         """Check if it's safe to start the next job"""
-        if (not self.main_window.task_manager.is_processing and
-            not self.main_window.task_manager.is_awaiting_zip_task_stop and
-            not self.main_window.task_manager.is_awaiting_speed_monitor_stop and
-            not self.main_window.task_manager.is_awaiting_download_stop and
-            not self.main_window.task_manager.achievement_task_runner):  # Also wait for achievement cleanup
+        tm = self.main_window.task_manager
+        
+        is_busy = (
+            tm.is_processing or
+            tm.is_awaiting_zip_task_stop or
+            tm.is_awaiting_speed_monitor_stop or
+            tm.is_awaiting_download_stop or
+            tm.achievement_task_runner is not None
+        )
 
+        if not is_busy:
             logger.debug("All thread cleanup flags are clear. Safe to start next job.")
             self._start_next_job()
         else:
             logger.debug(
                 f"Not starting next job yet. State: "
-                f"is_processing={self.main_window.task_manager.is_processing}, "
-                f"awaiting_zip={self.main_window.task_manager.is_awaiting_zip_task_stop}, "
-                f"awaiting_speed={self.main_window.task_manager.is_awaiting_speed_monitor_stop}, "
-                f"awaiting_download={self.main_window.task_manager.is_awaiting_download_stop}, "
-                f"achievement_runner={self.main_window.task_manager.achievement_task_runner is not None}"
+                f"is_processing={tm.is_processing}, "
+                f"awaiting_zip={tm.is_awaiting_zip_task_stop}, "
+                f"awaiting_speed={tm.is_awaiting_speed_monitor_stop}, "
+                f"awaiting_download={tm.is_awaiting_download_stop}, "
+                f"achievement_runner={tm.achievement_task_runner is not None}"
             )
+
+    def _get_library_path(self, title, filter_str):
+        """Helper to DRY up file dialogs for missing libraries"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self.main_window,
+            title,
+            os.path.expanduser("~"),
+            filter_str
+        )
+        return file_path
 
     def _prompt_for_steam_restart(self):
         """Prompt user to restart Steam with complete restart logic"""
@@ -175,68 +191,64 @@ class JobQueueManager:
         if reply == QMessageBox.StandardButton.Yes:
             logger.info("User agreed to restart Steam.")
 
+            self.main_window.setEnabled(False)
+
             # First, kill Steam if it's running
             logger.info("Attempting to kill Steam process...")
             steam_helpers.kill_steam_process()
 
-            time.sleep(1)
+            QTimer.singleShot(1000, self._resume_steam_restart)
 
-            # Try to start Steam with the helper function
-            result = steam_helpers.start_steam()
+    def _resume_steam_restart(self):
+        """Resumes the Steam restart process after a non-blocking delay"""
+        self.main_window.setEnabled(True)
 
-            if result == "NEEDS_USER_PATH":
-                # Prompt user for both library files
-                logger.warning("SLSsteam libraries not found. Please locate them manually.")
+        result = steam_helpers.start_steam()
 
-                # First library: SLSsteam.so
-                filePath1, _ = QFileDialog.getOpenFileName(
-                    self.main_window,
-                    "Select SLSsteam.so",
-                    os.path.expanduser("~"),
-                    "SLSsteam.so (SLSsteam.so libSLSsteam.so)"
-                )
+        if result == "NEEDS_USER_PATH":
+            logger.warning("SLSsteam libraries not found. Please locate them manually.")
 
-                if not filePath1:
-                    logger.info("User cancelled file selection for SLSsteam.so")
-                    return
+            file_path_1 = self._get_library_path(
+                "Select SLSsteam.so", 
+                "SLSsteam.so (SLSsteam.so libSLSsteam.so)"
+            )
+            if not file_path_1:
+                logger.info("User cancelled file selection for SLSsteam.so")
+                return
 
-                # Second library: library-inject.so (could be libSLS-library-inject.so)
-                filePath2, _ = QFileDialog.getOpenFileName(
-                    self.main_window,
-                    "Select library-inject.so",
-                    os.path.expanduser("~"),
-                    "library-inject.so (library-inject.so libSLS-library-inject.so)"
-                )
+            file_path_2 = self._get_library_path(
+                "Select library-inject.so", 
+                "library-inject.so (library-inject.so libSLS-library-inject.so)"
+            )
+            if not file_path_2:
+                logger.info("User cancelled file selection for library-inject.so")
+                return
 
-                if not filePath2:
-                    logger.info("User cancelled file selection for library-inject.so")
-                    return
-
-                # Try to start Steam with both libraries
-                result = steam_helpers.start_steam_with_slssteam(filePath1, filePath2)
-                if result == "SUCCESS":
-                    logger.info("Started Steam with SLSsteam.so and library-inject.so")
-                elif result == "NEEDS_USER_PATH":
-                    QMessageBox.warning(
-                        self.main_window,
-                        "Execution Failed",
-                        "One or both of the selected library files are invalid or don't exist."
-                    )
-                else:
-                    QMessageBox.warning(
-                        self.main_window,
-                        "Execution Failed",
-                        "Could not start Steam with the selected libraries."
-                    )
-            elif result == "SUCCESS":
-                logger.info("Steam started successfully with cached libraries.")
-            else:
-                logger.warning("Failed to start Steam.")
+            # Try to start Steam with both libraries
+            result = steam_helpers.start_steam_with_slssteam(file_path_1, file_path_2)
+            if result == "SUCCESS":
+                logger.info("Started Steam with SLSsteam.so and library-inject.so")
+            elif result == "NEEDS_USER_PATH":
                 QMessageBox.warning(
                     self.main_window,
                     "Execution Failed",
-                    "Could not start Steam."
+                    "One or both of the selected library files are invalid or don't exist."
                 )
+            else:
+                QMessageBox.warning(
+                    self.main_window,
+                    "Execution Failed",
+                    "Could not start Steam with the selected libraries."
+                )
+        elif result == "SUCCESS":
+            logger.info("Steam started successfully with cached libraries.")
+        else:
+            logger.warning("Failed to start Steam.")
+            QMessageBox.warning(
+                self.main_window,
+                "Execution Failed",
+                "Could not start Steam."
+            )
 
     def clear(self):
         """Clear the job queue"""

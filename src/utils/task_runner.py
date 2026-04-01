@@ -1,4 +1,5 @@
 import logging
+import traceback
 
 from PyQt6.QtCore import QObject, QThread, QCoreApplication, pyqtSignal
 
@@ -28,8 +29,6 @@ class Worker(QObject):
                 f"An error occurred in worker function '{func_name}': {e}",
                 exc_info=True,
             )
-            import traceback
-
             self.error.emit((type(e), e, traceback.format_exc()))
         finally:
             self.completed.emit()
@@ -48,6 +47,13 @@ class TaskRunner(QObject):
         self.destroyed.connect(self._on_destroyed)
 
     def run(self, target_func, *args, **kwargs):
+        # Guard against running a new task on an instance that is already active
+        if self._thread is not None and self._thread.isRunning():
+            logger.warning(
+                f"TaskRunner is already running a task. Cannot start '{target_func.__name__}'."
+            )
+            return self.worker
+
         self._ensure_shutdown_hook()
 
         self._thread = QThread(self)
@@ -60,7 +66,6 @@ class TaskRunner(QObject):
         self._thread.finished.connect(self._thread.deleteLater)
 
         self._thread.finished.connect(self._cleanup)
-
         self._thread.finished.connect(self.cleanup_complete)
 
         self._thread.start()
@@ -78,9 +83,10 @@ class TaskRunner(QObject):
         if self._thread is not None and self._thread.isRunning():
             try:
                 self._thread.quit()
-                if wait_ms is None:
-                    wait_ms = 2000
-                if wait_ms > 0 and not self._thread.wait(wait_ms):
+                
+                _wait = 2000 if wait_ms is None else wait_ms 
+                
+                if _wait > 0 and not self._thread.wait(_wait):
                     logger.warning("Thread did not finish in time during stop()")
                     if terminate_on_timeout:
                         self._thread.terminate()
@@ -88,8 +94,6 @@ class TaskRunner(QObject):
             except RuntimeError:
                 # Thread may have already been deleted by Qt
                 logger.debug("Thread was already deleted during stop()")
-        self._thread = None
-        self.worker = None
 
     def _cleanup(self):
         if self.worker:
@@ -101,7 +105,7 @@ class TaskRunner(QObject):
         if self in TaskRunner._active_runners:
             TaskRunner._active_runners.remove(self)
 
-        # Nullify references to prevent dangling references
+        # Nullify references to prevent dangling references safely
         self._thread = None
         self.worker = None
 

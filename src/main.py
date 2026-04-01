@@ -1,7 +1,6 @@
 import multiprocessing
 import os
 import sys
-from urllib.parse import unquote
 
 
 from PyQt6.QtGui import QFont
@@ -30,129 +29,36 @@ project_root = os.path.abspath(os.path.dirname(__file__))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-def main():
-    logger = setup_logging()
-    from utils.version import app_version
-
-    logger.info("========================================")
-    logger.info(f"ACCELA {app_version} starting...")
-    logger.info("========================================")
-
-    # People only have substance within the memories of other people.
-
-    app = QApplication(sys.argv)
-
-    # Parse command-line arguments
-    cli_mode = False
-    command_line_zips = []
-    command_line_appid = None
-
-    # Parse args as list so we can skip the appid value
-    args = sys.argv[1:]
-    i = 0
-    while i < len(args):
-        arg = args[i]
-        if arg in ('-cli', '--cli'):
-            cli_mode = True
-        elif arg == '--appid' and i + 1 < len(args):
-            # Next argument is the appid (GUI mode only, requires -cli for CLI mode)
-            appid_str = args[i + 1]
-            if appid_str.isdigit():
-                command_line_appid = int(appid_str)
-            else:
-                logger.error(f"Invalid AppID: {appid_str} (must be a number)")
-            i += 1  # Skip the appid value
-        elif arg.startswith('accela://'):
-            # Handle custom URL scheme
-            # Format: accela://download/730 (GUI) or accela://cli/download/730 (CLI)
-            try:
-                # Parse URL manually to handle paths correctly
-                # accela://cli/download/730 -> cli, download, 730
-                # accela://zip//home/user/file.zip -> zip, /home/user/file.zip
-                url_content = arg[9:]  # Remove 'accela://'
-
-                # Check for cli prefix first
-                if url_content.startswith('cli/'):
-                    cli_mode = True
-                    rest = url_content[4:]  # Remove 'cli/'
-                else:
-                    rest = url_content
-
-                # Split action and param
-                if '/' in rest:
-                    action, param = rest.split('/', 1)
-                    param = unquote(param)
-                else:
-                    action = rest
-                    param = None
-
-                if cli_mode:
-                    if action == 'download' and param and param.isdigit():
-                        command_line_appid = int(param)
-                        logger.info(f"Found accela://cli/download URL for AppID: {param}")
-                    elif action == 'zip' and param:
-                        if os.path.exists(param):
-                            command_line_zips.append(param)
-                            logger.info(f"Found ZIP file from URL: {param}")
-                        else:
-                            logger.warning(f"ZIP file not found from URL: {param}")
-                    else:
-                        logger.warning(f"Invalid accela://cli URL format: {arg}")
-                else:
-                    # GUI mode
-                    if action == 'download' and param and param.isdigit():
-                        command_line_appid = int(param)
-                        logger.info(f"Found accela://download URL for AppID: {param} (GUI mode)")
-                    elif action == 'zip' and param:
-                        if os.path.exists(param):
-                            command_line_zips.append(param)
-                            logger.info(f"Found ZIP file from URL: {param} (GUI mode)")
-                        else:
-                            logger.warning(f"ZIP file not found from URL: {param}")
-                    else:
-                        logger.warning(f"Invalid accela:// URL format: {arg}")
-            except Exception as e:
-                logger.error(f"Failed to parse URL {arg}: {e}")
-        elif arg.lower().endswith('.zip'):
-            # Normalize path to handle relative paths correctly
-            zip_path = os.path.abspath(arg)
-            if os.path.exists(zip_path):
-                command_line_zips.append(zip_path)
-                logger.info(f"Found ZIP file from command line: {zip_path}")
-            else:
-                logger.warning(f"ZIP file not found: {arg}")
-        i += 1  # Move to next argument
-
-    # AppID and ZIP files are mutually exclusive
-    if command_line_appid and command_line_zips:
-        logger.error("Cannot use --appid and .zip files together. Choose one.")
-        return
-
+def handle_cli_mode(app, logger, cli_mode, command_line_appid, command_line_zips):
+    """Handles CLI mode and returns True if CLI mode processed successfully"""
     # CLI mode: activated by -cli flag OR by --appid OR by accela://cli/ URL
     if cli_mode and (command_line_zips or command_line_appid):
-        # Check if we should open in external terminal (accela://cli/ URLs)
-        if cli_mode:
-            if command_line_appid:
-                logger.info(f"Opening CLI mode in external terminal for AppID {command_line_appid}")
-                if open_cli_terminal(appid=command_line_appid):
-                    logger.info("Terminal opened successfully")
-                    return
-            elif command_line_zips:
-                logger.info(f"Opening CLI mode in external terminal for {len(command_line_zips)} ZIP(s)")
-                if open_cli_terminal(zip_path=command_line_zips[0]):
-                    logger.info("Terminal opened successfully")
-                    return
+        # Check if we should open in external terminal
+        if command_line_appid:
+            logger.info(f"Opening CLI mode in external terminal for AppID {command_line_appid}")
+            if open_cli_terminal(appid=command_line_appid):
+                logger.info("Terminal opened successfully")
+                return True
+        elif command_line_zips:
+            logger.info(f"Opening CLI mode in external terminal for {len(command_line_zips)} ZIP(s)")
+            if open_cli_terminal(zip_path=command_line_zips[0]):
+                logger.info("Terminal opened successfully")
+                return True
 
         # Fallback to internal CLI mode (when terminal couldn't be opened)
         if command_line_appid:
             logger.info(f"Will process AppID {command_line_appid} from Morrenus API in CLI mode")
-            return run_cli_mode(app, None, logger, appid=command_line_appid)
+            run_cli_mode(app, None, logger, appid=command_line_appid)
+            return True
         else:
             logger.info(f"Will process {len(command_line_zips)} ZIP file(s) from command line in CLI mode")
             logger.info("Entering CLI mode - skipping main window")
-            return run_cli_mode(app, command_line_zips, logger)
+            run_cli_mode(app, command_line_zips, logger)
+            return True
+    return False
 
-    # Backup SLSsteam config on startup
+def setup_config(logger):
+    """Backups and ensures SLSsteam config exists"""
     config_path = get_user_config_path()
     backup_created = backup_config_on_startup(config_path)
     if backup_created:
@@ -163,7 +69,8 @@ def main():
         if ensure_slssteam_api_enabled(config_path):
             logger.info("SLSsteam API enabled in config")
 
-    # Load settings
+def apply_theme(app, logger):
+    """Applies theme variables and custom fonts"""
     settings = get_settings()
     accent_color = settings.value("accent_color", "#C06C84")
     bg_color = settings.value("background_color", "#000000")
@@ -203,6 +110,8 @@ def main():
     else:
         logger.warning(f"Failed to load custom font from: '{str(font_info)}'")
 
+def launch_app(app, logger, app_version, command_line_appid, command_line_zips):
+    """Launches the main window and processes standard jobs"""
     try:
         main_win = MainWindow()
         main_win.show()
@@ -241,6 +150,28 @@ def main():
             exc_info=True,
         )
         sys.exit(1)
+
+def main():
+    logger = setup_logging()
+    from utils.version import app_version
+    from managers.cli_manager import parse_cli_args
+
+    logger.info("========================================")
+    logger.info(f"ACCELA {app_version} starting...")
+    logger.info("========================================")
+
+    # People only have substance within the memories of other people.
+    
+    app = QApplication(sys.argv)
+    
+    cli_mode, command_line_appid, command_line_zips = parse_cli_args(sys.argv[1:], logger)
+
+    if handle_cli_mode(app, logger, cli_mode, command_line_appid, command_line_zips):
+        return
+        
+    setup_config(logger)
+    apply_theme(app, logger)
+    launch_app(app, logger, app_version, command_line_appid, command_line_zips)
 
 
 if __name__ == "__main__":

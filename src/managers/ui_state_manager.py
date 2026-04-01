@@ -41,38 +41,33 @@ class UIStateManager:
         self.pause_button = None
         self.cancel_button = None
 
-        self.disable_default_gifs = self.settings.value("disable_default_gifs", False)
+        self.disable_default_gifs = self.settings.value("disable_default_gifs", False, type=bool)
+
+        # Cache lists for GIFs
+        self.custom_download_gifs = []
+        self.default_download_gifs = []
 
         self._initialize_gifs()
         # Gifs are set up later in apply_style_settings()
 
     def _initialize_gifs(self):
-        """Initialize GIF resources"""
+        """Initialize GIF resources and cache them in memory for performance"""
         colored_dir = get_base_path() / "gifs/colorized"
         os.makedirs(str(colored_dir), exist_ok=True)
 
         self.remove_old_downloading_gifs()
 
-        # Custom downloading GIFs (excluding defaults)
-        custom_patterns = ["downloading_custom*.gif"]
-        self.download_gifs = []
-        for pattern in custom_patterns:
-            for p in colored_dir.glob(pattern):
-                # Exclude default GIFs
-                if "downloading_lain" not in p.name:
-                    self.download_gifs.append(str(p))
+        # Cache custom downloading GIFs
+        self.custom_download_gifs = sorted([
+            str(p) for p in colored_dir.glob("downloading_custom*.gif")
+        ])
 
-        # Default downloading GIFs
-        self.default_download_gifs = []
-        default_dir = get_base_path() / "gifs/colorized"
-        for p in default_dir.glob("downloading_lain*.gif"):
-            self.default_download_gifs.append(str(p))
+        # Cache default downloading GIFs
+        self.default_download_gifs = sorted([
+            str(p) for p in colored_dir.glob("downloading_lain*.gif")
+        ])
 
-        # Sort both lists
-        self.download_gifs.sort()
-        self.default_download_gifs.sort()
-
-        logger.debug(f"Found {len(self.download_gifs)} custom GIFs")
+        logger.debug(f"Found {len(self.custom_download_gifs)} custom GIFs")
         logger.debug(f"Found {len(self.default_download_gifs)} default GIFs")
 
     def remove_old_downloading_gifs(self):
@@ -118,7 +113,7 @@ class UIStateManager:
             files_to_rename = []
             for file_path in custom_dir.rglob("downloading*.gif"):
                 filename_lower = file_path.name.lower()
-                if ("_custom" not in filename_lower and "_lain" not in filename_lower):
+                if "_custom" not in filename_lower and "_lain" not in filename_lower:
                     files_to_rename.append(file_path)
 
             if files_to_rename:
@@ -133,7 +128,7 @@ class UIStateManager:
                         stem = file_path.stem
                         if stem.lower().startswith("downloading_custom"):
                             num_str = stem[18:]  # Remove "downloading_custom"
-                            if num_str and num_str.isdigit():
+                            if num_str.isdigit():
                                 used_indices.add(int(num_str))
                     except (ValueError, AttributeError, IndexError):
                         pass
@@ -180,19 +175,20 @@ class UIStateManager:
         """Reload movie objects with current GIFs"""
         if not hasattr(self.main_window, "drop_zone_gif"):
             return
+            
         main_gif_path = get_base_path() / "gifs/colorized/main.gif"
         default_gif_path = Paths.resource("gif/main.gif")
 
         ui_mode = self.settings.value("ui_mode", "default")
         sonic_main_applied = False
+        
         if ui_mode == "sonic":
             sonic_gif = Paths.resource("sonic/gifs/main.gif")
             default_gif_path = sonic_gif
             sonic_main_applied = True
 
-        if hasattr(self.main_movie, "main_movie"):
-            if self.main_movie:
-                self.main_movie.stop()
+        if self.main_movie:
+            self.main_movie.stop()
 
         self.main_movie = QMovie(str(default_gif_path))
         self.main_movie.start()
@@ -206,7 +202,8 @@ class UIStateManager:
             self.main_movie.start()
             self.current_movie = self.main_movie
 
-        if self.main_window.task_manager.current_job or self.main_window.task_manager.current_job:
+        # Use clean logical check instead of previous tautology
+        if self.main_window.task_manager.current_job:
             self.switch_to_download_gif()
 
     def setup_queue_panel(self):
@@ -222,9 +219,7 @@ class UIStateManager:
 
         # Queue list
         self.queue_list_widget = QListWidget()
-        self.queue_list_widget.setToolTip(
-            "Current download queue. Select an item to move it."
-        )
+        self.queue_list_widget.setToolTip("Current download queue. Select an item to move it.")
         queue_layout.addWidget(self.queue_list_widget)
 
         # Queue buttons
@@ -235,15 +230,11 @@ class UIStateManager:
         queue_button_layout = QHBoxLayout()
 
         self.queue_move_up_button = QPushButton("Move Up")
-        self.queue_move_up_button.clicked.connect(
-            self.main_window.job_queue.move_item_up
-        )
+        self.queue_move_up_button.clicked.connect(self.main_window.job_queue.move_item_up)
         queue_button_layout.addWidget(self.queue_move_up_button)
 
         self.queue_move_down_button = QPushButton("Move Down")
-        self.queue_move_down_button.clicked.connect(
-            self.main_window.job_queue.move_item_down
-        )
+        self.queue_move_down_button.clicked.connect(self.main_window.job_queue.move_item_down)
         queue_button_layout.addWidget(self.queue_move_down_button)
 
         self.queue_remove_button = QPushButton("Remove")
@@ -256,9 +247,7 @@ class UIStateManager:
         queue_button_layout.addWidget(self.pause_button)
 
         self.cancel_button = QPushButton("Cancel")
-        self.cancel_button.clicked.connect(
-            self.main_window.task_manager.cancel_current_job
-        )
+        self.cancel_button.clicked.connect(self.main_window.task_manager.cancel_current_job)
         self.cancel_button.setVisible(False)
         queue_button_layout.addWidget(self.cancel_button)
 
@@ -266,9 +255,7 @@ class UIStateManager:
 
     def apply_style_settings(self):
         """Apply current style settings to UI"""
-        self.main_window.background_color = self.settings.value(
-            "background_color", "#000000"
-        )
+        self.main_window.background_color = self.settings.value("background_color", "#000000")
         self.main_window.accent_color = self.settings.value("accent_color", "#C06C84")
 
         # Load font family
@@ -290,7 +277,6 @@ class UIStateManager:
         elif font_style == "Bold Italic":
             font.setBold(True)
             font.setItalic(True)
-        # "Normal" is the default, so no changes needed
 
         self.main_window.font = font
 
@@ -330,9 +316,7 @@ class UIStateManager:
         """Apply background color to main content"""
         main_frame = self.main_window.central_widget.findChild(QFrame)
         if main_frame:
-            main_frame.setStyleSheet(
-                f"background-color: {self.main_window.background_color};"
-            )
+            main_frame.setStyleSheet(f"background-color: {self.main_window.background_color};")
 
     def _apply_accent_color(self):
         """Apply accent color to UI elements"""
@@ -368,13 +352,11 @@ class UIStateManager:
             if self.queue_widget:
                 self.queue_widget.setVisible(True)
             if not is_processing:
-                self.main_window.drop_text_label.setText(
-                    "Queue idle. Ready for next job."
-                )
+                self.main_window.drop_text_label.setText("Queue idle. Ready for next job.")
 
     def _show_main_gif(self):
         """Show the main GIF animation"""
-        if (self.current_movie != self.main_movie and self.main_movie and self.main_movie.isValid()):
+        if self.current_movie != self.main_movie and self.main_movie and self.main_movie.isValid():
             self.main_window.drop_zone_gif.setMovie(self.main_movie)
             self.main_movie.start()
             self.current_movie = self.main_movie
@@ -387,11 +369,9 @@ class UIStateManager:
         if self.current_movie:
             self.current_movie.stop()
 
-        colored_dir = get_base_path() / "gifs/colorized"
-        os.makedirs(str(colored_dir), exist_ok=True)
-
         # Determine which GIFs to use based on setting
         ui_mode = self.settings.value("ui_mode", "default")
+        
         if ui_mode == "sonic":
             sonic_dir = Paths.resource("sonic/gifs")
             sonic_downloads = []
@@ -403,17 +383,13 @@ class UIStateManager:
             else:
                 available_gifs = []
         elif self.disable_default_gifs:
-            # Use only custom GIFs
-            custom_gifs = sorted([str(p) for p in colored_dir.glob("downloading_custom*.gif")])
-
-            # Filter out default GIFs (if they exist in the custom directory)
-            default_names = ["downloading_lain"]
-            available_gifs = [gif for gif in custom_gifs if not any(name in gif for name in default_names)]
+            available_gifs = self.custom_download_gifs
 
             # If no custom GIFs found, fall back to defaults
             if not available_gifs:
                 available_gifs = self.default_download_gifs
                 logger.warning("No custom GIFs found, using defaults")
+                
         else:
             # Use only default GIFs
             available_gifs = self.default_download_gifs

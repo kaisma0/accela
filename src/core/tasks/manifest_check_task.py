@@ -8,11 +8,7 @@ from utils.helpers import get_base_path
 
 logger = logging.getLogger(__name__)
 
-try:
-    from core.steam_api import batched_get_product_info
-except ImportError:
-    # For testing purposes
-    batched_get_product_info = None
+from core.steam_api import batched_get_product_info
 
 
 
@@ -76,17 +72,9 @@ class ManifestCheckTask(QObject):
             access_tokens = {}
             for game in valid_games:
                 appid = game.get("appid")
-                depot_file = Path(get_base_path()) / "depots" / f"{appid}.depot"
-                if depot_file.exists():
-                    try:
-                        content = depot_file.read_text().strip()
-                        parts = content.split(":", 2)
-                        if len(parts) >= 3 and parts[2].strip():
-                            access_tokens[appid] = parts[2].strip()
-                    except Exception as e:
-                        logger.debug(
-                            f"Failed to parse depot token file '{depot_file}' for appid {appid}: {e}"
-                        )
+                _, _, access_token = self._parse_depot_file(appid)
+                if access_token:
+                    access_tokens[appid] = access_token
 
             # Use batched API call for all valid games
             appid_list = [game["appid"] for game in valid_games]
@@ -122,7 +110,6 @@ class ManifestCheckTask(QObject):
                     break
 
                 appid = game.get("appid")
-                game_name = game.get("game_name", "Unknown")
 
                 try:
                     # Use batched results to determine update status
@@ -143,96 +130,93 @@ class ManifestCheckTask(QObject):
         finally:
             self.completed.emit()
 
-    def _check_game_update_with_batched_data(self, game_data, batched_results):
+    def _parse_depot_file(self, appid):
         """
-        Check if a game has an update available using pre-fetched batched data.
-
-        This method uses the results from a batched API call to determine if a game
-        has an update, comparing the saved manifest ID with the current public manifest ID.
-
-        Args:
-            game_data: Dictionary containing game information
-            batched_results: Dict mapping appid -> product_info from batched_get_product_info()
-
+        Helper method to parse a depot file and extract its components safely.
+        
         Returns:
-            str: Status constant ('update_available', 'up_to_date', 'cannot_determine')
+            tuple: (depot_id, manifest_id, access_token). Values are None if missing or invalid.
         """
-        appid = game_data.get("appid")
-
-        # Skip if no valid appid
-        if not appid or appid in ("0", "N/A", "unknown"):
-            return "cannot_determine"
-
-        # Read saved manifest ID from depot file
-        depots_dir = Path(get_base_path()) / "depots"
-        depot_file = depots_dir / f"{appid}.depot"
-
+        depot_file = Path(get_base_path()) / "depots" / f"{appid}.depot"
+        
         if not depot_file.exists():
-            # No saved manifest file, cannot determine version
-            logger.debug(f"Depot file not found for app {appid}: {depot_file}")
-            return "cannot_determine"
+            return None, None, None
 
-        # Read the saved manifest ID
         try:
-            with open(depot_file, "r") as f:
-                content = f.read().strip()
-                if ":" not in content:
-                    logger.warning(f"Invalid depot file format for {appid}")
-                    return "cannot_determine"
+            content = depot_file.read_text(encoding="utf-8").strip()
+            if ":" not in content:
+                logger.warning(f"Invalid depot file format for {appid}")
+                return None, None, None
 
-                parts = content.split(":", 2)
-                if len(parts) == 2:
-                    saved_main_depot_id, saved_manifest_id = parts
-                    saved_access_token = None
-                elif len(parts) >= 3:
-                    saved_main_depot_id, saved_manifest_id, saved_access_token = parts
-                else:
-                    logger.warning(f"Invalid depot file format for {appid}")
-                    return "cannot_determine"
+            parts = [p.strip() for p in content.split(":", 2)]
+            
+            depot_id = parts[0] if len(parts) > 0 else None
+            manifest_id = parts[1] if len(parts) > 1 else None
+            access_token = parts[2] if len(parts) > 2 and parts[2] else None
 
-                saved_main_depot_id = saved_main_depot_id.strip()
-                saved_manifest_id = saved_manifest_id.strip()
-        except Exception as e:
-            logger.error(f"Error reading depot file {depot_file}: {e}")
-            return "cannot_determine"
+            if not depot_id or not manifest_id:
+                logger.warning(f"Incomplete depot file data for {appid}")
+                return None, None, None
 
-        # Get current manifest from batched results
-        try:
-            # Look for the appid in batched results
-            if appid not in batched_results:
-                logger.debug(f"App {appid} not found in batched results")
-                return "cannot_determine"
-
-            steam_client_data = batched_results[appid]
-
-            # Look for the manifest ID in the response
-            if steam_client_data and steam_client_data.get("depots"):
-                depots = steam_client_data.get("depots", {})
-
-                # Find the matching depot
-                if saved_main_depot_id in depots:
-                    depot_info = depots[saved_main_depot_id]
-                    current_manifest_id = depot_info.get("manifest_id")
-
-                    if current_manifest_id:
-                        # Compare manifest IDs
-                        if saved_manifest_id != current_manifest_id:
-                            logger.info(
-                                f"Update available for app {appid}: saved={saved_manifest_id}, current={current_manifest_id}"
-                            )
-                            return "update_available"
-                        else:
-                            return "up_to_date"
-                    else:
-                        return "cannot_determine"
-                else:
-                    return "cannot_determine"
-            else:
-                return "cannot_determine"
+            return depot_id, manifest_id, access_token
 
         except Exception as e:
-            logger.error(f"Error checking for updates for app {appid}: {e}")
-            return "cannot_determine"
+            logger.debug(f"Failed to parse depot file '{depot_file}' for appid {appid}: {e}")
+            return None, None, None
+
+    def _check_game_update_with_batched_data(self, game_data, batched_results):
+            """
+            Check if a game has an update available using pre-fetched batched data.
+
+            This method uses the results from a batched API call to determine if a game
+            has an update, comparing the saved manifest ID with the current public manifest ID.
+
+            Args:
+                game_data: Dictionary containing game information
+                batched_results: Dict mapping appid -> product_info from batched_get_product_info()
+
+            Returns:
+                str: Status constant ('update_available', 'up_to_date', 'cannot_determine')
+            """
+            appid = game_data.get("appid")
+
+            # Skip if no valid appid
+            if not appid or appid in ("0", "N/A", "unknown"):
+                return "cannot_determine"
+
+            # Read saved manifest ID
+            saved_main_depot_id, saved_manifest_id, _ = self._parse_depot_file(appid)
+            
+            if not saved_main_depot_id or not saved_manifest_id:
+                logger.debug(f"Cannot determine version: Valid depot data not found for app {appid}")
+                return "cannot_determine"
+
+            # Get current manifest from batched results
+            try:
+                steam_client_data = batched_results.get(appid)
+                if not steam_client_data:
+                    logger.debug(f"App {appid} not found in batched results")
+                    return "cannot_determine"
+
+                # Safely grab depots, defaulting to an empty dict if the API returned None
+                depots = steam_client_data.get("depots") or {}
+                
+                # Safely extract the manifest ID
+                current_manifest_id = depots.get(saved_main_depot_id, {}).get("manifest_id")
+
+                if current_manifest_id:
+                    if saved_manifest_id != current_manifest_id:
+                        logger.info(
+                            f"Update available for app {appid}: saved={saved_manifest_id}, current={current_manifest_id}"
+                        )
+                        return "update_available"
+                    return "up_to_date"
+                
+                return "cannot_determine"
+
+            except Exception as e:
+                logger.error(f"Error checking for updates for app {appid}: {e}")
+                return "cannot_determine"
 
     def stop(self):
         """Stop the task"""

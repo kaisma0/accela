@@ -84,15 +84,16 @@ class DownloadSLSsteamTask(QObject):
         )
 
         for line in iter(self._process.stdout.readline, ""):
-            if not self._is_running:
-                self._process.terminate()
-                raise Exception("SLSsteam installation cancelled")
             if line:
                 self.progress.emit(f"install-sls.sh: {line.strip()}")
 
         self._process.wait()
         return_code = self._process.returncode
         self._process = None
+
+        # Handle cancellation gracefully without raising an exception that bypasses run()'s logic
+        if not self._is_running:
+            return
 
         if return_code != 0:
             raise Exception(f"install-sls.sh failed with exit code {return_code}")
@@ -121,9 +122,7 @@ class DownloadSLSsteamTask(QObject):
         sha256 = hashlib.sha256()
         try:
             with open(filepath, "rb") as f:
-                for chunk in iter(lambda: f.read(8192), b""):
-                    if not chunk:
-                        break
+                while chunk := f.read(8192):
                     sha256.update(chunk)
             return sha256.hexdigest()
         except Exception as e:
@@ -179,6 +178,19 @@ class DownloadSLSsteamTask(QObject):
     @staticmethod
     def check_update_available():
         """Check if an update is available for SLSsteam"""
+        result = {
+            "update_available": False,
+            "latest_version": "Unknown",
+            "latest_date": "",
+            "installed": False,
+            "installed_version": None,
+            "steamclient_found": False,
+            "steamclient_hash": "",
+            "steamclient_mismatch": None,
+            "steamclient_error": False,
+            "error": None,
+        }
+
         try:
             response = requests.get(
                 "https://api.github.com/repos/AceSLS/SLSsteam/releases/latest",
@@ -187,80 +199,56 @@ class DownloadSLSsteamTask(QObject):
             response.raise_for_status()
             release_data = response.json()
 
-            latest_version = release_data.get("tag_name", "Unknown")
-            latest_date = release_data.get("published_at", "")
+            result["latest_version"] = release_data.get("tag_name", "Unknown")
+            result["latest_date"] = release_data.get("published_at", "")
 
-            # Check if SLSsteam is installed via install-sls (native or Flatpak)
-            xdg_data_home = os.environ.get("XDG_DATA_HOME") or os.path.expanduser(
-                "~/.local/share"
-            )
-            slssteam_dir = Path(xdg_data_home) / "SLSsteam"
-            flatpak_slssteam_dir = (
-                Path.home()
-                / ".var/app/com.valvesoftware.Steam/.local/share/SLSsteam"
-            )
+            # Combine Native and Flatpak paths into a searchable list
+            xdg_data_home = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+            possible_install_dirs = [
+                Path(xdg_data_home) / "SLSsteam",
+                Path.home() / ".var/app/com.valvesoftware.Steam/.local/share/SLSsteam"
+            ]
 
-            installed = (
-                (slssteam_dir / "SLSsteam.so").exists()
-                or (flatpak_slssteam_dir / "SLSsteam.so").exists()
+            # Find the first directory that actually contains the .so file
+            installed_dir = next(
+                (d for d in possible_install_dirs if (d / "SLSsteam.so").exists()), 
+                None
             )
 
-            if not installed:
-                return {
-                    "update_available": True,
-                    "latest_version": latest_version,
-                    "latest_date": latest_date,
-                    "installed": False,
-                    "installed_version": None,
-                }
+            if not installed_dir:
+                return result  # Returns early with installed=False and the fetched API data
 
-            # Read VERSION file written by install-sls
-            installed_version = None
-            for version_file in [
-                slssteam_dir / "VERSION",
-                flatpak_slssteam_dir / "VERSION",
-            ]:
-                if version_file.exists():
-                    with open(version_file, "r") as f:
-                        installed_version = f.read().strip()
-                    break
+            result["installed"] = True
 
-            if installed_version:
-                update_available = installed_version != latest_version
+            # Check VERSION file ONLY in the directory where SLSsteam.so was actually found
+            version_file = installed_dir / "VERSION"
+            if version_file.exists():
+                with open(version_file, "r") as f:
+                    result["installed_version"] = f.read().strip()
+                
+
+                result["update_available"] = int(result["latest_version"]) > int(result["installed_version"])
             else:
-                # Manual installation or no version file - assume up to date
-                update_available = False
-                installed_version = "Unknown"
+                result["installed_version"] = "Unknown"
 
             # Check steamclient.so hash compatibility
             hash_check = DownloadSLSsteamTask.check_steamclient_hash()
-
-            return {
-                "update_available": update_available,
-                "latest_version": latest_version,
-                "latest_date": latest_date,
-                "installed": True,
-                "installed_version": installed_version,
+            
+            # Update the base dict with the hash check results
+            result.update({
                 "steamclient_found": hash_check.get("found", False),
                 "steamclient_hash": hash_check.get("hash", "") or "",
                 "steamclient_mismatch": hash_check.get("mismatch"),
                 "steamclient_error": hash_check.get("error", False),
-            }
+            })
+
+            return result
 
         except Exception as e:
             logger.error(f"Failed to check for SLSsteam updates: {e}")
-            return {
-                "update_available": False,
-                "latest_version": "Unknown",
-                "latest_date": "",
-                "installed": False,
-                "installed_version": None,
-                "error": str(e),
-                "steamclient_found": False,
-                "steamclient_hash": "",
-                "steamclient_mismatch": None,
-                "steamclient_error": True,
-            }
+            result["error"] = str(e)
+            result["steamclient_error"] = True
+            return result
 
     def _cleanup_temp_dir(self, temp_dir):
         """Clean up temporary directory"""

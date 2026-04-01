@@ -24,6 +24,7 @@ from utils.paths import Paths
 
 logger = logging.getLogger(__name__)
 
+
 def _get_user_dotnet_path() -> str:
     return os.path.expanduser("~/.dotnet/dotnet")
 
@@ -47,7 +48,6 @@ def get_dotnet_path() -> str | None:
     candidates = [c for c in candidates if c and not (c in seen or seen.add(c))]
 
     for dotnet_exe in candidates:
-
         try:
             dotnet_root = os.path.dirname(dotnet_exe)
             env = os.environ.copy()
@@ -68,13 +68,7 @@ def get_dotnet_path() -> str | None:
 
     return None
 
-"""
-def resource_path(relative_path) -> Path:
-    base_path = getattr(sys, "_MEIPASS", None)
-    if base_path is None:
-        base_path = os.path.dirname(os.path.abspath(sys.argv[0]))
-    return Path(os.path.join(base_path, relative_path))
-"""
+
 
 def get_base_path(app_name="ACCELA"):
     """
@@ -89,9 +83,10 @@ def get_base_path(app_name="ACCELA"):
     if home:
         return Path(home) / ".local" / "share" / app_name
 
-    tilde = os.path.expanduser("~")
-    if tilde not in ("~", ""):  # ensures it actually expanded
-        return Path(tilde) / ".local" / "share" / app_name
+    try:
+        return Path.home() / ".local" / "share" / app_name
+    except RuntimeError:
+        pass
 
     # Fallback to current directory
     return Path(".") / app_name
@@ -186,7 +181,7 @@ def get_venv_path():
     """Get absolute path to venv Python"""
     # Return None if running from PyInstaller temp directory
     # The venv won't be accessible from the MEIPASS temp folder
-    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    if is_running_in_pyinstaller():
         logger.debug("Running from PyInstaller - skipping venv lookup (will use bundled .exe if available)")
         return None
 
@@ -276,27 +271,28 @@ def create_slider_setting(name: str, setting_key: str, default_value: int, paren
     slider.setRange(0, 100)
     slider.setTickPosition(QSlider.TickPosition.TicksBothSides)
 
-    value_label = QLabel(f"{default_value}%")
+    current_value = default_value
+    if parent_widget:
+        current_value = parent_widget.settings.value(
+            setting_key, default_value, type=int
+        )
+
+    slider.setValue(current_value)
+    
+    value_label = QLabel(f"{current_value}%")
     value_label.setFixedWidth(30)
 
     reset_button = QPushButton("Reset")
     reset_button.setFixedHeight(25)
     reset_button.clicked.connect(lambda: slider.setValue(default_value))
 
-    if parent_widget:
-        current_value = parent_widget.settings.value(
-            setting_key, default_value, type=int
-        )
-        slider.setValue(current_value)
-        value_label.setText(f"{current_value}%")
+    # Connect value change to update label (moved outside to ensure the label updates even without parent_widget)
+    def update_label(value):
+        value_label.setText(f"{value}%")
+        if parent_widget and hasattr(parent_widget, f"on_{setting_key}_changed"):
+            getattr(parent_widget, f"on_{setting_key}_changed")(value)
 
-        # Connect value change to update label
-        def update_label(value):
-            value_label.setText(f"{value}%")
-            if hasattr(parent_widget, f"on_{setting_key}_changed"):
-                getattr(parent_widget, f"on_{setting_key}_changed")(value)
-
-        slider.valueChanged.connect(update_label)
+    slider.valueChanged.connect(update_label)
 
     layout.addWidget(label)
     layout.addWidget(slider, 1)
@@ -304,7 +300,6 @@ def create_slider_setting(name: str, setting_key: str, default_value: int, paren
     layout.addWidget(reset_button)
 
     return layout, slider, value_label, reset_button
-
 
 
 class CheckboxSetting(QWidget):
@@ -324,6 +319,8 @@ class CheckboxSetting(QWidget):
         if parent_widget:
             current_value = parent_widget.settings.value(setting_key, default_value, type=bool)
             self.checkbox.setChecked(current_value)
+        else:
+            self.checkbox.setChecked(default_value)
 
         if tooltip:
             # Use tooltip both as hover tooltip and as visible explanatory label
@@ -376,9 +373,11 @@ def create_text_setting(name: str, setting_key: str, default_value: str, parent_
     if placeholder:
         lineedit.setPlaceholderText(placeholder)
 
+    current_value = default_value
     if parent_widget:
         current_value = parent_widget.settings.value(setting_key, default_value, type=str)
-        lineedit.setText(current_value)
+        
+    lineedit.setText(current_value)
 
     if tooltip:
         lineedit.setToolTip(tooltip)

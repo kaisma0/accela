@@ -74,43 +74,31 @@ class DlcSelectionDialog(QDialog):
 
         is_text_click = (click_pos_x - item_rect.x()) > 30
 
-        if modifiers == Qt.KeyboardModifier.ShiftModifier:
-            if self.anchor_row == -1:
-                if is_text_click:
-                    current_state = item.checkState()
-                    new_state = (
-                        Qt.CheckState.Unchecked
-                        if current_state == Qt.CheckState.Checked
-                        else Qt.CheckState.Checked
-                    )
-                    item.setCheckState(new_state)
-                self.anchor_row = current_row
-            else:
-                try:
-                    anchor_item = self.list_widget.item(self.anchor_row)
-                    target_state = anchor_item.checkState()
-                except Exception as e:
-                    logger.warning(f"Could not find anchor item for shift-click: {e}")
-                    target_state = item.checkState()
+        if (modifiers & Qt.KeyboardModifier.ShiftModifier) and self.anchor_row != -1:
+            try:
+                anchor_item = self.list_widget.item(self.anchor_row)
+                target_state = anchor_item.checkState()
+            except Exception as e:
+                logger.warning(f"Could not find anchor item for shift-click: {e}")
+                target_state = item.checkState()
 
-                start_row = min(self.anchor_row, current_row)
-                end_row = max(self.anchor_row, current_row)
+            start_row = min(self.anchor_row, current_row)
+            end_row = max(self.anchor_row, current_row)
 
-                self.list_widget.blockSignals(True)
-                for i in range(start_row, end_row + 1):
-                    self.list_widget.item(i).setCheckState(target_state)
-                self.list_widget.blockSignals(False)
-
-        elif is_text_click:
-            current_state = item.checkState()
-            new_state = (
-                Qt.CheckState.Unchecked
-                if current_state == Qt.CheckState.Checked
-                else Qt.CheckState.Checked
-            )
-            item.setCheckState(new_state)
-            self.anchor_row = current_row
+            self.list_widget.blockSignals(True)
+            for i in range(start_row, end_row + 1):
+                self.list_widget.item(i).setCheckState(target_state)
+            self.list_widget.blockSignals(False)
+            
         else:
+            if is_text_click:
+                new_state = (
+                    Qt.CheckState.Unchecked
+                    if item.checkState() == Qt.CheckState.Checked
+                    else Qt.CheckState.Checked
+                )
+                item.setCheckState(new_state)
+                
             self.anchor_row = current_row
 
     def _toggle_all_checkboxes(self, check=True):
@@ -129,4 +117,3 @@ class DlcSelectionDialog(QDialog):
             if item.checkState() == Qt.CheckState.Checked:
                 selected.append(item.data(Qt.ItemDataRole.UserRole))
         return selected
-

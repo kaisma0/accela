@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -10,7 +11,15 @@ from core.steam_helpers import get_steam_libraries, get_library_index, find_stea
 from core.tasks.manifest_check_task import ManifestCheckTask
 from utils.helpers import get_base_path
 from utils.task_runner import TaskRunner
-from utils.yaml_config_manager import get_user_config_path, add_list_item, remove_list_item, get_map_items, set_map_item
+from utils.yaml_config_manager import (
+    get_user_config_path, 
+    add_list_item, 
+    remove_list_item, 
+    get_map_items, 
+    set_map_item,
+    is_slssteam_mode_enabled,
+    is_slssteam_config_management_enabled
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +65,11 @@ class GameManager(QObject):
         self._scan_cancelled = False
 
         logger.info("GameManager initialized")
+
+    @staticmethod
+    def _is_valid_appid(appid):
+        """Helper to determine if an appid is present and valid."""
+        return bool(appid and str(appid) not in ("0", "N/A", "unknown"))
 
     def _get_sorted_games(self, games_list):
         """Helper method to sort games by name (case-insensitive)"""
@@ -159,7 +173,7 @@ class GameManager(QObject):
 
         # Get games with valid appids
         self._games_to_check = [
-            g for g in self.games if g.get("appid") not in ("0", "N/A", "unknown")
+            g for g in self.games if self._is_valid_appid(g.get("appid"))
         ]
 
         if not self._games_to_check:
@@ -411,7 +425,7 @@ class GameManager(QObject):
         for game in self.games:
             appid = game.get("appid")
             game_name = game.get("game_name", "")
-            if appid and appid not in ("0", "N/A", "unknown"):
+            if self._is_valid_appid(appid):
                 if add_list_item(config_path, "AdditionalApps", appid, game_name):
                     added_count += 1
 
@@ -653,7 +667,7 @@ class GameManager(QObject):
 
             # Set default update status to "checking" - will be checked asynchronously
             # Only if appid is valid
-            if appid and appid not in ("0", "N/A", "unknown"):
+            if self._is_valid_appid(appid):
                 game_data["update_status"] = UPDATE_STATUS["CHECKING"]
             else:
                 game_data["update_status"] = UPDATE_STATUS["CANNOT_DETERMINE"]
@@ -737,12 +751,7 @@ class GameManager(QObject):
         """
         game_name = game_data.get("game_name", "Unknown")
         install_path = game_data.get("install_path")
-        library_path = game_data.get("library_path")
         appid = game_data.get("appid", "0")
-
-        import os
-
-        from core.steam_helpers import get_steam_libraries
         
         if not (remove_game_data or remove_compatdata or remove_saves or remove_from_library or remove_shortcuts):
             return f"Are you sure you want to run cleanup for '{game_name}'?\n\nNothing selected to remove."
@@ -750,7 +759,7 @@ class GameManager(QObject):
         confirm_msg = f"Are you sure you want to uninstall/cleanup '{game_name}'?\n\n"
 
         # Warn if appid is unknown
-        if not appid or appid in ("0", "N/A", "unknown"):
+        if not self._is_valid_appid(appid):
             confirm_msg += "⚠️ WARNING: AppID is unknown for this game.\n"
             if remove_compatdata or remove_saves or remove_shortcuts or remove_from_library:
                 confirm_msg += "Checkboxes requiring AppID will be ignored.\n"
@@ -762,15 +771,12 @@ class GameManager(QObject):
             confirm_msg += f"• Game folder: {install_path}\n"
 
             # Only show ACF removal if appid is valid
-            if appid and appid not in ("0", "N/A", "unknown"):
+            if self._is_valid_appid(appid):
                 confirm_msg += f"• Steam app manifest ({appid}.acf)\n"
                 confirm_msg += f"• Depot manifest ({appid}.depot)\n"
 
         # Check for additional items that would be removed
-        if (
-            appid
-            and appid not in ("0", "N/A", "unknown")
-        ):
+        if self._is_valid_appid(appid):
             steam_libraries = get_steam_libraries()
             if steam_libraries:
                 steam_dir = steam_libraries[0]
@@ -804,7 +810,6 @@ class GameManager(QObject):
 
             if remove_from_library:
                 confirm_msg += "• Accela tracking data (.DepotDownloader folder)\n"
-                from utils.yaml_config_manager import is_slssteam_mode_enabled, is_slssteam_config_management_enabled
                 if is_slssteam_mode_enabled() and is_slssteam_config_management_enabled():
                     confirm_msg += "• Library entry from SLSsteam config.yaml\n"
                     confirm_msg += "• Depot data from SLSsteam config.yaml\n"
@@ -825,14 +830,10 @@ class GameManager(QObject):
         library_path = game_data.get("library_path")
         appid = game_data.get("appid", "0")
 
-        import os
-
         try:
             if remove_game_data:
                 # Remove game folder
                 if install_path and os.path.exists(install_path):
-                    import shutil
-    
                     shutil.rmtree(install_path)
                     logger.info(f"Removed game folder: {install_path}")
     
@@ -846,7 +847,7 @@ class GameManager(QObject):
                         logger.info(f"Removed ACF file: {acf_path}")
     
                 # Remove depot file
-                if appid and appid not in ("0", "N/A", "unknown"):
+                if self._is_valid_appid(appid):
                     try:
                         depot_file = Path(get_base_path()) / "depots" / f"{appid}.depot"
                         if depot_file.exists():
@@ -866,8 +867,7 @@ class GameManager(QObject):
 
             # Remove from tracking
             if remove_from_library:
-                from utils.yaml_config_manager import is_slssteam_mode_enabled, is_slssteam_config_management_enabled
-                if is_slssteam_mode_enabled() and is_slssteam_config_management_enabled() and appid and appid not in ("0", "N/A", "unknown"):
+                if is_slssteam_mode_enabled() and is_slssteam_config_management_enabled() and self._is_valid_appid(appid):
                     config_path = get_user_config_path()
                     if config_path.exists():
                         remove_list_item(config_path, "AdditionalApps", str(appid))
@@ -875,7 +875,6 @@ class GameManager(QObject):
                 if not remove_game_data and install_path and os.path.exists(install_path):
                     dd_path = os.path.join(install_path, ".DepotDownloader")
                     if os.path.exists(dd_path):
-                        import shutil
                         shutil.rmtree(dd_path)
                         logger.info(f"Removed .DepotDownloader tracking folder: {dd_path}")
 
@@ -894,12 +893,8 @@ class GameManager(QObject):
         """
         Remove Linux-specific game data (compatdata and Steam Cloud saves).
         """
-        import os
-
-        from core.steam_helpers import get_steam_libraries
-
         # CRITICAL SAFETY CHECK: Never remove compatdata/saves for invalid appids
-        if not appid or appid in ("0", "N/A", "unknown"):
+        if not self._is_valid_appid(appid):
             logger.warning(
                 f"Skipping compatdata/saves removal for invalid appid: {appid}"
             )
@@ -924,8 +919,6 @@ class GameManager(QObject):
             compatdata_path = os.path.join(steam_dir, "steamapps", "compatdata", appid)
             if os.path.exists(compatdata_path):
                 try:
-                    import shutil
-
                     shutil.rmtree(compatdata_path)
                     logger.info(f"Removed compatdata: {compatdata_path}")
                 except Exception as e:
@@ -944,8 +937,6 @@ class GameManager(QObject):
                         if os.path.isdir(user_path):
                             saves_path = os.path.join(user_path, appid)
                             if os.path.exists(saves_path):
-                                import shutil
-
                                 shutil.rmtree(saves_path)
                                 logger.info(
                                     f"Removed saves for user {user_dir}: {saves_path}"
@@ -957,11 +948,8 @@ class GameManager(QObject):
         """
         Remove Linux desktop shortcuts and icons created by ApplicationShortcutsTask.
         """
-        import os
-        from pathlib import Path
-
         # CRITICAL SAFETY CHECK: Never remove shortcuts/icons for invalid appids
-        if not appid or appid in ("0", "N/A", "unknown"):
+        if not self._is_valid_appid(appid):
             logger.warning(
                 f"Skipping shortcuts/icons removal for invalid appid: {appid}"
             )
@@ -1025,5 +1013,3 @@ class GameManager(QObject):
             logger.error(
                 f"Failed to remove Linux shortcuts and icons for AppID {appid}: {e}"
             )
-
-

@@ -44,48 +44,45 @@ class StatusDialog(QDialog):
 
     def _gather_status(self):
         """Gather status from task_manager"""
-        # Get accent color for not_run state
         settings = get_settings()
         accent_color = settings.value("accent_color", "#C06C84")
 
+        tools = [
+            (" Download Manager", "ddm"),
+            (" Achievements", "slscheevo"),
+            (" DRM Removal", "steamless"),
+        ]
+        
+        self.tool_statuses = []
+
         if self.parent and hasattr(self.parent, "task_manager"):
             task_manager = self.parent.task_manager
-            status = task_manager.get_component_status()
+            status_data = task_manager.get_component_status()
 
-            # Map status strings to colors
+            # Map status strings to colors (falling back to class defaults if missing)
             status_map = {
-                "ok": task_manager.STATUS_OK,
-                "in_progress": task_manager.STATUS_IN_PROGRESS,
-                "error": task_manager.STATUS_ERROR,
+                "ok": getattr(task_manager, "STATUS_OK", self.STATUS_OK),
+                "in_progress": getattr(task_manager, "STATUS_IN_PROGRESS", self.STATUS_IN_PROGRESS),
+                "error": getattr(task_manager, "STATUS_ERROR", self.STATUS_ERROR),
                 "not_run": accent_color,
             }
-
-            self.ddm_status = status_map.get(
-                status["ddm_status"], task_manager.STATUS_OK
-            )
-            self.ddm_status_text = status["ddm_status_text"]
-            self.slscheevo_status = status_map.get(
-                status["slscheevo_status"], task_manager.STATUS_OK
-            )
-            self.slscheevo_status_text = status["slscheevo_status_text"]
-            self.steamless_status = status_map.get(
-                status["steamless_status"], task_manager.STATUS_OK
-            )
-            self.steamless_status_text = status["steamless_status_text"]
+            default_color = status_map["ok"]
 
             # Get last installed game name
-            self.last_game_name = (
-                task_manager._last_installed_game or "No game installed"
-            )
+            last_game = getattr(task_manager, "_last_installed_game", None)
+            self.last_game_name = last_game or "No game installed"
+
+            # Dynamically extract statuses
+            for name, prefix in tools:
+                state = status_data.get(f"{prefix}_status", "not_run")
+                color = status_map.get(state, default_color)
+                text = status_data.get(f"{prefix}_status_text", "Not run")
+                self.tool_statuses.append((name, color, text))
         else:
             # Fallback if no parent - all components are "not run"
-            self.ddm_status = accent_color
-            self.ddm_status_text = "Not run"
-            self.slscheevo_status = accent_color
-            self.slscheevo_status_text = "Not run"
-            self.steamless_status = accent_color
-            self.steamless_status_text = "Not run"
             self.last_game_name = "No game installed"
+            for name, _ in tools:
+                self.tool_statuses.append((name, accent_color, "Not run"))
 
     def _setup_ui(self):
         """Setup the dialog UI"""
@@ -116,21 +113,9 @@ class StatusDialog(QDialog):
         status_layout.setContentsMargins(0, 0, 0, 0)
         status_layout.setSpacing(3)
 
-        # DDM status
-        ddm_row = self._create_status_row(" Download Manager", self.ddm_status, self.ddm_status_text)
-        status_layout.addLayout(ddm_row)
-
-        # SLScheevo status
-        slscheevo_row = self._create_status_row(
-            " Achievements", self.slscheevo_status, self.slscheevo_status_text
-        )
-        status_layout.addLayout(slscheevo_row)
-
-        # Steamless status
-        steamless_row = self._create_status_row(
-            " DRM Removal", self.steamless_status, self.steamless_status_text
-        )
-        status_layout.addLayout(steamless_row)
+        for name, color, text in self.tool_statuses:
+            row = self._create_status_row(name, color, text)
+            status_layout.addLayout(row)
 
         status_group.setLayout(status_layout)
         layout.addWidget(status_group)

@@ -339,7 +339,7 @@ class SteamlessIntegration(QObject):
                     f"Processing executable {i + 1}/{len(exe_files)}: {exe_name} (priority: {priority})"
                 )
 
-                if self._run_steamless_on_exe(target_exe):
+                if self.run_steamless_on_exe(target_exe):
                     self.progress.emit(f"Successfully processed: {exe_name}")
                     success_count += 1
 
@@ -360,7 +360,7 @@ class SteamlessIntegration(QObject):
             self.error.emit(f"Unexpected error during Steamless processing: {str(e)}")
             return False
 
-    def _run_steamless_on_exe(self, exe_path: str) -> bool:
+    def run_steamless_on_exe(self, exe_path: str) -> bool:
         """Run Steamless CLI on a specific executable."""
         try:
             steamless_dll = os.path.join(self.steamless_path, "Steamless.CLI.dll")
@@ -576,11 +576,11 @@ class SteamlessTask(QThread):
             logger.error(".NET 10 runtime was not found.")
             
             # Emit error but let the task fail gracefully
-            self.error.emit(
+            self.error.emit((
                 "Runtime Error",
                 msg,
                 "The required .NET 10 runtime could not be located or installed automatically."
-            )
+            ))
             return False
 
         self.progress.emit(".NET 10 runtime is available")
@@ -660,7 +660,7 @@ class SteamlessTask(QThread):
                     # Process only the specific exe
                     logger.info(f"Processing specific executable: {self._target_exe}")
                     self.progress.emit(f"Processing: {os.path.basename(self._target_exe)}")
-                    success = self.steamless_integration._run_steamless_on_exe(
+                    success = self.steamless_integration.run_steamless_on_exe(
                         self._target_exe
                     )
                 else:
@@ -781,7 +781,6 @@ class SteamlessTask(QThread):
         finally:
             self._integration_mutex.unlock()
 
-        self.process = None
 
     def is_dotnet_available(self):
         """Check if .NET 10 is available for Steamless execution"""
@@ -790,3 +789,4 @@ class SteamlessTask(QThread):
     def get_steamless_path(self):
         """Get the path to the Steamless directory"""
         return str(self.steamless_path)
+        

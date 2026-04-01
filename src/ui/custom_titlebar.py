@@ -20,6 +20,7 @@ from .assets import (
 
 logger = logging.getLogger(__name__)
 
+
 class ClickableLabel(QLabel):
     def __init__(self, text, parent=None, callback=None):
         super().__init__(text, parent)
@@ -31,13 +32,14 @@ class ClickableLabel(QLabel):
             self.callback()
         super().mousePressEvent(ev)
 
+
 class CustomTitleBar(QFrame):
     @classmethod
     def reposition_dialog_titlebar(cls, dialog, position=None):
         """Reposition an already-created dialog titlebar to top/bottom."""
-        if not hasattr(dialog, "_base_layout") or not hasattr(dialog, "_titlebar"):
-            return
-        if not hasattr(dialog, "_tb_content_widget"):
+        if not (hasattr(dialog, "_base_layout") and 
+                hasattr(dialog, "_titlebar") and 
+                hasattr(dialog, "_tb_content_widget")):
             return
 
         if position is None:
@@ -72,6 +74,7 @@ class CustomTitleBar(QFrame):
         self.setFixedHeight(36)
         
         self.no_previous_state = True
+        self._svg_buttons = []  # Keeps track of SVG buttons for dynamic theme updates
 
         self.layout = QHBoxLayout()
         self.layout.setContentsMargins(5, 0, 5, 0)
@@ -121,7 +124,7 @@ class CustomTitleBar(QFrame):
         self._update_sizing()
         
         self._apply_style()
-        CustomTitleBar._update_button_colors(self)
+        self._update_button_colors()
         self._update_button_styles()
 
         # Add scoped Ctrl+Q shortcut to close the window
@@ -223,37 +226,20 @@ class CustomTitleBar(QFrame):
             }}
         """
 
-        for idx in range(self.right_layout.count()):
-            item = self.right_layout.itemAt(idx)
-            if item and item.widget():
-                widget = item.widget()
-                if isinstance(widget, QPushButton) and not widget.property("is_circle"):
-                    widget.setStyleSheet(button_style)
-        for idx in range(self.left_layout.count()):
-            item = self.left_layout.itemAt(idx)
-            if item and item.widget():
-                widget = item.widget()
-                if isinstance(widget, QPushButton) and not widget.property("is_circle"):
-                    widget.setStyleSheet(button_style)
+        # Apply to both left and right layouts cleanly
+        for layout in (self.left_layout, self.right_layout):
+            for idx in range(layout.count()):
+                item = layout.itemAt(idx)
+                if item and item.widget():
+                    widget = item.widget()
+                    if isinstance(widget, QPushButton) and not widget.property("is_circle"):
+                        widget.setStyleSheet(button_style)
 
     def _update_button_colors(self):
         settings = get_settings()
         accent_color = settings.value("accent_color", "#C06C84")
 
-        buttons = [
-            (self.minimize_button, MINIMIZE),
-            (self.maximize_button, MAXIMIZE),
-            (self.close_button, POWER_SVG),
-        ]
-        
-        if self.is_main_window:
-            buttons.extend([
-                (self.search_button, SEARCH_SVG),
-                (self.game_library_button, BOOK_SVG),
-                (self.settings_button, GEAR_SVG),
-            ])
-
-        for button, svg_data in buttons:
+        for button, svg_data in self._svg_buttons:
             if button:
                 self._update_svg_button_color(button, svg_data, accent_color)
                 
@@ -281,25 +267,27 @@ class CustomTitleBar(QFrame):
         except Exception as e:
             logger.error(f"Failed to update colored circle button: {e}", exc_info=True)
 
+    def _get_colored_svg_icon(self, svg_data, color):
+        """Helper to generate a QIcon from SVG data with a specific color."""
+        renderer = QSvgRenderer(svg_data.encode("utf-8"))
+        icon_size = QSize(18, 18)
+
+        pixmap = QPixmap(icon_size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        renderer.render(painter)
+
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+        painter.fillRect(pixmap.rect(), QColor(color))
+        painter.end()
+
+        return QIcon(pixmap)
+
     def _update_svg_button_color(self, button, svg_data, color):
         try:
-            renderer = QSvgRenderer(svg_data.encode("utf-8"))
-            icon_size = QSize(18, 18)
-
-            pixmap = QPixmap(icon_size)
-            pixmap.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(pixmap)
-
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            renderer.render(painter)
-
-            painter.setCompositionMode(
-                QPainter.CompositionMode.CompositionMode_SourceIn
-            )
-            painter.fillRect(pixmap.rect(), QColor(color))
-            painter.end()
-
-            icon = QIcon(pixmap)
+            icon = self._get_colored_svg_icon(svg_data, color)
             button.setIcon(icon)
         except Exception as e:
             logger.error(f"Failed to update SVG button color: {e}", exc_info=True)
@@ -310,31 +298,19 @@ class CustomTitleBar(QFrame):
             button.setToolTip(tooltip)
 
             settings = get_settings()
-            accent_color = QColor(settings.value("accent_color", "#C06C84"))
+            accent_color = settings.value("accent_color", "#C06C84")
 
-            renderer = QSvgRenderer(svg_data.encode("utf-8"))
-            icon_size = QSize(18, 18)
-
-            pixmap = QPixmap(icon_size)
-            pixmap.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(pixmap)
-
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            renderer.render(painter)
-
-            painter.setCompositionMode(
-                QPainter.CompositionMode.CompositionMode_SourceIn
-            )
-            painter.fillRect(pixmap.rect(), accent_color)
-            painter.end()
-
-            icon = QIcon(pixmap)
+            icon = self._get_colored_svg_icon(svg_data, accent_color)
 
             button.setIcon(icon)
-            button.setIconSize(icon_size)
+            button.setIconSize(QSize(18, 18))
             button.setFixedSize(24, 24)
 
             button.clicked.connect(on_click)
+            
+            # Register button to easily update colors later
+            self._svg_buttons.append((button, svg_data))
+            
             return button
         except Exception as e:
             logger.error(f"Failed to create SVG button: {e}", exc_info=True)
@@ -380,7 +356,6 @@ class CustomTitleBar(QFrame):
                 if window is not None:
                     window.startSystemMove()
             event.accept()
-
 
 
 """

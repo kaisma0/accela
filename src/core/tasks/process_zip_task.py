@@ -138,8 +138,10 @@ class ProcessZipTask:
 
                 self._parse_lua(lua_content, game_data)
 
+                app_id = game_data.get("appid")
+
                 # Extract app token from LUA content and save to file if wrapper mode is disabled
-                token = self._extract_app_token(lua_content, game_data.get("appid"))
+                token = self._extract_app_token(lua_content, app_id)
                 if token:
                     game_data["app_token"] = token
 
@@ -155,7 +157,7 @@ class ProcessZipTask:
                     filtered_depots = {
                         depot_id: data
                         for depot_id, data in unfiltered_depots.items()
-                        if depot_id not in string_blacklist
+                        if str(depot_id) not in string_blacklist
                     }
                     if len(unfiltered_depots) > len(filtered_depots):
                         logger.info(
@@ -170,25 +172,19 @@ class ProcessZipTask:
                         )
                     else:
                         api_data = (
-                            get_depot_info_from_api(game_data["appid"], game_data.get("app_token"))
-                            if game_data.get("appid")
+                            get_depot_info_from_api(app_id, game_data.get("app_token"))
+                            if app_id
                             else {}
                         )
 
-                        if api_data.get("installdir"):
-                            game_data["installdir"] = api_data["installdir"]
-                            logger.info(
-                                f"Found official install directory: {game_data['installdir']}"
-                            )
-                        
-                        if api_data.get("buildid"):
-                            game_data["buildid"] = api_data["buildid"]
-                            logger.info(
-                                f"Found official buildid: {game_data['buildid']}"
-                            )
+                        for key in ("installdir", "buildid"):
+                            if api_data.get(key):
+                                game_data[key] = api_data[key]
+                                logger.info(f"Found official {key}: {game_data[key]}")
 
                         if api_data.get("header_url"):
                             game_data["header_url"] = api_data["header_url"]
+                            
                         if not game_data.get("game_name") and api_data.get("name"):
                             game_data["game_name"] = api_data["name"]
                             logger.info(f"Resolved game name from Steam API: {game_data['game_name']}")
@@ -204,37 +200,33 @@ class ProcessZipTask:
                             )
 
                         enriched_depots = {}
+                        manifest_sizes = game_data.get("manifest_sizes", {})
+
                         for depot_id, lua_data in filtered_depots.items():
                             final_depot_data = {"key": lua_data["key"]}
-                            details = api_details.get(str(depot_id))
+                            details = api_details.get(str(depot_id)) or {}
 
                             # Use Steam API name if available, otherwise fall back to LUA description
-                            base_description = details.get("name") if details else None
-                            if not base_description:
-                                base_description = lua_data["desc"]
+                            base_description = details.get("name") or lua_data["desc"]
 
-                            if details:
-                                tags = []
-                                if details.get("oslist"):
-                                    tags.append(f"[{details['oslist'].upper()}]")
-                                if details.get("steamdeck"):
-                                    tags.append("[DECK]")
+                            tags = []
+                            if details.get("oslist"):
+                                tags.append(f"[{details['oslist'].upper()}]")
+                            if details.get("steamdeck"):
+                                tags.append("[DECK]")
+                            if details.get("language"):
+                                base_description += f" ({details['language'].capitalize()})"
 
-                                if details.get("language"):
-                                    base_description += (
-                                        f" ({details['language'].capitalize()})"
-                                    )
+                            final_description = (
+                                f"{' '.join(tags)} {base_description}".strip()
+                                if tags
+                                else base_description
+                            )
 
-                                final_description = (
-                                    " ".join(tags) + " " + base_description
-                                    if tags
-                                    else base_description
-                                )
-
-                                final_depot_data["oslist"] = details.get("oslist")
-                                final_depot_data["language"] = details.get("language")
-                            else:
-                                final_description = base_description
+                            if "oslist" in details:
+                                final_depot_data["oslist"] = details["oslist"]
+                            if "language" in details:
+                                final_depot_data["language"] = details["language"]
 
                             lower_desc = final_description.lower()
                             if "soundtrack" in lower_desc or re.search(
@@ -245,25 +237,16 @@ class ProcessZipTask:
                                 )
                                 continue
 
-                            api_size = details.get("size") if details else None
-                            if api_size:
-                                final_depot_data["size"] = api_size
-                                logger.debug(
-                                    f"Using API size for depot {depot_id}: {api_size}"
-                                )
+                            api_size = details.get("size")
+                            lua_size = manifest_sizes.get(depot_id)
+                            
+                            final_size = api_size or lua_size
+                            if final_size:
+                                final_depot_data["size"] = final_size
+                                source = "API" if api_size else "LUA fallback"
+                                logger.debug(f"Using {source} size for depot {depot_id}: {final_size}")
                             else:
-                                lua_size = game_data.get("manifest_sizes", {}).get(
-                                    depot_id
-                                )
-                                if lua_size:
-                                    final_depot_data["size"] = lua_size
-                                    logger.debug(
-                                        f"Using LUA fallback size for depot {depot_id}: {lua_size}"
-                                    )
-                                else:
-                                    logger.debug(
-                                        f"No size found for depot {depot_id} in API or LUA."
-                                    )
+                                logger.debug(f"No size found for depot {depot_id} in API or LUA.")
 
                             final_depot_data["desc"] = final_description
                             enriched_depots[depot_id] = final_depot_data
@@ -271,7 +254,7 @@ class ProcessZipTask:
                         game_data["depots"] = enriched_depots
 
                 if not game_data.get("game_name"):
-                    game_data["game_name"] = f"App_{game_data['appid']}"
+                    game_data["game_name"] = f"App_{app_id}"
                     logger.warning(f"Could not determine game name from Lua or API. Fallback to {game_data['game_name']}")
 
                 manifest_dir = os.path.join(

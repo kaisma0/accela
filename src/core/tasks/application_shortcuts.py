@@ -11,6 +11,8 @@ from utils.yaml_config_manager import is_slssteam_mode_enabled
 
 logger = logging.getLogger(__name__)
 
+STEAMGRID_API_BASE = "https://www.steamgriddb.com/api/v2"
+
 
 class ApplicationShortcutsTask(QObject):
     """Create desktop shortcuts and icons using Steam Grid DB API"""
@@ -28,6 +30,11 @@ class ApplicationShortcutsTask(QObject):
     def set_api_key(self, api_key):
         """Set the Steam Grid DB API key"""
         self.api_key = api_key
+
+    @property
+    def _api_headers(self):
+        """Returns the authorization headers for Steam Grid DB API requests"""
+        return {"Authorization": f"Bearer {self.api_key}"}
 
     def stop(self):
         """Stop the task"""
@@ -80,9 +87,7 @@ class ApplicationShortcutsTask(QObject):
             self.progress_percentage.emit(50)
 
             # Download and save icons in multiple sizes
-            self._save_icons(icon_url, appid)
-
-            if not self._is_running:
+            if not self._save_icons(icon_url, appid):
                 return False
 
             self.progress_percentage.emit(80)
@@ -106,11 +111,9 @@ class ApplicationShortcutsTask(QObject):
     def _get_game_data(self, appid):
         """Get game data from Steam Grid DB API"""
         try:
-            headers = {"Authorization": f"Bearer {self.api_key}"}
-
             response = requests.get(
-                f"https://www.steamgriddb.com/api/v2/games/steam/{appid}",
-                headers=headers,
+                f"{STEAMGRID_API_BASE}/games/steam/{appid}",
+                headers=self._api_headers,
                 timeout=10,
             )
             response.raise_for_status()
@@ -123,11 +126,9 @@ class ApplicationShortcutsTask(QObject):
     def _get_icon_url(self, game_id):
         """Get icon URL from Steam Grid DB API"""
         try:
-            headers = {"Authorization": f"Bearer {self.api_key}"}
-
             response = requests.get(
-                f"https://www.steamgriddb.com/api/v2/icons/game/{game_id}",
-                headers=headers,
+                f"{STEAMGRID_API_BASE}/icons/game/{game_id}",
+                headers=self._api_headers,
                 params={"types": "static", "limit": 1},
                 timeout=10,
             )
@@ -135,7 +136,7 @@ class ApplicationShortcutsTask(QObject):
 
             data = response.json()["data"]
             if data:
-                return data[0]["url"]
+                return data["url"]
             return None
         except Exception as e:
             logger.error(f"Failed to get icon URL: {e}")
@@ -149,25 +150,29 @@ class ApplicationShortcutsTask(QObject):
             response.raise_for_status()
 
             img_data = response.content
-            img = Image.open(BytesIO(img_data)).convert("RGBA")
+            
+            with Image.open(BytesIO(img_data)) as img_opened:
+                img = img_opened.convert("RGBA")
 
-            # Icon sizes
-            icon_sizes = [16, 24, 32, 48, 64, 96, 128, 256]
-            icon_name = f"steam_icon_{appid}.png"
-            icon_base = Path.home() / ".local" / "share" / "icons" / "hicolor"
+                # Icon sizes
+                icon_sizes = [16, 24, 32, 48, 64, 96, 128, 256]
+                icon_name = f"steam_icon_{appid}.png"
+                icon_base = Path.home() / ".local" / "share" / "icons" / "hicolor"
 
-            for size in icon_sizes:
-                if not self._is_running:
-                    return
+                for size in icon_sizes:
+                    if not self._is_running:
+                        return False
 
-                target_dir = icon_base / f"{size}x{size}" / "apps"
-                target_dir.mkdir(parents=True, exist_ok=True)
+                    target_dir = icon_base / f"{size}x{size}" / "apps"
+                    target_dir.mkdir(parents=True, exist_ok=True)
 
-                resized = img.resize((size, size), Image.Resampling.LANCZOS)
-                out_path = target_dir / icon_name
-                resized.save(out_path, "PNG")
+                    resized = img.resize((size, size), Image.Resampling.LANCZOS)
+                    out_path = target_dir / icon_name
+                    resized.save(out_path, "PNG")
 
-                self.progress.emit(f"Installed icon {size}x{size} → {out_path}")
+                    self.progress.emit(f"Installed icon {size}x{size} → {out_path}")
+                    
+            return True
 
         except Exception as e:
             logger.error(f"Failed to save icons: {e}")

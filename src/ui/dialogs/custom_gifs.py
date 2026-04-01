@@ -24,7 +24,40 @@ from utils.helpers import get_base_path, create_checkbox_setting
 logger = logging.getLogger(__name__)
 
 
+def _is_download_gif(filename: str) -> bool:
+    """Helper to check if a file is a download GIF."""
+    return filename.startswith("downloading_custom") and filename.endswith(".gif")
+
+
+def _get_download_num(filename: str) -> int:
+    """Helper to extract the number from a download GIF filename."""
+    if _is_download_gif(filename):
+        try:
+            return int(filename[18:-4])  # Extract number from "downloading_customX.gif"
+        except ValueError:
+            pass
+    return -1
+
+
 class CustomGifItem(QWidget):
+    # Allow all common image formats
+    IMAGE_EXTENSIONS = {
+        "*.gif",
+        "*.png",
+        "*.jpg",
+        "*.jpeg",
+        "*.bmp",
+        "*.tiff",
+        "*.tif",
+        "*.webp",
+        "*.svg",
+        "*.ico",
+        "*.ppm",
+        "*.pgm",
+        "*.pbm",
+        "*.pnm",
+    }
+
     def __init__(self, gif_name, parent_dialog):
         super().__init__()
         self.gif_name = gif_name
@@ -75,10 +108,9 @@ class CustomGifItem(QWidget):
             return "Idle"
         elif gif_name == "navi.gif":
             return "Titlebar Logo"
-        elif gif_name.startswith("downloading_custom") and gif_name.endswith(".gif"):
+        elif _is_download_gif(gif_name):
             # Extract the number from downloading_custom{i}.gif
-            num_part = gif_name[18:-4]  # Remove "downloading" and ".gif"
-            return f"Downloading: {num_part}"
+            return f"Downloading: {_get_download_num(gif_name)}"
         else:
             return gif_name
 
@@ -109,29 +141,11 @@ class CustomGifItem(QWidget):
 
     def upload_gif(self):
         """Handle GIF file upload"""
-        # Allow all common image formats
-        IMAGE_EXTENSIONS = {
-            "*.gif",
-            "*.png",
-            "*.jpg",
-            "*.jpeg",
-            "*.bmp",
-            "*.tiff",
-            "*.tif",
-            "*.webp",
-            "*.svg",
-            "*.ico",
-            "*.ppm",
-            "*.pgm",
-            "*.pbm",
-            "*.pnm",
-        }
-
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             f"Select GIF for {self.gif_name}",
             os.path.expanduser("~"),
-            f"Image files ({' '.join(sorted(IMAGE_EXTENSIONS))});;All files (*)",
+            f"Image files ({' '.join(sorted(self.IMAGE_EXTENSIONS))});;All files (*)",
         )
 
         if not file_path:
@@ -139,11 +153,11 @@ class CustomGifItem(QWidget):
 
         # Validate file extension
         file_ext = f"*{os.path.splitext(file_path)[1].lower()}"
-        if file_ext not in IMAGE_EXTENSIONS:
+        if file_ext not in self.IMAGE_EXTENSIONS:
             QMessageBox.warning(
                 self,
                 "Invalid File",
-                f"Please select an image file. Supported formats: {', '.join(sorted(IMAGE_EXTENSIONS))}",
+                f"Please select an image file. Supported formats: {', '.join(sorted(self.IMAGE_EXTENSIONS))}",
             )
             return
 
@@ -169,7 +183,7 @@ class CustomGifItem(QWidget):
 
     def remove_gif(self):
         """Remove the custom/temporary GIF"""
-        is_download_gif = self.gif_name.startswith("downloading_custom") and self.gif_name.endswith(".gif")
+        is_download_gif = _is_download_gif(self.gif_name)
 
         if self.temp_file_path and os.path.exists(self.temp_file_path):
             try:
@@ -314,7 +328,6 @@ class CustomGifsDialog(QDialog):
 
     def setup_ui(self):
         """Setup the dialog UI"""
-        
         CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
         
         layout = QVBoxLayout(self._tb_content_widget)
@@ -404,17 +417,8 @@ class CustomGifsDialog(QDialog):
         add_button_layout = QHBoxLayout()
 
         # Calculate the next available number (highest existing number + 1)
-        max_num = -1
-        for gif_name in self.download_gifs:
-            if gif_name.startswith("downloading_custom") and gif_name.endswith(".gif"):
-                try:
-                    num = int(
-                        gif_name[18:-4]
-                    )  # Extract number from "downloading_customX.gif"
-                    if num > max_num:
-                        max_num = num
-                except ValueError:
-                    pass
+        nums = [_get_download_num(g) for g in self.download_gifs if _is_download_gif(g)]
+        max_num = max(nums) if nums else -1
 
         self.next_download_num = max_num + 1
         self.next_download_label = QLabel(
@@ -436,17 +440,10 @@ class CustomGifsDialog(QDialog):
         self.renumber_download_gifs()
 
         # Check if there are existing download GIF items in the UI
-        download_items = []
-        for item in self.gif_items:
-            if item.gif_name.startswith(
-                "downloading_custom"
-            ) and item.gif_name.endswith(".gif"):
-                download_items.append(item)
-
+        download_items = [item for item in self.gif_items if _is_download_gif(item.gif_name)]
+        
         # Sort by the number in the filename
-        download_items.sort(
-            key=lambda x: int(x.gif_name[18:-4]) if x.gif_name[18:-4].isdigit() else 0
-        )
+        download_items.sort(key=lambda x: _get_download_num(x.gif_name))
 
         # If there are existing download items, check the last one
         if download_items:
@@ -504,44 +501,32 @@ class CustomGifsDialog(QDialog):
         temp_dir.mkdir(parents=True, exist_ok=True)
         return str(temp_dir)
 
+    def _cleanup_temp_dir(self):
+        """Utility to clean up the temporary directory."""
+        temp_dir = self.get_temp_dir()
+        try:
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+        except Exception as e:
+            logger.warning(f"Failed to clean up temp directory: {e}")
+
     def renumber_download_gifs(self):
         """Renumber download GIFs to maintain sequential order without gaps"""
         # Get all download GIF items
-        download_items = []
-        for item in self.gif_items:
-            if item.gif_name.startswith(
-                "downloading_custom"
-            ) and item.gif_name.endswith(".gif"):
-                download_items.append(item)
-
+        download_items = [item for item in self.gif_items if _is_download_gif(item.gif_name)]
+        
         # Sort by current number in filename
-        download_items.sort(
-            key=lambda x: int(x.gif_name[18:-4]) if x.gif_name[18:-4].isdigit() else 0
-        )
+        download_items.sort(key=lambda x: _get_download_num(x.gif_name))
 
         # Check if we have gaps in the numbering
-        expected_num = 0
-        needs_renumbering = False
-
-        for i, item in enumerate(download_items):
-            current_num = (
-                int(item.gif_name[18:-4]) if item.gif_name[18:-4].isdigit() else 0
-            )
-            if current_num != i:
-                needs_renumbering = True
-                break
+        needs_renumbering = any(_get_download_num(item.gif_name) != i for i, item in enumerate(download_items))
 
         # If no gaps, we're done
         if not needs_renumbering:
             # Still need to update next_download_num based on highest existing number
-            max_num = -1
-            for item in download_items:
-                try:
-                    num = int(item.gif_name[18:-4])
-                    if num > max_num:
-                        max_num = num
-                except ValueError:
-                    pass
+            nums = [_get_download_num(i.gif_name) for i in download_items]
+            max_num = max(nums) if nums else -1
+            
             self.next_download_num = max_num + 1
             self.next_download_label.setText(
                 f"Next: downloading_custom{self.next_download_num}.gif"
@@ -632,12 +617,7 @@ class CustomGifsDialog(QDialog):
             )
 
         # Clean up temp directory
-        temp_dir = self.get_temp_dir()
-        try:
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
-        except Exception as e:
-            logger.warning(f"Failed to clean up temp directory: {e}")
+        self._cleanup_temp_dir()
 
         # Don't reload GIFs here - let the main Settings dialog handle it
         # Just show success message
@@ -657,12 +637,7 @@ class CustomGifsDialog(QDialog):
             item.rollback_changes()
 
         # Clean up temp directory
-        temp_dir = self.get_temp_dir()
-        try:
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
-        except Exception as e:
-            logger.warning(f"Failed to clean up temp directory: {e}")
+        self._cleanup_temp_dir()
 
         logger.info("Custom GIF changes cancelled and rolled back")
         super().reject()

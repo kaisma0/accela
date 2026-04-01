@@ -19,57 +19,122 @@ except ImportError:
         "`steam[client]` package not found. Skipping steam.client fetch method."
     )
 
-CACHE_DIR = os.path.join(tempfile.gettempdir(), "mistwalker_api_cache")
-CACHE_EXPIRATION_SECONDS = 86400
+
+def _parse_depot_entry(depot_id, depot_data):
+    """Parse a single depot dict into a normalised depot_info entry."""
+    if not isinstance(depot_data, dict):
+        return None
+    config = depot_data.get("config", {})
+    manifests = depot_data.get("manifests", {})
+    manifest_public = manifests.get("public", {})
+
+    if isinstance(manifest_public, dict):
+        manifest_id = manifest_public.get("gid")
+        size_str = manifest_public.get("size")
+    else:
+        manifest_id = manifest_public
+        size_str = None
+
+    logger.debug(
+        f"Depot {depot_id}: manifest_id={manifest_id}, raw size={size_str!r}"
+    )
+    return {
+        "name": depot_data.get("name"),
+        "oslist": config.get("oslist"),
+        "language": config.get("language"),
+        "steamdeck": config.get("steamdeck") == "1",
+        "size": size_str,
+        "manifest_id": manifest_id,
+    }
+
+
+def _parse_steam_client_app_data(int_app_id, app_data):
+    """
+    Convert a raw steam.client app dict into the normalised structure used
+    throughout the application. Returns an empty dict if app_data is falsy.
+    """
+    if not app_data:
+        return {}
+
+    common_data = app_data.get("common", {})
+    game_name = common_data.get("name")
+    installdir = app_data.get("config", {}).get("installdir")
+
+    header_url = None
+    if common_data.get("header_image", {}).get("english"):
+        header_url = ImageFetcher.get_header_image_url(int_app_id)
+        logger.debug(f"Resolved header image URL for {int_app_id}: {header_url}")
+
+    depots_raw = app_data.get("depots", {})
+
+    buildid = None
+    try:
+        buildid = (
+            depots_raw.get("branches", {})
+            .get("public", {})
+            .get("buildid")
+        )
+        if buildid:
+            logger.info(f"Found public buildid: {buildid}")
+        else:
+            logger.warning("Could not find public buildid in steam.client response.")
+    except Exception as e:
+        logger.error(f"Error parsing buildid: {e}")
+
+    depot_info = {}
+    for depot_id, depot_data in depots_raw.items():
+        parsed = _parse_depot_entry(depot_id, depot_data)
+        if parsed is not None:
+            depot_info[depot_id] = parsed
+
+    return {
+        "depots": depot_info,
+        "installdir": installdir,
+        "header_url": header_url,
+        "buildid": buildid,
+        "name": game_name,
+    }
+
+
+def _manifest_error(depot_id, message):
+    return {
+        "success": False,
+        "manifest_id": None,
+        "depot_id": depot_id,
+        "error": message,
+    }
 
 
 def get_depot_info_from_api(app_id, access_token=None):
-    # 1. Try to get complete info from DB first
-    db = DatabaseManager()
+    db = DatabaseManager.get_instance()
     db_data = db.get_app_info(app_id)
 
-    has_valid_name = False
-    if db_data and db_data.get('name'):
-        current_name = db_data['name']
-        is_generic = re.match(r"^App[ _]?" + str(app_id) + r"$", current_name, re.IGNORECASE)
-        if not is_generic:
-            has_valid_name = True
-    
-    if db_data and db_data.get('depots') and has_valid_name:
-        logger.info(f"Loaded AppID {app_id} from database.")
-        return db_data
+    if db_data and db_data.get("depots"):
+        name = db_data.get("name", "")
+        is_generic = re.match(
+            r"^App[ _]?" + str(app_id) + r"$", name, re.IGNORECASE
+        )
+        if name and not is_generic:
+            logger.info(f"Loaded AppID {app_id} from database.")
+            return db_data
+        logger.info(
+            f"Cached data for AppID {app_id} has generic/missing name. "
+            "Forcing API refresh."
+        )
 
-    if db_data and not has_valid_name:
-        logger.info(f"Cached data for AppID {app_id} has generic/missing name. Forcing API refresh.")
+    logger.info(f"Fetching app info for AppID {app_id} via steam.client...")
+    steam_data = _fetch_with_steam_client(app_id, access_token)
 
-    logger.info(
-        f"Attempting to fetch app info for AppID {app_id} using steam.client..."
-    )
-    steam_client_data = _fetch_with_steam_client(app_id, access_token)
-    logger.info(f"Fetching Web API data for AppID {app_id} for header image...")
-    web_api_data = _fetch_with_web_api(app_id)
-    final_data = {}
-    if steam_client_data and steam_client_data.get("depots"):
-        logger.debug("Using depot and installdir info from steam.client.")
-        final_data = steam_client_data
+    if steam_data and steam_data.get("depots"):
+        final_data = steam_data
+        if not final_data.get("header_url"):
+            final_data["header_url"] = ImageFetcher.get_header_image_url(int(app_id))
     else:
         logger.warning(
-            f"steam.client method failed for AppID {app_id}. Falling back to public Web API for all data."
+            f"steam.client failed for AppID {app_id}. Falling back to Web API."
         )
-        final_data = web_api_data
-    if web_api_data.get("header_url"):
-        if final_data.get("header_url") != web_api_data.get("header_url"):
-            logger.info(
-                "Overwriting steam.client header URL with more reliable Web API version."
-            )
-            final_data["header_url"] = web_api_data["header_url"]
-    elif not final_data.get("header_url"):
-        logger.warning("Header URL not found in Web API or steam.client.")
+        final_data = _fetch_with_web_api(app_id)
 
-    if not final_data.get("name") and web_api_data.get("name"):
-        logger.info("Using Web API fallback for game name.")
-        final_data["name"] = web_api_data["name"]
-        
     if final_data:
         db.upsert_app_info(app_id, final_data)
 
@@ -79,183 +144,112 @@ def get_depot_info_from_api(app_id, access_token=None):
 def _fetch_with_steam_client(app_id, access_token=None):
     if not SteamClient:
         return {}
+
     client = SteamClient()
-    api_data = {}
     try:
-        logger.debug("Attempting Anonymous login")
+        logger.debug("Attempting anonymous Steam login.")
         client.anonymous_login()
         if not client.logged_on:
-            logger.error("Failed to anonymously login to Steam.")
+            logger.error("Failed to log in anonymously to Steam.")
             return {}
+
         try:
             int_app_id = int(app_id)
         except (ValueError, TypeError):
-            logger.error(
-                f"Invalid AppID format: '{app_id}'. Cannot convert to integer."
-            )
+            logger.error(f"Invalid AppID format: {app_id!r}")
             return {}
 
-        # Build request list with token if provided (similar to mani.py)
         if access_token:
-            # Convert token to int if it's a numeric string
             try:
-                token_int = int(access_token)
-                request_list = [{'appid': int_app_id, 'access_token': token_int}]
-                logger.debug(f"Using access token for AppID {app_id}")
+                request_list = [{"appid": int_app_id, "access_token": int(access_token)}]
             except (ValueError, TypeError):
-                # If token is not numeric, use as string
-                request_list = [{'appid': int_app_id, 'access_token': access_token}]
-                logger.debug(f"Using non-numeric access token for AppID {app_id}")
+                request_list = [{"appid": int_app_id, "access_token": access_token}]
+            logger.debug(f"Using access token for AppID {app_id}.")
         else:
             request_list = [int_app_id]
 
         result = client.get_product_info(apps=request_list, timeout=30)
-        debug_dump_path = os.path.join(
-            tempfile.gettempdir(), f"mistwalker_steamclient_response_{int_app_id}.json"
-        )
-        try:
-            with open(debug_dump_path, "w", encoding="utf-8") as f:
-                json.dump(result, f, indent=4, default=str)
-            logger.debug(
-                f"DEBUG: Raw steam.client response dumped to {debug_dump_path}"
+
+        if logger.isEnabledFor(logging.DEBUG):
+            dump_path = os.path.join(
+                tempfile.gettempdir(),
+                f"mistwalker_steamclient_response_{int_app_id}.json",
             )
-        except Exception as e:
-            logger.error(f"DEBUG: Failed to dump raw response: {e}", exc_info=True)
-        try:
-            cleaned_result = json.loads(json.dumps(result, default=str))
-        except Exception as e:
-            logger.error(f"Failed to 'clean' the raw steam.client response: {e}")
-            cleaned_result = {}
-        app_data = cleaned_result.get("apps", {}).get(str(int_app_id), {})
-        depot_info = {}
-        installdir = None
-        header_url = None
-        buildid = None
-        game_name = None
-        
-        if app_data:
-            common_data = app_data.get("common", {})
-            game_name = common_data.get("name")
-            
-            installdir = app_data.get("config", {}).get("installdir")
-            header_path_fragment = (
-                common_data.get("header_image", {}).get("english")
-            )
-            if header_path_fragment:
-                header_url = ImageFetcher.get_header_image_url(int_app_id)
-                logger.debug(f"Found header image URL: {header_url}")
-            
             try:
-                buildid = app_data.get("depots", {}).get("branches", {}).get("public", {}).get("buildid")
-                if buildid:
-                    logger.info(f"Found public buildid: {buildid}")
-                else:
-                    logger.warning("Could not find public buildid in steam.client response.")
+                with open(dump_path, "w", encoding="utf-8") as f:
+                    json.dump(result, f, indent=4, default=str)
+                logger.debug(f"Raw steam.client response dumped to {dump_path}")
             except Exception as e:
-                logger.error(f"Error parsing buildid: {e}")
-                
-            depots = app_data.get("depots", {})
-            for depot_id, depot_data in depots.items():
-                if not isinstance(depot_data, dict):
-                    continue
-                config = depot_data.get("config", {})
-                manifests = depot_data.get("manifests", {})
-                manifest_public = manifests.get("public", {})
+                logger.error(f"Failed to dump raw response: {e}", exc_info=True)
 
-                # Handle both dict and simple formats for manifest data
-                if isinstance(manifest_public, dict):
-                    manifest_id = manifest_public.get("gid")
-                    size_str = manifest_public.get("size")
-                else:
-                    # Simple format where the value IS the manifest ID
-                    manifest_id = manifest_public
-                    size_str = None
+        try:
+            cleaned = json.loads(json.dumps(result, default=str))
+        except Exception as e:
+            logger.error(f"Failed to serialise steam.client response: {e}")
+            return {}
 
-                logger.debug(
-                    f"Depot {depot_id}: Found raw size from API: {size_str} (Type: {type(size_str)})"
-                )
-                logger.debug(
-                    f"Depot {depot_id}: Found manifest_id: {manifest_id}"
-                )
-                depot_info[depot_id] = {
-                    "name": depot_data.get("name"),
-                    "oslist": config.get("oslist"),
-                    "language": config.get("language"),
-                    "steamdeck": config.get("steamdeck") == "1",
-                    "size": size_str,
-                    "manifest_id": manifest_id,
-                }
-        api_data = {
-            "depots": depot_info,
-            "installdir": installdir,
-            "header_url": header_url,
-            "buildid": buildid,
-            "name": game_name,
-        }
-        logger.debug("Data processed, logging out.")
-        client.logout()
-        if api_data and (api_data.get("depots") or api_data.get("buildid") or api_data.get("name")):
+        app_data = cleaned.get("apps", {}).get(str(int_app_id), {})
+        parsed = _parse_steam_client_app_data(int_app_id, app_data)
+
+        if parsed and any(parsed.get(k) for k in ("depots", "buildid", "name")):
             logger.info("steam.client fetch successful.")
-            return api_data
-        else:
-            logger.warning("steam.client fetch returned no meaningful data.")
+            return parsed
+
+        logger.warning("steam.client fetch returned no meaningful data.")
+        return {}
+
     except Exception as e:
         logger.error(
-            f"An unexpected error occurred in _fetch_with_steam_client: {e}",
-            exc_info=True,
+            f"Unexpected error in _fetch_with_steam_client: {e}", exc_info=True
         )
+        return {}
     finally:
-        if (
-            client and client.logged_on
-        ):
-            logger.debug("Ensure logout in finally block.")
+        if client and client.logged_on:
+            logger.debug("Logging out in finally block.")
             client.logout()
-    logger.error("steam.client fetch failed.")
-    return {}
 
 
 def _fetch_with_web_api(app_id):
     url = "https://store.steampowered.com/api/appdetails"
-    params = {"appids": app_id}
     try:
-        response = requests.get(url, params=params, timeout=15)
+        response = requests.get(url, params={"appids": app_id}, timeout=15)
         response.raise_for_status()
-        data = response.json()
-        return _parse_web_api_response(app_id, data)
+        return _parse_web_api_response(app_id, response.json())
     except requests.exceptions.RequestException as e:
         logger.error(f"Web API request failed for AppID {app_id}: {e}")
     return {}
 
 
 def _parse_web_api_response(app_id, data):
-    depot_info = {}
-    installdir = None
-    header_url = None
-    game_name = None
     app_data_wrapper = data.get(str(app_id))
-    if app_data_wrapper and app_data_wrapper.get("success"):
-        app_data = app_data_wrapper.get("data", {})
-        installdir = app_data.get("install_dir")
-        header_url = app_data.get("header_image")
-        game_name = app_data.get("name")
-        depots = app_data.get("depots", {})
-        for depot_id, depot_data in depots.items():
-            if not isinstance(depot_data, dict):
-                continue
-            size_str = depot_data.get("max_size")
-            logger.debug(f"Depot {depot_id} (Web API): Found raw size: {size_str}")
-            depot_info[depot_id] = {
-                "name": depot_data.get("name"),
-                "oslist": None,
-                "language": None,
-                "steamdeck": False,
-                "size": size_str,
-            }
+    if not (app_data_wrapper and app_data_wrapper.get("success")):
+        return {
+            "depots": {},
+            "installdir": None,
+            "header_url": None,
+            "name": None
+         }
+
+    app_data = app_data_wrapper.get("data", {})
+    depot_info = {}
+    for depot_id, depot_data in app_data.get("depots", {}).items():
+        if not isinstance(depot_data, dict):
+            continue
+        size_str = depot_data.get("max_size")
+        logger.debug(f"Depot {depot_id} (Web API): raw size={size_str!r}")
+        depot_info[depot_id] = {
+            "name": depot_data.get("name"),
+            "oslist": None,
+            "language": None,
+            "steamdeck": False,
+            "size": size_str,
+        }
+
     return {
-        "depots": depot_info, 
-        "installdir": installdir, 
-        "header_url": header_url,
-        "name": game_name
+        "depots": depot_info,
+        "installdir": app_data.get("install_dir"),
+        "header_url": app_data.get("header_image"),
+        "name": app_data.get("name"),
     }
 
 
@@ -267,155 +261,110 @@ def batched_get_product_info(
     is_cancelled=None,
     request_timeout=10,
 ):
+    if not SteamClient:
+        logger.warning("SteamClient not available, cannot perform batched fetch.")
+        return {}
+    if not appid_list:
+        logger.warning("Empty appid_list provided to batched_get_product_info.")
+        return {}
     if access_tokens is None:
         access_tokens = {}
-    if not SteamClient:
-        logger.warning("SteamClient not available, cannot perform batched fetch")
-        return {}
 
-    if not appid_list:
-        logger.warning("Empty appid_list provided to batched_get_product_info")
-        return {}
-
-    logger.info(f"Starting batched fetch for {len(appid_list)} appids (batch_size={batch_size})")
-
-    # Split appids into batches
-    batches = []
-    for i in range(0, len(appid_list), batch_size):
-        batch = appid_list[i:i + batch_size]
-        batches.append(batch)
-
-    logger.info(f"Split into {len(batches)} batches")
+    batches = [
+        appid_list[i : i + batch_size]
+        for i in range(0, len(appid_list), batch_size)
+    ]
+    logger.info(
+        f"Batched fetch: {len(appid_list)} appids → {len(batches)} batches "
+        f"(size={batch_size})"
+    )
 
     all_results = {}
     failed_appids = []
+    client = None  # single client for all batches
 
-    # Process each batch
-    for batch_idx, batch_appids in enumerate(batches):
-        if is_cancelled and is_cancelled():
-            logger.info("Batched fetch cancelled before batch execution")
-            break
-        client = None
-        try:
-            client = SteamClient()
-            client.anonymous_login()
+    try:
+        client = SteamClient()
+        client.anonymous_login()
 
+        if not client.logged_on:
+            logger.error("Failed to log in to Steam for batched fetch.")
+            return {}
+
+        for batch_idx, batch_appids in enumerate(batches):
             if is_cancelled and is_cancelled():
-                logger.info("Batched fetch cancelled after login")
-                failed_appids.extend(batch_appids)
-                continue
+                logger.info("Batched fetch cancelled.")
+                break
 
-            if not client.logged_on:
-                logger.error(f"Batch {batch_idx + 1}: Failed to login to Steam")
-                failed_appids.extend(batch_appids)
-                continue
-
-            # Convert appids to integers
-            int_appids = []
-            for appid in batch_appids:
-                try:
-                    int_appids.append(int(appid))
-                except (ValueError, TypeError):
-                    logger.error(f"Invalid AppID: '{appid}'")
-                    failed_appids.append(appid)
-
-            if not int_appids:
-                continue
-
-            # Build request list with access tokens if available
-            request_list = []
-            for appid in int_appids:
-                appid_str = str(appid)
-                token = access_tokens.get(appid_str)
-                if token:
+            try:
+                int_appids = []
+                for appid in batch_appids:
                     try:
-                        request_list.append({'appid': appid, 'access_token': int(token)})
+                        int_appids.append(int(appid))
                     except (ValueError, TypeError):
+                        logger.error(f"Invalid AppID skipped: {appid!r}")
+                        failed_appids.append(appid)
+
+                if not int_appids:
+                    continue
+
+                request_list = []
+                for appid in int_appids:
+                    token = access_tokens.get(str(appid))
+                    if token:
+                        try:
+                            request_list.append({"appid": appid, "access_token": int(token)})
+                        except (ValueError, TypeError):
+                            request_list.append(appid)
+                    else:
                         request_list.append(appid)
-                else:
-                    request_list.append(appid)
 
-            # Single API call for all appids in this batch
-            result = client.get_product_info(apps=request_list, timeout=request_timeout)
+                result = client.get_product_info(
+                    apps=request_list, timeout=request_timeout
+                )
 
-            # Process results
-            if result and isinstance(result, dict):
-                cleaned_result = json.loads(json.dumps(result, default=str))
-                apps_data = cleaned_result.get("apps", {})
-
-                for int_appid in int_appids:
-                    appid_str = str(int_appid)
-                    app_data = apps_data.get(appid_str, {})
-
-                    # Parse the app data
-                    depot_info = {}
-                    if app_data:
-                        installdir = app_data.get("config", {}).get("installdir")
-                        header_url = ImageFetcher.get_header_image_url(int_appid)
-                        game_name = app_data.get("common", {}).get("name")
-                        buildid = None
-                        depots_data = app_data.get("depots", {})
-                        if isinstance(depots_data, dict):
-                            branches = depots_data.get("branches", {})
-                            if isinstance(branches, dict):
-                                public_branch = branches.get("public", {})
-                                if isinstance(public_branch, dict):
-                                    buildid = public_branch.get("buildid")
-
-                        depots = depots_data if isinstance(depots_data, dict) else {}
-                        for depot_id, depot_data in depots.items():
-                            if not isinstance(depot_data, dict):
-                                continue
-                            config = depot_data.get("config", {})
-                            manifests = depot_data.get("manifests", {})
-                            manifest_public = manifests.get("public", {})
-
-                            manifest_id = manifest_public.get("gid") if isinstance(manifest_public, dict) else manifest_public
-
-                            depot_info[depot_id] = {
-                                "name": depot_data.get("name"),
-                                "oslist": config.get("oslist"),
-                                "language": config.get("language"),
-                                "steamdeck": config.get("steamdeck") == "1",
-                                "size": None,
-                                "manifest_id": manifest_id,
+                if result and isinstance(result, dict):
+                    cleaned = json.loads(json.dumps(result, default=str))
+                    apps_data = cleaned.get("apps", {})
+                    for int_appid in int_appids:
+                        appid_str = str(int_appid)
+                        app_data = apps_data.get(appid_str, {})
+                        parsed = _parse_steam_client_app_data(int_appid, app_data)
+                        if not parsed:
+                            parsed = {
+                                "depots": {},
+                                "installdir": None,
+                                "header_url": None,
+                                "buildid": None,
+                                "name": None,
                             }
+                        all_results[appid_str] = parsed
+                else:
+                    failed_appids.extend(batch_appids)
 
-                    all_results[appid_str] = {
-                        "depots": depot_info,
-                        "installdir": app_data.get("config", {}).get("installdir"),
-                        "header_url": ImageFetcher.get_header_image_url(int_appid) if app_data else None,
-                        "buildid": buildid,
-                        "name": game_name,
-                    }
-            else:
+            except Exception as e:
+                logger.error(
+                    f"Batch {batch_idx + 1}: unexpected error: {e}", exc_info=True
+                )
                 failed_appids.extend(batch_appids)
 
-        except Exception as e:
-            logger.error(f"Batch {batch_idx + 1}: Error during fetch: {e}")
-            failed_appids.extend(batch_appids)
+            if batch_idx < len(batches) - 1 and rate_limit_delay > 0:
+                time.sleep(rate_limit_delay)
 
-        finally:
-            if client and client.logged_on:
-                try:
-                    client.logout()
-                except Exception as exc:
-                    logger.debug("Failed to logout Steam client cleanly: %s", exc)
+    except Exception as e:
+        logger.error(f"Fatal error during batched fetch setup: {e}", exc_info=True)
+    finally:
+        if client and client.logged_on:
+            try:
+                client.logout()
+            except Exception as exc:
+                logger.debug("Steam client logout failed: %s", exc)
 
-        # Rate limiting: delay before next batch
-        if is_cancelled and is_cancelled():
-            logger.info("Batched fetch cancelled after batch execution")
-            break
-
-        if batch_idx < len(batches) - 1 and rate_limit_delay > 0:
-            time.sleep(rate_limit_delay)
-
-    success_count = len(all_results)
-    failure_count = len(failed_appids)
-
-    logger.info(f"Batched fetch: {success_count} succeeded, {failure_count} failed")
-
-    if failure_count > 0:
+    logger.info(
+        f"Batched fetch complete: {len(all_results)} succeeded, "
+        f"{len(failed_appids)} failed."
+    )
+    if failed_appids:
         logger.debug(f"Failed appids: {failed_appids}")
 
     return all_results
@@ -424,69 +373,40 @@ def batched_get_product_info(
 def get_manifest_id(appid, depot_id=None, use_cache=True):
     try:
         if not use_cache:
-            # Force a refresh by clearing any existing cache for this app
-            db = DatabaseManager()
-            db.clear_app_info(appid)
+            DatabaseManager.get_instance().clear_app_info(appid)
 
         app_data = get_depot_info_from_api(appid)
         if not app_data:
-            return {
-                "success": False,
-                "manifest_id": None,
-                "depot_id": depot_id,
-                "error": "Failed to fetch app data"
-            }
+            return _manifest_error(depot_id, "Failed to fetch app data")
 
         depots = app_data.get("depots", {})
         if not depots:
-            return {
-                "success": False,
-                "manifest_id": None,
-                "depot_id": depot_id,
-                "error": "No depots found for this app"
-            }
+            return _manifest_error(depot_id, "No depots found for this app")
 
-        # Use specified depot or first depot
         if depot_id:
             if str(depot_id) not in depots:
-                return {
-                    "success": False,
-                    "manifest_id": None,
-                    "depot_id": depot_id,
-                    "error": f"Depot {depot_id} not found"
-                }
+                return _manifest_error(depot_id, f"Depot {depot_id} not found")
             target_depot_id = str(depot_id)
         else:
-            target_depot_id = list(depots.keys())[0]
+            target_depot_id = next(iter(depots))
 
-        depot_info = depots.get(target_depot_id, {})
-        manifest_id = depot_info.get("manifest_id")
+        manifest_id = depots[target_depot_id].get("manifest_id")
 
         if not manifest_id:
-            # If manifest_id is missing from cached data, try force refresh
             if use_cache:
-                logger.debug(f"Manifest ID not found in cached data for {appid}, trying force refresh")
+                logger.debug(
+                    f"Manifest ID missing for {appid} in cache; retrying with refresh."
+                )
                 return get_manifest_id(appid, depot_id, use_cache=False)
-
-            return {
-                "success": False,
-                "manifest_id": None,
-                "depot_id": target_depot_id,
-                "error": "No manifest ID found"
-            }
+            return _manifest_error(target_depot_id, "No manifest ID found")
 
         return {
             "success": True,
             "manifest_id": manifest_id,
             "depot_id": target_depot_id,
-            "error": None
+            "error": None,
         }
 
     except Exception as e:
         logger.error(f"Error fetching manifest for {appid}: {e}")
-        return {
-            "success": False,
-            "manifest_id": None,
-            "depot_id": depot_id,
-            "error": f"Unexpected error: {str(e)}"
-        }
+        return _manifest_error(depot_id, f"Unexpected error: {e}")

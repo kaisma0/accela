@@ -193,8 +193,8 @@ class GIFManager:
             source_dir = self._find_gif_source(input_dirs, gif_name)
             if source_dir:
                 batch_data.append({
-                    'name': gif_name,
-                    'source_path': str(source_dir / gif_name),
+                    'gif_name': gif_name,
+                    'input_path': str(source_dir / gif_name),
                     'output_path': str(color_subdir / gif_name),
                     'accent_color': accent_color,
                     'disable_color_gifs': self.disable_color_gifs  # Pass the flag as data
@@ -215,7 +215,7 @@ class GIFManager:
                     if result:
                         completed_count += 1
                         # Update progress dialog
-                        self.progress_dialog.update_progress(completed_count, len(batch_data), f"Processed: {gif_data['name']}")
+                        self.progress_dialog.update_progress(completed_count, len(batch_data), f"Processed: {gif_data['gif_name']}")
 
                         # Process events to update the UI
                         if completed_count % 5 == 0:  # Update more frequently
@@ -224,7 +224,7 @@ class GIFManager:
                         if completed_count % 10 == 0:
                             logger.info(f"Progress: {completed_count}/{len(batch_data)} GIFs processed")
                 except Exception as e:
-                    logger.error(f"Error processing {gif_data['name']}: {e}")
+                    logger.error(f"Error processing {gif_data['gif_name']}: {e}")
 
                 # Check if dialog was cancelled
                 if not self.progress_dialog or not self.progress_dialog.isVisible():
@@ -241,11 +241,6 @@ class GIFManager:
         """
         setting_file = color_subdir / "disable_color_gifs_setting.txt"
 
-        # First check if colorized directory exists and has GIFs
-        if not color_subdir.exists():
-            logger.debug(f"Color subdirectory doesn't exist: {color_subdir}")
-            return True
-
         # Check if there are any GIFs in the directory
         has_gifs = any(file.suffix.lower() == '.gif' for file in color_subdir.iterdir())
         if not has_gifs:
@@ -258,12 +253,12 @@ class GIFManager:
 
         try:
             with open(setting_file, 'r') as f:
-                previous_setting = f.read().strip()
+                previous_setting = f.read().strip().lower()
 
             # Convert to boolean - handle both "1"/"0" and "True"/"False" formats
-            if previous_setting in ["1", "True", "true"]:
+            if previous_setting in ["1", "true"]:
                 previous_bool = True
-            elif previous_setting in ["0", "False", "false"]:
+            elif previous_setting in ["0", "false"]:
                 previous_bool = False
             else:
                 logger.warning(f"Invalid setting value in file: {previous_setting}")
@@ -367,63 +362,15 @@ class GIFManager:
 
         return needs_regeneration
 
-    def _process_gifs_parallel(self, gif_list, input_dirs, color_subdir, accent_color):
-        """
-        Process GIFs in parallel batches without pickle issues
-        """
-        cpu_count = os.cpu_count() or 4
-        max_workers = min(cpu_count, len(gif_list), 14)
-
-        logger.info(f"Processing with {max_workers} workers")
-
-        # Prepare batch data - pass only serializable data
-        batch_data = []
-        for gif_name in gif_list:
-            source_dir = self._find_gif_source(input_dirs, gif_name)
-            if source_dir:
-                batch_data.append({
-                    'name': gif_name,
-                    'source_path': str(source_dir / gif_name),
-                    'output_path': str(color_subdir / gif_name),
-                    'accent_color': accent_color,
-                    'disable_color_gifs': self.disable_color_gifs  # Pass the flag as data
-                })
-
-        # Process in parallel using ThreadPoolExecutor instead of ProcessPoolExecutor
-        completed_count = 0
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_gif = {
-                executor.submit(self._process_single_gif_thread_worker, gif_data): gif_data
-                for gif_data in batch_data
-            }
-
-            for future in concurrent.futures.as_completed(future_to_gif):
-                gif_data = future_to_gif[future]
-                try:
-                    result = future.result()
-                    if result:
-                        completed_count += 1
-                        if completed_count % 10 == 0:
-                            logger.info(f"Progress: {completed_count}/{len(batch_data)} GIFs processed")
-                except Exception as e:
-                    logger.error(f"Error processing {gif_data['name']}: {e}")
-
-        return completed_count
-
     def _process_single_gif_thread_worker(self, gif_data):
         """
         Worker function for processing a single GIF in a thread
         """
         try:
-            return self._process_single_gif_thread(
-                gif_data['source_path'],
-                gif_data['output_path'],
-                gif_data['accent_color'],
-                gif_data['name'],
-                gif_data['disable_color_gifs']
-            )
+            # Clean unpacking since dict keys now match thread args exactly
+            return self._process_single_gif_thread(**gif_data)
         except Exception as e:
-            logger.error(f"Worker error for {gif_data['name']}: {e}")
+            logger.error(f"Worker error for {gif_data['gif_name']}: {e}")
             return False
 
     def _process_single_gif_thread(self, input_path, output_path, accent_color, gif_name, disable_color_gifs):
@@ -608,7 +555,7 @@ class GIFManager:
             return True
 
         if not input_path.exists():
-            logger.warn(f"Detected that {input_path} doesn't exist, but won't do anything about it")
+            logger.warning(f"Detected that {input_path} doesn't exist, but won't do anything about it")
 
         current_hash = self._calculate_gif_hash(input_path)
         if not current_hash:

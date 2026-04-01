@@ -437,7 +437,7 @@ class GameLibraryDialog(QDialog):
             from managers.db_manager import DatabaseManager
             
             # Update the database with fresh URL
-            db = DatabaseManager()
+            db = DatabaseManager.get_instance()
             db.upsert_app_info(app_id, {"header_url": api_url})
             logger.info(f"Refreshed database entry for appid {app_id}")
             

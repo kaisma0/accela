@@ -32,7 +32,6 @@ from ui.dialogs.settings import SettingsDialog
 from ui.dialogs.lain import LainMinigameDialog
 from ui.dialogs.status import StatusDialog
 from ui.dialogs.credits import CreditsDialog
-from ui.dialogs.settings import SettingsDialog
 from utils.logger import qt_log_handler
 from utils.settings import get_settings
 from utils.paths import Paths
@@ -43,6 +42,9 @@ logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
+
+    RESIZE_HANDLE_WIDTH = 6
+
     _update_available = pyqtSignal(object)
     _morrenus_key_validation_done = pyqtSignal(bool, str)
 
@@ -61,7 +63,7 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._setup_resize_handles()
         self.ui_state.apply_style_settings()
-        self._setup_audio()
+        self._apply_audio_settings()
         self._setup_key_sequence_detector()
 <<<<<<< HEAD
         self._setup_exit_shortcut()
@@ -312,9 +314,18 @@ class MainWindow(QMainWindow):
 
     def _setup_resize_handles(self):
         """Setup invisible resize handles for all edges and corners"""
-        handle_width = 6
-
         class ResizeHandle(QWidget):
+            EDGE_MAP = {
+                "left": Qt.Edge.LeftEdge,
+                "right": Qt.Edge.RightEdge,
+                "top": Qt.Edge.TopEdge,
+                "bottom": Qt.Edge.BottomEdge,
+                "top_left": Qt.Edge.LeftEdge | Qt.Edge.TopEdge,
+                "top_right": Qt.Edge.RightEdge | Qt.Edge.TopEdge,
+                "bottom_left": Qt.Edge.LeftEdge | Qt.Edge.BottomEdge,
+                "bottom_right": Qt.Edge.RightEdge | Qt.Edge.BottomEdge,
+            }
+
             def __init__(self, edge_name, main_window):
                 super().__init__(main_window)
                 self.edge_name = edge_name
@@ -328,17 +339,7 @@ class MainWindow(QMainWindow):
                 if event.button() != Qt.MouseButton.LeftButton:
                     return
 
-                edge_map = {
-                    "left": Qt.Edge.LeftEdge,
-                    "right": Qt.Edge.RightEdge,
-                    "top": Qt.Edge.TopEdge,
-                    "bottom": Qt.Edge.BottomEdge,
-                    "top_left": Qt.Edge.LeftEdge | Qt.Edge.TopEdge,
-                    "top_right": Qt.Edge.RightEdge | Qt.Edge.TopEdge,
-                    "bottom_left": Qt.Edge.LeftEdge | Qt.Edge.BottomEdge,
-                    "bottom_right": Qt.Edge.RightEdge | Qt.Edge.BottomEdge,
-                }
-                edge = edge_map.get(
+                edge = self.EDGE_MAP.get(
                     self.edge_name, Qt.Edge.RightEdge | Qt.Edge.BottomEdge
                 )
                 window = self.main_window.windowHandle()
@@ -388,63 +389,41 @@ class MainWindow(QMainWindow):
                 event.accept()
 
         self.resize_handles = {}
+        all_handles = ["top_left", "top_right", "bottom_left", "bottom_right", 
+                       "left", "right", "top", "bottom"]
 
-        # Corner handles first (they take priority)
-        for name in ["top_left", "top_right", "bottom_left", "bottom_right"]:
+        for name in all_handles:
             handle = ResizeHandle(name, self)
             handle.setCursor(self._get_cursor_for_edge(name))
-
-            if name == "top_left":
-                handle.setGeometry(0, 0, handle_width, handle_width)
-            elif name == "top_right":
-                handle.setGeometry(
-                    self.width() - handle_width, 0, handle_width, handle_width
-                )
-            elif name == "bottom_left":
-                handle.setGeometry(
-                    0, self.height() - handle_width, handle_width, handle_width
-                )
-            elif name == "bottom_right":
-                handle.setGeometry(
-                    self.width() - handle_width,
-                    self.height() - handle_width,
-                    handle_width,
-                    handle_width,
-                )
-
             handle.setStyleSheet("background: transparent;")
             self.resize_handles[name] = handle
 
-        # Edge handles (excluding corners)
-        for name in ["left", "right", "top", "bottom"]:
-            handle = ResizeHandle(name, self)
-            handle.setCursor(self._get_cursor_for_edge(name))
+        # Initial positioning
+        self._update_resize_handle_positions()
 
-            if name == "left":
-                handle.setGeometry(
-                    0, handle_width, handle_width, self.height() - 2 * handle_width
-                )
-            elif name == "right":
-                handle.setGeometry(
-                    self.width() - handle_width,
-                    handle_width,
-                    handle_width,
-                    self.height() - 2 * handle_width,
-                )
-            elif name == "top":
-                handle.setGeometry(
-                    handle_width, 0, self.width() - 2 * handle_width, handle_width
-                )
-            elif name == "bottom":
-                handle.setGeometry(
-                    handle_width,
-                    self.height() - handle_width,
-                    self.width() - 2 * handle_width,
-                    handle_width,
-                )
+    def _update_resize_handle_positions(self):
+        """Centralized logic to set/update bounds for resize handles."""
+        if not hasattr(self, "resize_handles"):
+            return
 
-            handle.setStyleSheet("background: transparent;")
-            self.resize_handles[name] = handle
+        w = self.width()
+        h = self.height()
+        hw = self.RESIZE_HANDLE_WIDTH
+
+        positions = {
+            "top_left": (0, 0, hw, hw),
+            "top_right": (w - hw, 0, hw, hw),
+            "bottom_left": (0, h - hw, hw, hw),
+            "bottom_right": (w - hw, h - hw, hw, hw),
+            "left": (0, hw, hw, h - 2 * hw),
+            "right": (w - hw, hw, hw, h - 2 * hw),
+            "top": (hw, 0, w - 2 * hw, hw),
+            "bottom": (hw, h - hw, w - 2 * hw, hw),
+        }
+
+        for name, geom in positions.items():
+            if handle := self.resize_handles.get(name):
+                handle.setGeometry(*geom)
 
     def _get_cursor_for_edge(self, edge):
         """Get appropriate cursor for each resize edge"""
@@ -463,49 +442,7 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event):
         """Update resize handle positions when window is resized"""
         super().resizeEvent(event)
-        if hasattr(self, "resize_handles"):
-            handle_width = 6
-            if "left" in self.resize_handles:
-                self.resize_handles["left"].setGeometry(
-                    0, handle_width, handle_width, self.height() - 2 * handle_width
-                )
-            if "right" in self.resize_handles:
-                self.resize_handles["right"].setGeometry(
-                    self.width() - handle_width,
-                    handle_width,
-                    handle_width,
-                    self.height() - 2 * handle_width,
-                )
-            if "top" in self.resize_handles:
-                self.resize_handles["top"].setGeometry(
-                    handle_width, 0, self.width() - 2 * handle_width, handle_width
-                )
-            if "bottom" in self.resize_handles:
-                self.resize_handles["bottom"].setGeometry(
-                    handle_width,
-                    self.height() - handle_width,
-                    self.width() - 2 * handle_width,
-                    handle_width,
-                )
-            if "top_left" in self.resize_handles:
-                self.resize_handles["top_left"].setGeometry(
-                    0, 0, handle_width, handle_width
-                )
-            if "top_right" in self.resize_handles:
-                self.resize_handles["top_right"].setGeometry(
-                    self.width() - handle_width, 0, handle_width, handle_width
-                )
-            if "bottom_left" in self.resize_handles:
-                self.resize_handles["bottom_left"].setGeometry(
-                    0, self.height() - handle_width, handle_width, handle_width
-                )
-            if "bottom_right" in self.resize_handles:
-                self.resize_handles["bottom_right"].setGeometry(
-                    self.width() - handle_width,
-                    self.height() - handle_width,
-                    handle_width,
-                    handle_width,
-                )
+        self._update_resize_handle_positions()
 
     def _create_main_content(self):
         """Create the main content area with drop zone"""
@@ -587,13 +524,9 @@ class MainWindow(QMainWindow):
         self.layout.addWidget(self.bottom_widget, 1)
         self.ui_state.queue_widget.setVisible(False)
 
-    def _setup_audio(self):
-        """Setup audio effects"""
-        # Audio is already set up in AudioManager.__init__(), just ensure settings are applied
-        self.audio_manager.apply_audio_settings()
-
     def _apply_audio_settings(self):
         """Apply the current audio settings"""
+        # Audio is already set up in AudioManager.__init__(), just ensure settings are applied
         self.audio_manager.apply_audio_settings()
 
     def update_gif_display(self, enabled=None):
@@ -663,21 +596,20 @@ class MainWindow(QMainWindow):
         dialog = CreditsDialog(self)
         dialog.exec()
 
+    def _is_valid_zip_url(self, url):
+        """Helper to validate if a URL is a local .zip file"""
+        return url.isLocalFile() and url.toLocalFile().lower().endswith(".zip")
+
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
             urls = event.mimeData().urls()
-            if all(
-                url.isLocalFile() and url.toLocalFile().lower().endswith(".zip")
-                for url in urls
-            ):
+            if all(self._is_valid_zip_url(url) for url in urls):
                 event.acceptProposedAction()
 
     def dropEvent(self, event: QDropEvent):
         urls = event.mimeData().urls()
         new_jobs = [
-            url.toLocalFile()
-            for url in urls
-            if url.isLocalFile() and url.toLocalFile().lower().endswith(".zip")
+            url.toLocalFile() for url in urls if self._is_valid_zip_url(url)
         ]
 
         if new_jobs:

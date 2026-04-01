@@ -3,6 +3,7 @@ import os
 import re
 import psutil
 import subprocess
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -10,18 +11,13 @@ _slssteam_so_path_cache = None
 _library_inject_so_path_cache = None
 
 
-def find_steam_install():
-    return _find_steam_linux()
-
-
-def _find_steam_linux():
+def find_steam_install() -> Optional[str]:
     home_dir = os.path.expanduser("~")
     potential_paths = [
         os.path.join(home_dir, ".steam", "steam"),
         os.path.join(home_dir, ".local", "share", "Steam"),
         os.path.join(home_dir, ".var", "app", "com.valvesoftware.Steam", "data", "Steam"),
     ]
-    # os.path.join(home_dir, "snap", "steam", "common", ".steam", "steam"),
 
     for path in potential_paths:
         if os.path.isdir(os.path.join(path, "steamapps")):
@@ -33,22 +29,48 @@ def _find_steam_linux():
     return None
 
 
-def parse_library_folders(vdf_path):
-    library_paths = []
+def _parse_vdf_libraries(vdf_path: str) -> Dict[int, str]:
+    """Helper to safely parse libraryfolders.vdf and extract index-to-path mapping."""
+    libraries = {}
+    if not os.path.exists(vdf_path):
+        return libraries
+
     try:
         with open(vdf_path, "r", encoding="utf-8") as f:
             content = f.read()
-        matches = re.findall(r"^\s*\"(?:path|\d+)\"\s*\"(.*?)\"", content, re.MULTILINE)
-        for path in matches:
-            normalized_path = path.replace("\\\\", "\\")
-            if os.path.isdir(os.path.join(normalized_path, "steamapps")):
-                library_paths.append(normalized_path)
+
+        lines = content.split('\n')
+        current_index = None
+
+        for line in lines:
+            # Match numeric indices like "0", "1", "2"
+            index_match = re.match(r'^\s*"(\d+)"\s*$', line)
+            if index_match:
+                current_index = int(index_match.group(1))
+                continue
+
+            # Match path line
+            path_match = re.match(r'^\s*"path"\s*"([^"]+)"', line)
+            if path_match and current_index is not None:
+                path = path_match.group(1).replace("\\\\", "\\")
+                libraries[current_index] = path
+                
     except Exception as e:
         logger.error(f"Failed to parse libraryfolders.vdf: {e}")
+        
+    return libraries
+
+
+def parse_library_folders(vdf_path: str) -> List[str]:
+    library_paths = []
+    libraries = _parse_vdf_libraries(vdf_path)
+    for path in libraries.values():
+        if os.path.isdir(os.path.join(path, "steamapps")):
+            library_paths.append(path)
     return library_paths
 
 
-def get_steam_libraries():
+def get_steam_libraries() -> List[str]:
     steam_path = find_steam_install()
     if not steam_path:
         return []
@@ -56,15 +78,14 @@ def get_steam_libraries():
     all_libraries = {os.path.realpath(steam_path)}
     vdf_path = os.path.join(steam_path, "steamapps", "libraryfolders.vdf")
 
-    if os.path.exists(vdf_path):
-        additional_libraries = parse_library_folders(vdf_path)
-        for lib_path in additional_libraries:
-            all_libraries.add(os.path.realpath(lib_path))
+    additional_libraries = parse_library_folders(vdf_path)
+    for lib_path in additional_libraries:
+        all_libraries.add(os.path.realpath(lib_path))
 
     return list(all_libraries)
 
 
-def kill_steam_process():
+def kill_steam_process() -> bool:
     global _slssteam_so_path_cache, _library_inject_so_path_cache
     _slssteam_so_path_cache = None
     _library_inject_so_path_cache = None
@@ -115,7 +136,20 @@ def kill_steam_process():
         return False
 
 
-def start_steam():
+def _find_library(cached_path: Optional[str], default_paths: List[str], lib_name: str) -> Optional[str]:
+    """Helper to check cache or locate existing default library paths."""
+    if cached_path and os.path.exists(cached_path):
+        return cached_path
+        
+    for path in default_paths:
+        if os.path.exists(path):
+            logger.info(f"Found {lib_name} at: {path}")
+            return path
+            
+    return None
+
+
+def start_steam() -> str:
     """Attempt to start Steam with SLSsteam integration on Linux.
     Returns: "SUCCESS", "FAILED", or "NEEDS_USER_PATH"
     """
@@ -123,50 +157,34 @@ def start_steam():
     logger.info("Attempting to start Steam...")
 
     try:
-        # Handle both SLSsteam.so and library-inject.so
-        slssteam_path = _slssteam_so_path_cache
-        library_inject_path = _library_inject_so_path_cache
-
-        # Try default locations if not cached
-        if not slssteam_path:
-            default_slssteam_paths = [
+        slssteam_path = _find_library(
+            _slssteam_so_path_cache,
+            [
                 "/usr/lib32/libSLSsteam.so",
                 os.path.expanduser("~/.local/share/SLSsteam/SLSsteam.so"),
                 os.path.expanduser("~/.var/app/com.valvesoftware.Steam/.local/share/SLSsteam/SLSsteam.so"),
-            ]
-            for path in default_slssteam_paths:
-                if os.path.exists(path):
-                    slssteam_path = path
-                    logger.info(f"Found SLSsteam.so at: {path}")
-                    break
+            ],
+            "SLSsteam.so"
+        )
 
-        if not library_inject_path:
-            default_library_inject_paths = [
+        library_inject_path = _find_library(
+            _library_inject_so_path_cache,
+            [
                 "/usr/lib32/libSLS-library-inject.so",
                 os.path.expanduser("~/.local/share/SLSsteam/library-inject.so"),
                 os.path.expanduser("~/.var/app/com.valvesoftware.Steam/.local/share/SLSsteam/library-inject.so"),
-            ]
-            for path in default_library_inject_paths:
-                if os.path.exists(path):
-                    library_inject_path = path
-                    logger.info(f"Found library-inject.so at: {path}")
-                    break
+            ],
+            "library-inject.so"
+        )
 
-        # If we have both libraries, start with them
         if slssteam_path and library_inject_path:
-            if os.path.exists(slssteam_path) and os.path.exists(library_inject_path):
-                # Start Steam with both libraries
-                success = start_steam_with_slssteam(slssteam_path, library_inject_path)
-                # Only clear caches if successful
-                if success == "SUCCESS":
-                    _slssteam_so_path_cache = None
-                    _library_inject_so_path_cache = None
-                return success
-            else:
-                logger.warning("Cached library paths no longer exist")
-                return "NEEDS_USER_PATH"
+            success = start_steam_with_slssteam(slssteam_path, library_inject_path)
+            # Only clear caches if successful
+            if success == "SUCCESS":
+                _slssteam_so_path_cache = None
+                _library_inject_so_path_cache = None
+            return success
         else:
-            # Missing one or both libraries
             missing = []
             if not slssteam_path:
                 missing.append("SLSsteam.so")
@@ -174,18 +192,16 @@ def start_steam():
                 missing.append("library-inject.so")
             logger.warning(f"Missing libraries: {', '.join(missing)}")
             return "NEEDS_USER_PATH"
-        return "FAILED"
+            
     except Exception as e:
         logger.error(f"Failed to execute Steam: {e}", exc_info=True)
         return "FAILED"
 
 
-def start_steam_with_slssteam(slssteam_path=None, library_inject_path=None):
+def start_steam_with_slssteam(slssteam_path: str = None, library_inject_path: str = None) -> str:
     """Start Steam on Linux with SLSsteam.so AND library-inject.so via LD_AUDIT
     Returns: "SUCCESS", "FAILED", or "NEEDS_USER_PATH"
     """
-
-    # Validate paths
     if not slssteam_path or not os.path.exists(slssteam_path):
         logger.error(f"SLSsteam.so path is invalid or does not exist: {slssteam_path}")
         return "NEEDS_USER_PATH"
@@ -198,7 +214,7 @@ def start_steam_with_slssteam(slssteam_path=None, library_inject_path=None):
         logger.info(f"Executing Steam with LD_AUDIT: {library_inject_path}:{slssteam_path}")
         env = os.environ.copy()
         env["LD_AUDIT"] = f"{library_inject_path}:{slssteam_path}"
-        subprocess.Popen(["steam"], env=env)
+        subprocess.Popen(["steam"], env=env, start_new_session=True)
         return "SUCCESS"
     except Exception as e:
         logger.error(
@@ -207,11 +223,9 @@ def start_steam_with_slssteam(slssteam_path=None, library_inject_path=None):
         return "FAILED"
 
 
-def get_library_index(library_path: str, steam_path: str | None = None) -> int:
+def get_library_index(library_path: str, steam_path: Optional[str] = None) -> int:
     """Get the library index from libraryfolders.vdf for a given library path.
-
-    If `steam_path` is provided, it will be used instead of calling
-    `find_steam_install()` (useful to avoid repeated lookups).
+    If `steam_path` is provided, it will be used instead of calling `find_steam_install()`.
     """
     if not steam_path:
         steam_path = find_steam_install()
@@ -219,41 +233,14 @@ def get_library_index(library_path: str, steam_path: str | None = None) -> int:
         return 0
 
     vdf_path = os.path.join(steam_path, "steamapps", "libraryfolders.vdf")
-    if not os.path.exists(vdf_path):
-        return 0
+    libraries = _parse_vdf_libraries(vdf_path)
+    
+    real_target_path = os.path.realpath(library_path)
+    for idx, path in libraries.items():
+        if os.path.realpath(path) == real_target_path:
+            return idx
 
-    try:
-        with open(vdf_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        # Parse each library entry - format is like:
-        # "1"
-        # {
-        #     "path"  "path/to/library"
-        #     ...
-        # }
-        lines = content.split('\n')
-        current_index = None
-
-        for line in lines:
-            # Match numeric indices like "0", "1", "2"
-            index_match = re.match(r'^\s*"(\d+)"\s*$', line)
-            if index_match:
-                current_index = int(index_match.group(1))
-                continue
-
-            # Match path line
-            path_match = re.match(r'^\s*"path"\s*"([^"]+)"', line)
-            if path_match and current_index is not None:
-                path = path_match.group(1).replace("\\\\", "\\")
-                if os.path.realpath(path) == os.path.realpath(library_path):
-                    return current_index
-
-        # Default to 0 if not found (main library)
-        return 0
-    except Exception as e:
-        logger.error(f"Failed to get library index: {e}")
-        return 0
+    return 0
 
 
 def slssteam_api_send(command: str) -> bool:
@@ -267,7 +254,4 @@ def slssteam_api_send(command: str) -> bool:
         logger.info(f"SLSsteam API command sent: {command}")
         return True
     except Exception:
-        # Silently fail - API may not be available
         return False
-
-

@@ -135,7 +135,7 @@ class ImageFetcher(QObject):
     def get_header_image_url(app_id: int) -> str:
         # 1. Try DB for the specific hash URL (FAST)
         try:
-            db_url = DatabaseManager().get_header_url(app_id)
+            db_url = DatabaseManager.get_instance().get_header_url(app_id)
             if db_url:
                 return db_url
         except Exception as e:

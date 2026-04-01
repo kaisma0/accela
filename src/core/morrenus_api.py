@@ -1,5 +1,4 @@
 import logging
-import os
 import requests
 from pathlib import Path
 from utils.settings import get_settings
@@ -49,6 +48,37 @@ def _get_headers():
     return {"Authorization": f"Bearer {api_key}"}
 
 
+def _handle_request_exception(e, action="API request"):
+    """
+    Centralized exception handling for requests.
+    """
+    if isinstance(e, requests.exceptions.HTTPError):
+        response = e.response
+        response_text = response.text if response is not None else ""
+        status_code = response.status_code if response is not None else "N/A"
+        logger.error(f"{action} HTTP error: {e} - {response_text}")
+        
+        if response is None:
+            return f"API Error ({status_code}): {e}"
+        
+        try:
+            error_detail = response.json().get("detail", response_text)
+            return f"API Error ({status_code}): {error_detail}"
+        except ValueError:  # Handles JSONDecodeError safely across requests versions
+            return f"API Error ({status_code}): {response_text}"
+
+    elif isinstance(e, requests.exceptions.RequestException):
+        logger.error(f"{action} failed: {e}")
+        error_str = str(e).lower()
+        if "ssl" in error_str or "wrong_version_number" in error_str:
+            return "SSL connection failed. This may be caused by a proxy, firewall, or network configuration blocking HTTPS connections."
+        return f"Request Failed: {e}"
+
+    else:
+        logger.error(f"An unexpected error occurred during {action.lower()}: {e}", exc_info=True)
+        return f"An unexpected error occurred: {e}"
+
+
 def search_games(query):
     """
     Searches for games on the Morrenus API.
@@ -63,33 +93,13 @@ def search_games(query):
 
     try:
         response = _session.get(url, headers=headers, params=params, timeout=10)
-        # Check for specific API errors first
         error_msg = _handle_api_error(response)
         if error_msg:
             return {"error": error_msg}
         response.raise_for_status()
         return response.json()
-    except requests.exceptions.HTTPError as e:
-        response = e.response
-        response_text = response.text if response is not None else ""
-        status_code = response.status_code if response is not None else "N/A"
-        logger.error(f"API search HTTP error: {e} - {response_text}")
-        try:
-            if response is None:
-                return {"error": f"API Error ({status_code}): {e}"}
-            error_detail = response.json().get("detail", response_text)
-            return {"error": f"API Error ({status_code}): {error_detail}"}
-        except requests.exceptions.JSONDecodeError:
-            return {"error": f"API Error ({status_code}): {response_text}"}
-    except requests.exceptions.RequestException as e:
-        logger.error(f"API search failed: {e}")
-        error_str = str(e).lower()
-        if "ssl" in error_str or "wrong_version_number" in error_str:
-            return {"error": "SSL connection failed. This may be caused by a proxy, firewall, or network configuration blocking HTTPS connections."}
-        return {"error": f"Request Failed: {e}"}
     except Exception as e:
-        logger.error(f"An unexpected error occurred during search: {e}", exc_info=True)
-        return {"error": f"An unexpected error occurred: {e}"}
+        return {"error": _handle_request_exception(e, "API search")}
 
 
 def download_manifest(app_id):
@@ -102,20 +112,18 @@ def download_manifest(app_id):
         return (None, "API Key is not set. Please set it in Settings.")
 
     url = f"{BASE_URL}/manifest/{app_id}"
-    # Save to persistent folder
     manifests_dir = Path(get_base_path()) / "morrenus_manifests"
     manifests_dir.mkdir(parents=True, exist_ok=True)
     save_path = manifests_dir / f"accela_fetch_{app_id}.zip"
+    
     logger.info(f"Attempting to download manifest for AppID {app_id} to {save_path}")
 
     try:
         with _session.get(url, headers=headers, stream=True, timeout=60) as r:
-            # Check for specific API errors first
             error_msg = _handle_api_error(r)
             if error_msg:
-                if os.path.exists(save_path):
-                    os.remove(save_path)
                 return (None, error_msg)
+            
             r.raise_for_status()
             with open(save_path, "wb") as f:
                 for chunk in r.iter_content(chunk_size=8192):
@@ -123,33 +131,10 @@ def download_manifest(app_id):
 
         logger.info(f"Manifest for {app_id} downloaded successfully to {save_path}")
         return (str(save_path), None)
-    except requests.exceptions.HTTPError as e:
-        response = e.response
-        response_text = response.text if response is not None else ""
-        status_code = response.status_code if response is not None else "N/A"
-        logger.error(f"API download HTTP error: {e} - {response_text}")
-        if os.path.exists(save_path):
-            os.remove(save_path)
-        try:
-            if response is None:
-                return (None, f"API Error ({status_code}): {e}")
-            error_detail = response.json().get("detail", response_text)
-            return (None, f"API Error ({status_code}): {error_detail}")
-        except requests.exceptions.JSONDecodeError:
-            return (None, f"API Error ({status_code}): {response_text}")
-    except requests.exceptions.RequestException as e:
-        logger.error(f"API download failed: {e}")
-        if os.path.exists(save_path):
-            os.remove(save_path)
-        error_str = str(e).lower()
-        if "ssl" in error_str or "wrong_version_number" in error_str:
-            return (None, "SSL connection failed. This may be caused by a proxy, firewall, or network configuration blocking HTTPS connections.")
-        return (None, f"Download Failed: {e}")
     except Exception as e:
-        logger.error(f"An unexpected error occurred during download: {e}", exc_info=True)
-        if os.path.exists(save_path):
-            os.remove(save_path)
-        return (None, f"An unexpected error occurred: {e}")
+        if save_path.exists():
+            save_path.unlink()
+        return (None, _handle_request_exception(e, "API download"))
 
 
 def get_user_stats():
@@ -173,28 +158,8 @@ def get_user_stats():
             return {"error": error_msg}
         response.raise_for_status()
         return response.json()
-    except requests.exceptions.HTTPError as e:
-        response = e.response
-        response_text = response.text if response is not None else ""
-        status_code = response.status_code if response is not None else "N/A"
-        logger.error(f"API stats HTTP error: {e} - {response_text}")
-        try:
-            if response is None:
-                return {"error": f"API Error ({status_code}): {e}"}
-            error_detail = response.json().get("detail", response_text)
-            return {"error": f"API Error ({status_code}): {error_detail}"}
-        except requests.exceptions.JSONDecodeError:
-            return {"error": f"API Error ({status_code}): {response_text}"}
-    except requests.exceptions.RequestException as e:
-        logger.error(f"API stats request failed: {e}")
-        # Check for SSL errors that might indicate proxy/network issues
-        error_str = str(e).lower()
-        if "ssl" in error_str or "wrong_version_number" in error_str:
-            return {"error": "SSL connection failed. This may be caused by a proxy, firewall, or network configuration blocking HTTPS connections."}
-        return {"error": f"Request Failed: {e}"}
     except Exception as e:
-        logger.error(f"Unexpected error fetching stats: {e}", exc_info=True)
-        return {"error": f"An unexpected error occurred: {e}"}
+        return {"error": _handle_request_exception(e, "API stats request")}
 
 
 def validate_api_key(api_key=None):
@@ -202,12 +167,11 @@ def validate_api_key(api_key=None):
     Validates a Morrenus API key against the user stats endpoint.
     Returns (True, None) when valid, otherwise (False, error_message).
     """
-    key = api_key
-    if key is None:
+    if api_key is None:
         settings = get_settings()
-        key = settings.value("morrenus_api_key", "", type=str)
+        api_key = settings.value("morrenus_api_key", "", type=str)
 
-    key = (key or "").strip()
+    key = (api_key or "").strip()
     if not key:
         return (False, "API key is empty.")
 
@@ -222,31 +186,8 @@ def validate_api_key(api_key=None):
 
         response.raise_for_status()
         return (True, None)
-    except requests.exceptions.HTTPError as e:
-        response = e.response
-        response_text = response.text if response is not None else ""
-        status_code = response.status_code if response is not None else "N/A"
-        logger.error(f"API key validation HTTP error: {e} - {response_text}")
-
-        try:
-            if response is None:
-                return (False, f"API Error ({status_code}): {e}")
-            error_detail = response.json().get("detail", response_text)
-            return (False, f"API Error ({status_code}): {error_detail}")
-        except requests.exceptions.JSONDecodeError:
-            return (False, f"API Error ({status_code}): {response_text}")
-    except requests.exceptions.RequestException as e:
-        logger.error(f"API key validation request failed: {e}")
-        error_str = str(e).lower()
-        if "ssl" in error_str or "wrong_version_number" in error_str:
-            return (
-                False,
-                "SSL connection failed. This may be caused by a proxy, firewall, or network configuration blocking HTTPS connections.",
-            )
-        return (False, f"Request Failed: {e}")
     except Exception as e:
-        logger.error(f"Unexpected error during API key validation: {e}", exc_info=True)
-        return (False, f"An unexpected error occurred: {e}")
+        return (False, _handle_request_exception(e, "API key validation"))
 
 
 def check_health():
@@ -261,12 +202,7 @@ def check_health():
         response = _session.get(url, timeout=5)
         response.raise_for_status()
         return response.json()
-    except requests.exceptions.RequestException as e:
-        logger.error(f"API health check failed: {e}")
-        error_str = str(e).lower()
-        if "ssl" in error_str or "wrong_version_number" in error_str:
-            return {"status": "unhealthy", "error": "SSL connection failed. Check proxy/firewall settings."}
-        return {"status": "unhealthy", "error": str(e)}
     except Exception as e:
-        logger.error(f"Unexpected error checking health: {e}", exc_info=True)
-        return {"status": "unknown", "error": str(e)}
+        error_msg = _handle_request_exception(e, "API health check")
+        status = "unhealthy" if isinstance(e, requests.exceptions.RequestException) else "unknown"
+        return {"status": status, "error": error_msg}

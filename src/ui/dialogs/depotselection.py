@@ -292,7 +292,7 @@ class DepotSelectionDialog(QDialog):
                 # Update database with fresh URL
                 try:
                     from managers.db_manager import DatabaseManager
-                    db = DatabaseManager()
+                    db = DatabaseManager.get_instance()
                     db.upsert_app_info(app_id, {"header_url": api_url})
                 except Exception as e:
                     logger.debug(f"Could not update DB: {e}")
