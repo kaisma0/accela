@@ -227,9 +227,9 @@ class GameLibraryDialog(QDialog):
                     return 0
             elif sort_option == "recently_installed":
                 depot_path = game.get("depot_downloader_path", "")
-                if depot_path and os.path.exists(depot_path):
+                if depot_path and Path(depot_path).exists():
                     try:
-                        return os.path.getmtime(depot_path)
+                        return Path(depot_path).stat().st_mtime
                     except (OSError, PermissionError):
                         return 0
                 return 0
@@ -620,7 +620,7 @@ class GameLibraryDialog(QDialog):
 
     def _is_goldberg_applied(self, game_dir: str) -> bool:
         """Return True if any .valve backup files exist in the game directory tree."""
-        if not game_dir or game_dir == "N/A" or not os.path.exists(game_dir):
+        if not game_dir or game_dir == "N/A" or not Path(game_dir).exists():
             return False
         for root, _, files in os.walk(game_dir):
             for fname in files:
@@ -700,7 +700,7 @@ class GameLibraryDialog(QDialog):
         details_layout.addRow("Size:", QLabel(size_str))
         details_layout.addRow(
             "Library:",
-            QLabel(os.path.basename(library_path) if library_path != "N/A" else "N/A"),
+            QLabel(Path(library_path).name if library_path != "N/A" else "N/A"),
         )
         details_layout.addRow("Installation Path:", QLabel(install_path))
         overview_layout.addLayout(details_layout)
@@ -794,7 +794,7 @@ class GameLibraryDialog(QDialog):
         open_btn = QPushButton("Open Folder")
         def _open_folder():
             path = install_path
-            if not path or path == "N/A" or not os.path.exists(path):
+            if not path or path == "N/A" or not Path(path).exists():
                 QMessageBox.warning(
                     self,
                     "Open Folder",
@@ -802,7 +802,7 @@ class GameLibraryDialog(QDialog):
                 )
                 return
             try:
-                path = os.path.normpath(os.path.abspath(str(path)))
+                path = str(Path(path).resolve())
                 subprocess.run(["xdg-open", path], check=False)
 
             except Exception as e:
@@ -1374,9 +1374,9 @@ class GameLibraryDialog(QDialog):
 
         # Remove ACF file
         if library_path and appid and appid not in ("0", "N/A", "unknown"):
-            acf_path = os.path.join(library_path, "steamapps", f"appmanifest_{appid}.acf")
-            if os.path.exists(acf_path):
-                os.remove(acf_path)
+            acf_path = str(Path(library_path) / "steamapps" / f"appmanifest_{appid}.acf")
+            if Path(acf_path).exists():
+                Path(acf_path).unlink()
                 logger.info(f"Removed ACF file: {acf_path}")
 
                 # Try to trigger reinstall via SLSsteam API

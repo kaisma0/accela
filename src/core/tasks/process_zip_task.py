@@ -1,6 +1,6 @@
 import zipfile
 import re
-import os
+from pathlib import Path
 import logging
 import tempfile
 
@@ -125,7 +125,7 @@ class ProcessZipTask:
                     raise FileNotFoundError("No .lua file found in the zip archive.")
 
                 manifest_files = {
-                    os.path.basename(f): zip_ref.read(f)
+                    Path(f).name: zip_ref.read(f)
                     for f in zip_ref.namelist()
                     if f.endswith(".manifest")
                 }
@@ -257,12 +257,10 @@ class ProcessZipTask:
                     game_data["game_name"] = f"App_{app_id}"
                     logger.warning(f"Could not determine game name from Lua or API. Fallback to {game_data['game_name']}")
 
-                manifest_dir = os.path.join(
-                    tempfile.gettempdir(), "mistwalker_manifests"
-                )
-                os.makedirs(manifest_dir, exist_ok=True)
+                manifest_dir = Path(tempfile.gettempdir()) / "mistwalker_manifests"
+                manifest_dir.mkdir(parents=True, exist_ok=True)
                 for name, content in manifest_files.items():
-                    with open(os.path.join(manifest_dir, name), "wb") as f:
+                    with (manifest_dir / name).open("wb") as f:
                         f.write(content)
 
             logger.info("Zip processing task completed successfully.")

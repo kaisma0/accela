@@ -299,13 +299,13 @@ class GameManager(QObject):
             logger.info(f"Scanning library: {library_path}")
             scanned_libraries += 1
 
-            steamapps_path = os.path.join(library_path, "steamapps")
-            if not os.path.exists(steamapps_path):
+            steamapps_path = Path(library_path) / "steamapps"
+            if not steamapps_path.exists():
                 logger.warning(f"Steamapps directory not found at: {steamapps_path}")
                 continue
 
-            common_path = os.path.join(steamapps_path, "common")
-            if not os.path.exists(common_path):
+            common_path = steamapps_path / "common"
+            if not common_path.exists():
                 logger.warning(f"Common directory not found at: {common_path}")
                 continue
 
@@ -324,8 +324,8 @@ class GameManager(QObject):
                             game_name = entry.name
                             game_path = entry.path
 
-                            depot_downloader_path = os.path.join(game_path, ".DepotDownloader")
-                            if os.path.exists(depot_downloader_path):
+                            depot_downloader_path = Path(game_path) / ".DepotDownloader"
+                            if depot_downloader_path.exists():
                                 # Check if folder has actual game content (not just .DepotDownloader)
                                 if self._has_game_content(game_path):
                                     # Found a game installed by ACCELA
@@ -528,8 +528,8 @@ class GameManager(QObject):
             appid = None
 
             # Look for appmanifest files in steamapps
-            steamapps_path = os.path.join(library_path, "steamapps")
-            if os.path.exists(steamapps_path):
+            steamapps_path = Path(library_path) / "steamapps"
+            if steamapps_path.exists():
                 logger.debug(f"Looking for ACF match for game: '{game_name}'")
                 try:
                     with os.scandir(steamapps_path) as entries:
@@ -592,7 +592,7 @@ class GameManager(QObject):
                 "library_index": get_library_index(library_path, steam_path),
                 "size_on_disk": 0,  # Will be calculated below
                 "source": "ACCELA",
-                "depot_downloader_path": os.path.join(game_path, ".DepotDownloader"),
+                "depot_downloader_path": str(Path(game_path) / ".DepotDownloader"),
             }
 
             # Get file size - try ACF first, fall back to manual calculation
@@ -600,7 +600,7 @@ class GameManager(QObject):
             acf_size_available = False
 
             # Check for ACF file data first
-            if appmanifest_path and os.path.exists(appmanifest_path):
+            if appmanifest_path and Path(appmanifest_path).exists():
                 try:
                     with open(appmanifest_path, "r", encoding="utf-8") as f:
                         content = f.read()
@@ -650,12 +650,12 @@ class GameManager(QObject):
                         for filename in filenames:
                             if self._scan_cancelled:
                                 return None
-                            filepath = os.path.join(dirpath, filename)
+                            filepath = Path(dirpath) / filename
                             try:
                                 # Use lstat to get file size without following symlinks
                                 # This avoids issues with broken symlinks
-                                if os.path.isfile(filepath) or os.path.islink(filepath):
-                                    size_on_disk += os.lstat(filepath).st_size
+                                if filepath.is_file() or filepath.is_symlink():
+                                    size_on_disk += filepath.lstat().st_size
                             except (OSError, FileNotFoundError, PermissionError):
                                 # Skip files that can't be accessed (broken symlinks, permission errors, etc.)
                                 pass
@@ -780,26 +780,24 @@ class GameManager(QObject):
             steam_libraries = get_steam_libraries()
             if steam_libraries:
                 steam_dir = steam_libraries[0]
-                compatdata_path = os.path.join(
-                    steam_dir, "steamapps", "compatdata", appid
-                )
-                userdata_path = os.path.join(steam_dir, "userdata")
+                compatdata_path = Path(steam_dir) / "steamapps" / "compatdata" / str(appid)
+                userdata_path = Path(steam_dir) / "userdata"
 
                 # Check if compatdata exists
-                if remove_compatdata and os.path.exists(compatdata_path):
+                if remove_compatdata and compatdata_path.exists():
                     confirm_msg += (
                         f"• Proton/Wine compatibility data: {compatdata_path}\n"
                     )
 
                 # Check if userdata exists
-                if remove_saves and os.path.exists(userdata_path):
+                if remove_saves and userdata_path.exists():
                     has_saves = False
                     try:
                         for user_dir in os.listdir(userdata_path):
-                            user_path = os.path.join(userdata_path, user_dir)
-                            if os.path.isdir(user_path):
-                                saves_path = os.path.join(user_path, appid)
-                                if os.path.exists(saves_path):
+                            user_path = userdata_path / user_dir
+                            if user_path.is_dir():
+                                saves_path = user_path / str(appid)
+                                if saves_path.exists():
                                     has_saves = True
                                     break
                     except OSError:
@@ -833,17 +831,15 @@ class GameManager(QObject):
         try:
             if remove_game_data:
                 # Remove game folder
-                if install_path and os.path.exists(install_path):
+                if install_path and Path(install_path).exists():
                     shutil.rmtree(install_path)
                     logger.info(f"Removed game folder: {install_path}")
 
                 # Remove ACF file
                 if library_path and appid != "N/A":
-                    acf_path = os.path.join(
-                        library_path, "steamapps", f"appmanifest_{appid}.acf"
-                    )
-                    if os.path.exists(acf_path):
-                        os.remove(acf_path)
+                    acf_path = Path(library_path) / "steamapps" / f"appmanifest_{appid}.acf"
+                    if acf_path.exists():
+                        acf_path.unlink()
                         logger.info(f"Removed ACF file: {acf_path}")
 
                 # Remove depot file
@@ -872,9 +868,9 @@ class GameManager(QObject):
                     if config_path.exists():
                         remove_list_item(config_path, "AdditionalApps", str(appid))
 
-                if not remove_game_data and install_path and os.path.exists(install_path):
-                    dd_path = os.path.join(install_path, ".DepotDownloader")
-                    if os.path.exists(dd_path):
+                if not remove_game_data and install_path and Path(install_path).exists():
+                    dd_path = Path(install_path) / ".DepotDownloader"
+                    if dd_path.exists():
                         shutil.rmtree(dd_path)
                         logger.info(f"Removed .DepotDownloader tracking folder: {dd_path}")
 
@@ -916,8 +912,8 @@ class GameManager(QObject):
 
         # Remove compatdata
         if remove_compatdata:
-            compatdata_path = os.path.join(steam_dir, "steamapps", "compatdata", appid)
-            if os.path.exists(compatdata_path):
+            compatdata_path = Path(steam_dir) / "steamapps" / "compatdata" / str(appid)
+            if compatdata_path.exists():
                 try:
                     shutil.rmtree(compatdata_path)
                     logger.info(f"Removed compatdata: {compatdata_path}")
@@ -928,15 +924,15 @@ class GameManager(QObject):
 
         # Remove Steam Cloud saves
         if remove_saves:
-            userdata_path = os.path.join(steam_dir, "userdata")
-            if os.path.exists(userdata_path):
+            userdata_path = Path(steam_dir) / "userdata"
+            if userdata_path.exists():
                 try:
                     # Find all user directories
                     for user_dir in os.listdir(userdata_path):
-                        user_path = os.path.join(userdata_path, user_dir)
-                        if os.path.isdir(user_path):
-                            saves_path = os.path.join(user_path, appid)
-                            if os.path.exists(saves_path):
+                        user_path = userdata_path / user_dir
+                        if user_path.is_dir():
+                            saves_path = user_path / str(appid)
+                            if saves_path.exists():
                                 shutil.rmtree(saves_path)
                                 logger.info(
                                     f"Removed saves for user {user_dir}: {saves_path}"
@@ -973,7 +969,7 @@ class GameManager(QObject):
                         with open(desktop_file, "r", encoding="utf-8") as f:
                             content = f.read()
                             if f"steam://rungameid/{appid}" in content:
-                                os.remove(desktop_file)
+                                desktop_file.unlink()
                                 logger.info(f"Removed desktop entry: {desktop_file}")
                                 desktop_files_removed += 1
                     except Exception as e:
@@ -998,7 +994,7 @@ class GameManager(QObject):
                             icon_path = apps_dir / icon_name
                             if icon_path.exists():
                                 try:
-                                    os.remove(icon_path)
+                                    icon_path.unlink()
                                     logger.info(f"Removed icon: {icon_path}")
                                     icons_removed += 1
                                 except Exception as e:

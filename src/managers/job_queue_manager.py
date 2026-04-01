@@ -1,6 +1,4 @@
-import os
 import logging
-import time
 from PyQt6.QtWidgets import QMessageBox, QFileDialog
 from PyQt6.QtCore import QTimer
 
@@ -24,7 +22,7 @@ class JobQueueManager:
             file_path: Path to the manifest file
             metadata: Optional dict with job metadata (appid, library_path, install_path)
         """
-        if not os.path.exists(file_path):
+        if not Path(file_path).exists():
             logger.error(f"Failed to add job: file {file_path} does not exist.")
             QMessageBox.critical(
                 self.main_window, "Error", f"Could not add job: File not found at {file_path}"
@@ -33,7 +31,7 @@ class JobQueueManager:
 
         job = {"path": file_path, "metadata": metadata or {}}
         self.job_queue.append(job)
-        logger.info(f"Added new job to queue: {os.path.basename(file_path)}")
+        logger.info(f"Added new job to queue: {Path(file_path).name}")
 
         self._update_ui_state()
 
@@ -71,7 +69,7 @@ class JobQueueManager:
 
         try:
             removed_job = self.job_queue.pop(current_row)
-            logger.info(f"Removed job from queue: {os.path.basename(removed_job['path'])}")
+            logger.info(f"Removed job from queue: {Path(removed_job['path']).name}")
             self._update_queue_display()
 
             if current_row < self.main_window.ui_state.queue_list_widget.count():
@@ -139,7 +137,7 @@ class JobQueueManager:
         """Update the queue list widget"""
         self.main_window.ui_state.queue_list_widget.clear()
         self.main_window.ui_state.queue_list_widget.addItems(
-            [os.path.basename(job["path"]) for job in self.job_queue]
+            [Path(job["path"]).name for job in self.job_queue]
         )
 
     def _check_if_safe_to_start_next_job(self):
@@ -172,7 +170,7 @@ class JobQueueManager:
         file_path, _ = QFileDialog.getOpenFileName(
             self.main_window,
             title,
-            os.path.expanduser("~"),
+            str(Path.home()),
             filter_str
         )
         return file_path

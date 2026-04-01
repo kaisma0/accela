@@ -1,8 +1,8 @@
 import logging
 import requests
 import json
-import os
 import tempfile
+from pathlib import Path
 import re
 import time
 
@@ -171,12 +171,9 @@ def _fetch_with_steam_client(app_id, access_token=None):
         result = client.get_product_info(apps=request_list, timeout=30)
 
         if logger.isEnabledFor(logging.DEBUG):
-            dump_path = os.path.join(
-                tempfile.gettempdir(),
-                f"mistwalker_steamclient_response_{int_app_id}.json",
-            )
+            dump_path = Path(tempfile.gettempdir()) / f"mistwalker_steamclient_response_{int_app_id}.json"
             try:
-                with open(dump_path, "w", encoding="utf-8") as f:
+                with dump_path.open("w", encoding="utf-8") as f:
                     json.dump(result, f, indent=4, default=str)
                 logger.debug(f"Raw steam.client response dumped to {dump_path}")
             except Exception as e:

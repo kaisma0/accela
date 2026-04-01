@@ -1,7 +1,7 @@
 import argparse
 import multiprocessing
-import os
 import sys
+from pathlib import Path
 from urllib.parse import unquote
 
 
@@ -25,7 +25,7 @@ from utils.yaml_config_manager import (
     get_user_config_path,
 )
 
-project_root = os.path.abspath(os.path.dirname(__file__))
+project_root = str(Path(__file__).resolve().parent)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -65,7 +65,7 @@ def parse_args(args, logger):
                     command_line_appid = int(param)
                     logger.info(f"Found accela://download URL for AppID: {param}")
                 elif action == 'zip' and param:
-                    if os.path.exists(param):
+                    if Path(param).exists():
                         command_line_zips.append(param)
                         logger.info(f"Found ZIP file from URL: {param}")
                     else:
@@ -76,9 +76,9 @@ def parse_args(args, logger):
                 logger.error(f"Failed to parse URL {arg}: {e}")
 
         elif arg.lower().endswith('.zip'):
-            zip_path = os.path.abspath(arg)
-            if os.path.exists(zip_path):
-                command_line_zips.append(zip_path)
+            zip_path = Path(arg).resolve()
+            if zip_path.exists():
+                command_line_zips.append(str(zip_path))
                 logger.info(f"Found ZIP file from command line: {zip_path}")
             else:
                 logger.warning(f"ZIP file not found: {arg}")
@@ -160,7 +160,7 @@ def launch_app(app, logger, app_version, command_line_appid, command_line_zips):
                 else:
                     logger.info(f"Adding {len(command_line_zips)} ZIP file(s) from command line to queue")
                     for zip_path in command_line_zips:
-                        logger.info(f"Adding to queue: {os.path.basename(zip_path)}")
+                        logger.info(f"Adding to queue: {Path(zip_path).name}")
                         main_win.job_queue.add_job(zip_path)
 
             # Use singleShot to defer until after window initialization

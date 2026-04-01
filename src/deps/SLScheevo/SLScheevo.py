@@ -1198,7 +1198,7 @@ class SteamUtils:
         self.logger.log_base(
             "Your Steam login tokens have been saved in an encrypted file:"
         )
-        self.logger.log_base(f"{os.path.abspath(self.main.SAVED_LOGINS_FILE)}")
+        self.logger.log_base(f"{self.main.SAVED_LOGINS_FILE.resolve()}")
         self.logger.log_base(
             "While encrypted, this file still contains sensitive information."
         )
@@ -1311,7 +1311,7 @@ class Main:
             76561197960265728  # Valve's base offset for public Steam64 IDs
         )
 
-        self.BASE_DIR = Path(os.path.dirname(os.path.abspath(sys.argv[0])))
+        self.BASE_DIR = Path(sys.argv[0]).resolve().parent
         self.DATA_DIR = self.BASE_DIR / "data"
         self.OUTPUT_DIR = self.DATA_DIR / "bins"
         self.SKIP_FILE = self.DATA_DIR / "skip_generation.txt"

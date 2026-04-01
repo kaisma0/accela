@@ -59,7 +59,7 @@ class DownloadSLSsteamTask(QObject):
     def _download_install_script(self):
         """Download install-sls.sh from the official ACCELA repo into a temp file."""
         temp_dir = tempfile.mkdtemp(prefix="accela-install-sls-")
-        script_path = os.path.join(temp_dir, "install-sls.sh")
+        script_path = Path(temp_dir) / "install-sls.sh"
 
         response = requests.get(INSTALL_SLS_RAW_URL, timeout=30)
         response.raise_for_status()
@@ -67,8 +67,8 @@ class DownloadSLSsteamTask(QObject):
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(response.text)
 
-        st = os.stat(script_path)
-        os.chmod(script_path, st.st_mode | stat.S_IEXEC)
+        script_path = Path(script_path)
+        script_path.chmod(script_path.stat().st_mode | stat.S_IEXEC)
         return script_path, temp_dir
 
     def _run_install_script(self, script_path):
@@ -203,7 +203,7 @@ class DownloadSLSsteamTask(QObject):
             result["latest_date"] = release_data.get("published_at", "")
 
             # Combine Native and Flatpak paths into a searchable list
-            xdg_data_home = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+            xdg_data_home = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
             possible_install_dirs = [
                 Path(xdg_data_home) / "SLSsteam",
                 Path.home() / ".var/app/com.valvesoftware.Steam/.local/share/SLSsteam"

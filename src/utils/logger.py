@@ -86,7 +86,7 @@ def setup_logging():
         # Try TEMP directory as fallback
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            temp_dir = Path(os.environ.get('TEMP', os.getcwd()))
+            temp_dir = Path(os.environ.get('TEMP', str(Path.cwd())))
             fallback_path = temp_dir / f"{app_name_lower}_{timestamp}.log"
             file_handler = logging.FileHandler(fallback_path, mode="w", encoding="utf-8")
             file_handler.setLevel(logging.DEBUG)
@@ -158,7 +158,7 @@ def get_log_path():
         log_dir.mkdir(parents=True, exist_ok=True)
     except OSError:
         # Fallback to temp directory
-        temp_dir = Path(os.environ.get('TEMP', os.getcwd())) / "logs" / app_name_lower
+        temp_dir = Path(os.environ.get('TEMP', str(Path.cwd()))) / "logs" / app_name_lower
         temp_dir.mkdir(parents=True, exist_ok=True)
         log_dir = temp_dir
 

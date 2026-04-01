@@ -1,7 +1,7 @@
 from PyQt6.QtCore import Qt
 from ui.custom_titlebar import CustomTitleBar
 import logging
-import os
+from pathlib import Path
 import shutil
 from importlib import import_module
 
@@ -103,14 +103,14 @@ class ApiKeyAutomationDialog(QDialog):
         layout.addLayout(actions_layout)
 
     def _initialize_webview(self):
-        profile_root = os.path.join(str(get_base_path()), "WebView")
-        self._profile_root = profile_root
-        cache_path = os.path.join(profile_root, "Cache")
-        os.makedirs(cache_path, exist_ok=True)
+        profile_root = get_base_path() / "WebView"
+        self._profile_root = str(profile_root)
+        cache_path = profile_root / "Cache"
+        cache_path.mkdir(parents=True, exist_ok=True)
 
         self._profile = self._webengine_profile_cls("accela_morrenus", self)
-        self._profile.setPersistentStoragePath(profile_root)
-        self._profile.setCachePath(cache_path)
+        self._profile.setPersistentStoragePath(str(profile_root))
+        self._profile.setCachePath(str(cache_path))
 
         self._page = self._webengine_page_cls(self._profile, self)
         self.web_view.setPage(self._page)

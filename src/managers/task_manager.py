@@ -147,7 +147,7 @@ class TaskManager:
         self.main_window.progress_bar.setVisible(True)
         self.main_window.progress_bar.setRange(0, 0)
         self.main_window.drop_text_label.setText(
-            f"Processing: {os.path.basename(zip_path)}"
+            f"Processing: {Path(zip_path).name}"
         )
 
         self.zip_task = ProcessZipTask()
@@ -358,12 +358,11 @@ class TaskManager:
             app_token = self.game_data.get("app_token")
             if app_token:
                 install_folder_name = self._get_install_folder_name()
-                game_dir = os.path.join(dest_path, "steamapps", "common", install_folder_name)
-                token_file = os.path.join(game_dir, "apptoken.txt")
+                game_dir = Path(dest_path) / "steamapps" / "common" / install_folder_name
+                token_file = game_dir / "apptoken.txt"
                 try:
-                    os.makedirs(game_dir, exist_ok=True)
-                    with open(token_file, 'w') as f:
-                        f.write(app_token)
+                    game_dir.mkdir(parents=True, exist_ok=True)
+                    token_file.write_text(app_token)
                     logger.info(f"Wrote app token to {token_file}")
                 except Exception as e:
                     logger.error(f"Failed to write app token to file: {e}")
@@ -551,10 +550,7 @@ class TaskManager:
             and self.game_data
             and self.current_dest_path
         ):
-            install_folder_name = self._get_install_folder_name()
-            game_directory = os.path.join(
-                self.current_dest_path, "steamapps", "common", install_folder_name
-            )
+            game_directory = str(Path(self.current_dest_path) / "steamapps" / "common" / install_folder_name)
             logger.info("Auto-application triggered post-download")
             self.apply_goldberg_to_game(
                 game_directory=game_directory,
@@ -685,11 +681,7 @@ class TaskManager:
             f"Generating .acf for {install_folder_name}"
         )
 
-        acf_path = os.path.join(
-            self.current_dest_path,
-            "steamapps",
-            f"appmanifest_{self.game_data['appid']}.acf",
-        )
+        acf_path = Path(self.current_dest_path) / "steamapps" / f"appmanifest_{self.game_data['appid']}.acf"
 
         # Build depot string
         buildid = self.game_data.get("buildid", "0")
@@ -822,18 +814,18 @@ class TaskManager:
             )
             return
 
-        temp_manifest_dir = os.path.join(tempfile.gettempdir(), "mistwalker_manifests")
+        temp_manifest_dir = Path(tempfile.gettempdir()) / "mistwalker_manifests"
 
-        if not os.path.exists(temp_manifest_dir):
+        if not temp_manifest_dir.exists():
             logger.warning(
                 f"Temp manifest directory not found, nothing to move: {temp_manifest_dir}"
             )
             return
 
-        target_depotcache_dir = os.path.join(self.current_dest_path, "depotcache")
+        target_depotcache_dir = Path(self.current_dest_path) / "depotcache"
 
         try:
-            os.makedirs(target_depotcache_dir, exist_ok=True)
+            target_depotcache_dir.mkdir(parents=True, exist_ok=True)
             logger.info(
                 f"Ensured depotcache directory exists at: {target_depotcache_dir}"
             )
@@ -851,10 +843,10 @@ class TaskManager:
             moved_count = 0
             for depot_id, manifest_gid in manifests_map.items():
                 manifest_filename = f"{depot_id}_{manifest_gid}.manifest"
-                source_path = os.path.join(temp_manifest_dir, manifest_filename)
-                dest_path = os.path.join(target_depotcache_dir, manifest_filename)
-                if os.path.exists(source_path):
-                    shutil.move(source_path, dest_path)
+                source_path = temp_manifest_dir / manifest_filename
+                dest_path = target_depotcache_dir / manifest_filename
+                if source_path.exists():
+                    shutil.move(str(source_path), str(dest_path))
                     logger.info(f"Moved {manifest_filename} to {target_depotcache_dir}")
                     moved_count += 1
                 else:
@@ -879,11 +871,9 @@ class TaskManager:
             return
 
         install_folder_name = self._get_install_folder_name()
-        game_directory = os.path.join(
-            self.current_dest_path, "steamapps", "common", install_folder_name
-        )
+        game_directory = str(Path(self.current_dest_path) / "steamapps" / "common" / install_folder_name)
 
-        if not os.path.exists(game_directory):
+        if not Path(game_directory).exists():
             logger.warning(
                 f"Game directory not found at {game_directory}, skipping permission setup"
             )
@@ -913,11 +903,9 @@ class TaskManager:
             return
 
         install_folder_name = self._get_install_folder_name()
-        game_directory = os.path.join(
-            self.current_dest_path, "steamapps", "common", install_folder_name
-        )
+        game_directory = str(Path(self.current_dest_path) / "steamapps" / "common" / install_folder_name)
 
-        if not os.path.exists(game_directory):
+        if not Path(game_directory).exists():
             logger.warning(
                 f"Game directory not found at {game_directory}, skipping Steamless processing"
             )
@@ -957,7 +945,7 @@ class TaskManager:
             self.steamless_task = None
 
         # Set game name for resume dialog
-        self._steamless_game_name = game_name or os.path.basename(exe_path)
+        self._steamless_game_name = game_name or Path(exe_path).name
 
         # Clear progress log for new run
         self._steamless_progress_log = []
@@ -1018,7 +1006,7 @@ class TaskManager:
         """
         logger.info(f"Applying Goldberg for game: {game_name} (AppID: {appid}) in {game_directory}")
 
-        if not game_directory or not os.path.exists(game_directory):
+        if not game_directory or not Path(game_directory).exists():
             logger.warning(f"Game directory not found: {game_directory}")
             if show_dialog:
                 QMessageBox.warning(self.main_window, "Directory Not Found", f"Game directory not found: {game_directory}")
@@ -1051,17 +1039,17 @@ class TaskManager:
                 # Track which DLLs existed originally in this folder
                 original_dlls_in_dir = set()
                 for base in ("steam_api.dll", "steam_api64.dll"):
-                    if os.path.exists(os.path.join(dest_dir, base)):
+                    if Path(dest_dir, base).exists():
                         original_dlls_in_dir.add(base)
 
                 # Rename DLLs if present
                 for base in ("steam_api.dll", "steam_api64.dll"):
-                    src_path = os.path.join(dest_dir, base)
-                    if os.path.exists(src_path):
+                    src_path = Path(dest_dir, base)
+                    if src_path.exists():
                         try:
-                            target_path = src_path + ".valve"
-                            if not os.path.exists(target_path):
-                                os.replace(src_path, target_path)
+                            target_path = src_path.with_name(src_path.name + ".valve")
+                            if not target_path.exists():
+                                src_path.replace(target_path)
                                 logger.info(f"Renamed {src_path} -> {target_path}")
                             else:
                                 logger.info(f"Target already exists, skipping rename: {target_path}")
@@ -1071,7 +1059,7 @@ class TaskManager:
                 # Copy only the matching Goldberg DLL(s)
                 for base in original_dlls_in_dir:
                     src_dll = goldberg_src / base
-                    dest_dll = os.path.join(dest_dir, base)
+                    dest_dll = str(Path(dest_dir) / base)
                     try:
                         if src_dll.exists():
                             shutil.copy2(str(src_dll), dest_dll)
@@ -1086,7 +1074,7 @@ class TaskManager:
                     # Avoid copying DLLs/appid here; handled explicitly above/below
                     if item.name.lower() in ("steam_api.dll", "steam_api64.dll", "steam_appid.txt"):
                         continue
-                    dest_path = os.path.join(dest_dir, item.name)
+                    dest_path = Path(dest_dir) / item.name
                     try:
                         if item.is_dir():
                             shutil.copytree(str(item), dest_path, dirs_exist_ok=True)
@@ -1099,7 +1087,7 @@ class TaskManager:
 
                 # Write steam_appid.txt with provided appid
                 try:
-                    appid_file = os.path.join(dest_dir, "steam_appid.txt")
+                    appid_file = Path(dest_dir) / "steam_appid.txt"
                     with open(appid_file, "w", encoding="utf-8") as f:
                         f.write(str(appid))
                     logger.info(f"Wrote steam_appid.txt to {appid_file}")
@@ -1126,7 +1114,7 @@ class TaskManager:
         """
         logger.info(f"Removing Goldberg for game: {game_name} (AppID: {appid}) in {game_directory}")
 
-        if not game_directory or not os.path.exists(game_directory):
+        if not game_directory or not Path(game_directory).exists():
             logger.warning(f"Game directory not found: {game_directory}")
             if show_dialog:
                 QMessageBox.warning(self.main_window, "Directory Not Found", f"Game directory not found: {game_directory}")
@@ -1162,13 +1150,13 @@ class TaskManager:
                 # Restore .valve backups (always restore the backup over the current file)
                 had_backup = {}
                 for base in ("steam_api.dll", "steam_api64.dll"):
-                    valve_path = os.path.join(dest_dir, base + ".valve")
-                    orig_path = os.path.join(dest_dir, base)
-                    had_backup[base] = os.path.exists(valve_path)
+                    valve_path = Path(dest_dir) / (base + ".valve")
+                    orig_path = Path(dest_dir) / base
+                    had_backup[base] = valve_path.exists()
                     try:
                         if had_backup[base]:
                             try:
-                                os.replace(valve_path, orig_path)
+                                valve_path.replace(orig_path)
                                 logger.info(f"Restored {valve_path} -> {orig_path}")
                             except Exception as e:
                                 logger.warning(f"Failed to restore {valve_path}: {e}")
@@ -1180,10 +1168,10 @@ class TaskManager:
                 for base in ("steam_api.dll", "steam_api64.dll"):
                     if had_backup.get(base):
                         continue
-                    extra_path = os.path.join(dest_dir, base)
-                    if os.path.exists(extra_path):
+                    extra_path = Path(dest_dir) / base
+                    if extra_path.exists():
                         try:
-                            os.remove(extra_path)
+                            extra_path.unlink()
                             logger.info(f"Removed extra Goldberg DLL: {extra_path}")
                         except Exception as e:
                             logger.warning(f"Failed to remove extra DLL {extra_path}: {e}")
@@ -1193,21 +1181,21 @@ class TaskManager:
                     lname = name.lower()
                     if lname in ("steam_api.dll", "steam_api64.dll", "steam_appid.txt"):
                         continue
-                    dest_path = os.path.join(dest_dir, name)
+                    dest_path = Path(dest_dir) / name
                     try:
-                        if os.path.isdir(dest_path):
+                        if dest_path.is_dir():
                             shutil.rmtree(dest_path)
                             logger.info(f"Removed Goldberg dir: {dest_path}")
-                        elif os.path.exists(dest_path):
-                            os.remove(dest_path)
+                        elif dest_path.exists():
+                            dest_path.unlink()
                             logger.info(f"Removed Goldberg file: {dest_path}")
                     except Exception as e:
                         logger.warning(f"Failed to remove Goldberg item {dest_path}: {e}")
 
                 # Remove steam_appid.txt if it matches provided appid
                 try:
-                    appid_file = os.path.join(dest_dir, "steam_appid.txt")
-                    if os.path.exists(appid_file):
+                    appid_file = Path(dest_dir) / "steam_appid.txt"
+                    if appid_file.exists():
                         try:
                             with open(appid_file, "r", encoding="utf-8") as f:
                                 content = f.read().strip()
@@ -1215,7 +1203,7 @@ class TaskManager:
                             content = None
                         if content is None or content == str(appid):
                             try:
-                                os.remove(appid_file)
+                                appid_file.unlink()
                                 logger.info(f"Removed steam_appid.txt from {dest_dir}")
                             except Exception as e:
                                 logger.warning(f"Failed to remove steam_appid.txt in {dest_dir}: {e}")
@@ -1252,9 +1240,9 @@ class TaskManager:
 
         for root, _, filenames in os.walk(game_directory):
             for filename in filenames:
-                file_path = os.path.join(root, filename)
+                file_path = Path(root) / filename
 
-                if os.path.islink(file_path):
+                if file_path.is_symlink():
                     continue
 
                 should_chmod = False
@@ -1274,11 +1262,11 @@ class TaskManager:
 
                 if should_chmod:
                     try:
-                        file_stat = os.stat(file_path)
+                        file_stat = file_path.stat()
                         current_mode = file_stat.st_mode
                         if not (current_mode & stat.S_IXUSR):
                             new_mode = current_mode | 0o755
-                            os.chmod(file_path, new_mode)
+                            file_path.chmod(new_mode)
                             logger.debug(f"Set executable: {file_path}")
                             chmod_count += 1
                     except OSError as e:
@@ -1791,7 +1779,7 @@ class TaskManager:
             return
 
         logger.info(
-            f"Job '{os.path.basename(self.current_job or 'Unknown')}' finished. Cycling to next job."
+            f"Job '{Path(self.current_job or 'Unknown').name}' finished. Cycling to next job."
         )
 
         # Store last installed game name for status dialog
@@ -1924,7 +1912,7 @@ class TaskManager:
             if self.is_download_paused:
                 self.main_window.ui_state.pause_button.setText("Resume")
                 current_job_name = (
-                    os.path.basename(self.current_job)
+                    Path(self.current_job).name
                     if self.current_job
                     else "Unknown"
                 )
@@ -1935,7 +1923,7 @@ class TaskManager:
             else:
                 self.main_window.ui_state.pause_button.setText("Pause")
                 current_job_name = (
-                    os.path.basename(self.current_job)
+                    Path(self.current_job).name
                     if self.current_job
                     else "Unknown"
                 )
@@ -1960,7 +1948,7 @@ class TaskManager:
         reply = QMessageBox.question(
             self.main_window,
             "Cancel Job",
-            f"Are you sure you want to cancel the download for '{os.path.basename(self.current_job)}'?",
+            f"Are you sure you want to cancel the download for '{Path(self.current_job).name}'?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -1968,7 +1956,7 @@ class TaskManager:
         if reply == QMessageBox.StandardButton.No:
             return
 
-        logger.info(f"--- Cancelling job: {os.path.basename(self.current_job)} ---")
+        logger.info(f"--- Cancelling job: {Path(self.current_job).name} ---")
         self.is_cancelling = True
         if self.download_runner is not None:
             self.is_awaiting_download_stop = True
@@ -1995,21 +1983,18 @@ class TaskManager:
 
         current_job_metadata = self.current_job_metadata or {}
         install_path = current_job_metadata.get("install_path")
-        if install_path and os.path.exists(install_path):
+        if install_path and Path(install_path).exists():
             return True
 
         install_folder_name = self._get_install_folder_name()
 
-        steamapps_dir = os.path.join(self.current_dest_path, "steamapps")
-        appmanifest_path = os.path.join(
-            steamapps_dir,
-            f"appmanifest_{self.game_data.get('appid', '')}.acf",
-        )
-        if os.path.exists(appmanifest_path):
+        steamapps_dir = Path(self.current_dest_path) / "steamapps"
+        appmanifest_path = steamapps_dir / f"appmanifest_{self.game_data.get('appid', '')}.acf"
+        if appmanifest_path.exists():
             return True
 
-        game_dir = os.path.join(steamapps_dir, "common", install_folder_name)
-        if os.path.isdir(game_dir):
+        game_dir = steamapps_dir / "common" / install_folder_name
+        if game_dir.is_dir():
             try:
                 with os.scandir(game_dir) as entries:
                     for _ in entries:
@@ -2079,14 +2064,12 @@ class TaskManager:
         try:
             install_folder_name = self._get_install_folder_name()
 
-            steamapps_dir = os.path.join(self.current_dest_path, "steamapps")
-            common_dir = os.path.join(steamapps_dir, "common")
-            game_dir = os.path.join(common_dir, install_folder_name)
-            acf_path = os.path.join(
-                steamapps_dir, f"appmanifest_{self.game_data['appid']}.acf"
-            )
+            steamapps_dir = Path(self.current_dest_path) / "steamapps"
+            common_dir = steamapps_dir / "common"
+            game_dir = common_dir / install_folder_name
+            acf_path = steamapps_dir / f"appmanifest_{self.game_data['appid']}.acf"
 
-            if os.path.exists(game_dir):
+            if game_dir.exists():
                 shutil.rmtree(game_dir)
                 logger.info(f"Removed cancelled job directory: {game_dir}")
             else:
@@ -2094,14 +2077,12 @@ class TaskManager:
                     f"Download directory not found, nothing to clean: {game_dir}"
                 )
 
-            if os.path.exists(acf_path):
-                os.remove(acf_path)
+            if acf_path.exists():
+                acf_path.unlink()
                 logger.info(f"Removed cancelled job manifest: {acf_path}")
 
-            temp_manifest_dir = os.path.join(
-                tempfile.gettempdir(), "mistwalker_manifests"
-            )
-            if os.path.exists(temp_manifest_dir):
+            temp_manifest_dir = Path(tempfile.gettempdir()) / "mistwalker_manifests"
+            if temp_manifest_dir.exists():
                 try:
                     shutil.rmtree(temp_manifest_dir)
                     logger.info(
@@ -2118,12 +2099,12 @@ class TaskManager:
                     "Normal mode: Attempting to clean up empty parent directories..."
                 )
                 try:
-                    if os.path.exists(common_dir):
-                        os.rmdir(common_dir)
+                    if common_dir.exists():
+                        common_dir.rmdir()
                         logger.info(f"Removed empty common dir: {common_dir}")
 
-                    if os.path.exists(steamapps_dir):
-                        os.rmdir(steamapps_dir)
+                    if steamapps_dir.exists():
+                        steamapps_dir.rmdir()
                         logger.info(f"Removed empty steamapps dir: {steamapps_dir}")
 
                 except OSError as e:

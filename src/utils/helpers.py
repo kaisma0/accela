@@ -25,11 +25,11 @@ logger = logging.getLogger(__name__)
 
 
 def _get_user_dotnet_path() -> str:
-    return os.path.expanduser("~/.dotnet/dotnet")
+    return str(Path.home() / ".dotnet/dotnet")
 
 
 def _get_user_dotnet_root() -> str:
-    return os.path.expanduser("~/.dotnet")
+    return str(Path.home() / ".dotnet")
 
 
 def get_dotnet_path() -> str | None:
@@ -48,7 +48,7 @@ def get_dotnet_path() -> str | None:
 
     for dotnet_exe in candidates:
         try:
-            dotnet_root = os.path.dirname(dotnet_exe)
+            dotnet_root = str(Path(dotnet_exe).parent)
             env = os.environ.copy()
             env.setdefault("DOTNET_ROOT", dotnet_root)
             result = subprocess.run(

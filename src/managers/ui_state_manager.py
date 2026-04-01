@@ -1,4 +1,3 @@
-import os
 import random
 import logging
 from PyQt6.QtGui import QMovie, QFont
@@ -53,7 +52,7 @@ class UIStateManager:
     def _initialize_gifs(self):
         """Initialize GIF resources and cache them in memory for performance"""
         colored_dir = get_base_path() / "gifs/colorized"
-        os.makedirs(str(colored_dir), exist_ok=True)
+        colored_dir.mkdir(parents=True, exist_ok=True)
 
         self.remove_old_downloading_gifs()
 

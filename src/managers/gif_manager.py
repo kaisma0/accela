@@ -761,7 +761,7 @@ class GIFManager:
                 symlink_path.unlink()
 
             # Create relative symlink
-            target_rel = os.path.relpath(target_path, symlink_path.parent)
+            target_rel = target_path.relative_to(symlink_path.parent)
             symlink_path.symlink_to(target_rel)
             return True
         except Exception as e:

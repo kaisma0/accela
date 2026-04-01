@@ -1,6 +1,6 @@
-import os
 import logging
 import time
+from pathlib import Path
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtMultimedia import QMediaDevices
 import pygame
@@ -48,27 +48,27 @@ class AudioManager:
         logger.debug("Validating audio files...")
         # Prefer WAV files but accept MP3 for the loop hum if present
         audio_files = [
-            str(self._resolve_sound_path(SOUND_OPEN_FILE)),
-            str(self._resolve_sound_path(SOUND_CLOSE_FILE)),
+            self._resolve_sound_path(SOUND_OPEN_FILE),
+            self._resolve_sound_path(SOUND_CLOSE_FILE),
         ]
 
         # Check for 50hz with multiple extensions
         hz_wav = self._resolve_sound_path(SOUND_LOOP_FILE_WAV)
         hz_mp3 = self._resolve_sound_path(SOUND_LOOP_FILE_MP3)
         if hz_wav.exists():
-            audio_files.append(str(hz_wav))
+            audio_files.append(hz_wav)
         elif hz_mp3.exists():
-            audio_files.append(str(hz_mp3))
+            audio_files.append(hz_mp3)
         else:
             # include the expected path for clearer logging even if missing
-            audio_files.append(str(hz_wav))
+            audio_files.append(hz_wav)
 
         all_files_valid = True
         for file_path in audio_files:
-            if not os.path.exists(file_path):
+            if not file_path.exists():
                 logger.error(f"Audio file not found: {file_path}")
                 all_files_valid = False
-            elif os.path.getsize(file_path) == 0:
+            elif file_path.stat().st_size == 0:
                 logger.error(f"Audio file is empty: {file_path}")
                 all_files_valid = False
             else:

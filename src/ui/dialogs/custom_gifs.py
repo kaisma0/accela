@@ -1,6 +1,6 @@
 from ui.custom_titlebar import CustomTitleBar
 import logging
-import os
+from pathlib import Path
 import shutil
 from PyQt6.QtWidgets import (
     QDialog,
@@ -123,10 +123,10 @@ class CustomGifItem(QWidget):
     def check_existing_custom(self):
         """Check if a custom version of this GIF already exists"""
         custom_dir = self.get_custom_dir()
-        custom_path = os.path.join(custom_dir, self.gif_name)
+        custom_path = Path(custom_dir) / self.gif_name
 
-        if os.path.exists(custom_path):
-            self.original_file_path = custom_path
+        if custom_path.exists():
+            self.original_file_path = str(custom_path)
             self.current_file_label.setText("Custom Applied")
             self.current_file_label.setStyleSheet("color: #4CAF50;")
             self.remove_button.setEnabled(True)
@@ -144,7 +144,7 @@ class CustomGifItem(QWidget):
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             f"Select GIF for {self.gif_name}",
-            os.path.expanduser("~"),
+            str(Path.home()),
             f"Image files ({' '.join(sorted(self.IMAGE_EXTENSIONS))});;All files (*)",
         )
 
@@ -152,7 +152,7 @@ class CustomGifItem(QWidget):
             return
 
         # Validate file extension
-        file_ext = f"*{os.path.splitext(file_path)[1].lower()}"
+        file_ext = f"*{Path(file_path).suffix.lower()}"
         if file_ext not in self.IMAGE_EXTENSIONS:
             QMessageBox.warning(
                 self,
@@ -163,11 +163,11 @@ class CustomGifItem(QWidget):
 
         # Copy to temporary location first
         temp_dir = self.parent_dialog.get_temp_dir()
-        self.temp_file_path = os.path.join(temp_dir, self.gif_name)
+        self.temp_file_path = str(Path(temp_dir) / self.gif_name)
 
         try:
             shutil.copy2(file_path, self.temp_file_path)
-            filename = os.path.basename(file_path)
+            filename = Path(file_path).name
             display_filename = self.truncate_filename(filename)
             self.current_file_label.setText(f"Temp: {display_filename}")
             self.current_file_label.setStyleSheet("color: #FF9800;")
@@ -185,16 +185,16 @@ class CustomGifItem(QWidget):
         """Remove the custom/temporary GIF"""
         is_download_gif = _is_download_gif(self.gif_name)
 
-        if self.temp_file_path and os.path.exists(self.temp_file_path):
+        if self.temp_file_path and Path(self.temp_file_path).exists():
             try:
-                os.remove(self.temp_file_path)
+                Path(self.temp_file_path).unlink()
                 self.temp_file_path = None
             except Exception as e:
                 logger.error(f"Failed to remove temp file for {self.gif_name}: {e}")
 
-        if self.original_file_path and os.path.exists(self.original_file_path):
+        if self.original_file_path and Path(self.original_file_path).exists():
             try:
-                os.remove(self.original_file_path)
+                Path(self.original_file_path).unlink()
                 self.original_file_path = None
             except Exception as e:
                 logger.error(f"Failed to remove custom file for {self.gif_name}: {e}")
@@ -217,9 +217,9 @@ class CustomGifItem(QWidget):
         """View the current GIF/image in a dialog"""
         # Determine which file to show (temp file takes precedence, then original)
         file_to_show = None
-        if self.temp_file_path and os.path.exists(self.temp_file_path):
+        if self.temp_file_path and Path(self.temp_file_path).exists():
             file_to_show = self.temp_file_path
-        elif self.original_file_path and os.path.exists(self.original_file_path):
+        elif self.original_file_path and Path(self.original_file_path).exists():
             file_to_show = self.original_file_path
 
         if not file_to_show:
@@ -229,7 +229,7 @@ class CustomGifItem(QWidget):
         # Create and show the view dialog
         view_dialog = QDialog(self)
         view_dialog.setWindowFlags(view_dialog.windowFlags() | Qt.WindowType.FramelessWindowHint)
-        view_dialog.setWindowTitle(f"Viewing: {os.path.basename(file_to_show)}")
+        view_dialog.setWindowTitle(f"Viewing: {Path(file_to_show).name}")
         view_dialog.setMinimumSize(400, 400)
 
         CustomTitleBar.setup_dialog_layout(view_dialog, title=view_dialog.windowTitle())
@@ -256,7 +256,7 @@ class CustomGifItem(QWidget):
         image_label.setPixmap(scaled_pixmap)
 
         # Add image info
-        info_text = f"File: {os.path.basename(file_to_show)}\n"
+        info_text = f"File: {Path(file_to_show).name}\n"
         info_text += f"Size: {pixmap.width()} x {pixmap.height()}\n"
         info_text += f"Path: {file_to_show}"
         info_label = QLabel(info_text)
@@ -274,17 +274,17 @@ class CustomGifItem(QWidget):
 
     def apply_changes(self):
         """Apply temporary changes to permanent location"""
-        if not self.temp_file_path or not os.path.exists(self.temp_file_path):
+        if not self.temp_file_path or not Path(self.temp_file_path).exists():
             # No temporary file, nothing to apply
             return True
 
         try:
             custom_dir = self.get_custom_dir()
-            permanent_path = os.path.join(custom_dir, self.gif_name)
+            permanent_path = str(Path(custom_dir) / self.gif_name)
 
             # Remove existing custom file if it exists
-            if os.path.exists(permanent_path):
-                os.remove(permanent_path)
+            if Path(permanent_path).exists():
+                Path(permanent_path).unlink()
 
             # Move temp file to permanent location
             shutil.move(self.temp_file_path, permanent_path)
@@ -302,9 +302,9 @@ class CustomGifItem(QWidget):
 
     def rollback_changes(self):
         """Rollback temporary changes"""
-        if self.temp_file_path and os.path.exists(self.temp_file_path):
+        if self.temp_file_path and Path(self.temp_file_path).exists():
             try:
-                os.remove(self.temp_file_path)
+                Path(self.temp_file_path).unlink()
                 self.temp_file_path = None
                 logger.info(f"Rolled back temporary file for {self.gif_name}")
             except Exception as e:
@@ -395,7 +395,7 @@ class CustomGifsDialog(QDialog):
 
         # Download GIFs - get just the filenames from custom directory
         custom_dir = get_base_path() / "gifs/custom"
-        os.makedirs(str(custom_dir), exist_ok=True)
+        custom_dir.mkdir(parents=True, exist_ok=True)
 
         # Get just the filenames, not full paths
         self.download_gifs = sorted(
@@ -505,7 +505,7 @@ class CustomGifsDialog(QDialog):
         """Utility to clean up the temporary directory."""
         temp_dir = self.get_temp_dir()
         try:
-            if os.path.exists(temp_dir):
+            if Path(temp_dir).exists():
                 shutil.rmtree(temp_dir)
         except Exception as e:
             logger.warning(f"Failed to clean up temp directory: {e}")
@@ -547,22 +547,22 @@ class CustomGifsDialog(QDialog):
                 item.name_label.setText(display_name)
 
                 # If there's an original file, rename it
-                if item.original_file_path and os.path.exists(item.original_file_path):
+                if item.original_file_path and Path(item.original_file_path).exists():
                     custom_dir = item.get_custom_dir()
-                    new_path = os.path.join(custom_dir, new_name)
+                    new_path = str(Path(custom_dir) / new_name)
                     try:
-                        os.rename(item.original_file_path, new_path)
+                        Path(item.original_file_path).replace(new_path)
                         item.original_file_path = new_path
                         logger.info(f"Renamed {old_name} to {new_name}")
                     except Exception as e:
                         logger.error(f"Failed to rename {old_name} to {new_name}: {e}")
 
                 # If there's a temp file, rename it
-                if item.temp_file_path and os.path.exists(item.temp_file_path):
+                if item.temp_file_path and Path(item.temp_file_path).exists():
                     temp_dir = self.get_temp_dir()
-                    new_temp_path = os.path.join(temp_dir, new_name)
+                    new_temp_path = str(Path(temp_dir) / new_name)
                     try:
-                        os.rename(item.temp_file_path, new_temp_path)
+                        Path(item.temp_file_path).replace(new_temp_path)
                         item.temp_file_path = new_temp_path
                     except Exception as e:
                         logger.error(

@@ -135,15 +135,14 @@ def _atomic_write(config_path: Path, content: str) -> bool:
     """
     temp_path = config_path.with_name(config_path.name + ".tmp")
     try:
-        with open(temp_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        os.replace(temp_path, config_path)
+        temp_path.write_text(content, encoding="utf-8")
+        temp_path.replace(config_path)
         return True
-    except Exception as e:
+    except OSError as e:
         logger.error(f"Failed to atomically write {config_path}: {e}", exc_info=True)
         try:
             temp_path.unlink(missing_ok=True)
-        except Exception as cleanup_err:
+        except OSError as cleanup_err:
             logger.debug(f"Could not remove temp file {temp_path}: {cleanup_err}")
         return False
 

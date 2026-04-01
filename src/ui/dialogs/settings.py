@@ -1,5 +1,6 @@
 import logging
 import os
+from pathlib import Path
 import shutil
 import subprocess
 from datetime import datetime
@@ -1298,7 +1299,7 @@ class SettingsDialog(QDialog):
             from core.steam_helpers import find_steam_install
             steam_path = find_steam_install()
             if steam_path:
-                return os.path.join(steam_path, "steam.cfg")
+                return str(Path(steam_path) / "steam.cfg")
         except Exception:
             pass
         return None
@@ -1306,7 +1307,7 @@ class SettingsDialog(QDialog):
     def _is_steam_updates_blocked(self):
         """Check if steam.cfg exists in Steam directory"""
         steam_cfg_path = self._get_steam_cfg_path()
-        return os.path.exists(steam_cfg_path) if steam_cfg_path else False
+        return Path(steam_cfg_path).exists() if steam_cfg_path else False
 
     def _apply_steam_updates_block(self, block_enabled):
         """Apply steam.cfg configuration to Steam installation directory"""
@@ -1328,9 +1329,9 @@ class SettingsDialog(QDialog):
                 except Exception as e:
                     logger.error(f"Failed to copy steam.cfg to {steam_cfg_path}: {e}")
             else:
-                if os.path.exists(steam_cfg_path):
+                if Path(steam_cfg_path).exists():
                     try:
-                        os.remove(steam_cfg_path)
+                        Path(steam_cfg_path).unlink()
                         logger.info(f"Successfully removed steam.cfg from: {steam_cfg_path}")
                     except Exception as e:
                         logger.error(f"Failed to remove steam.cfg from {steam_cfg_path}: {e}")
@@ -1343,7 +1344,7 @@ class SettingsDialog(QDialog):
         from pathlib import Path
 
         # Check if SLSsteam is installed in either native or Flatpak path
-        xdg_data_home = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+        xdg_data_home = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local/share")
         native_so = Path(xdg_data_home) / "SLSsteam" / "SLSsteam.so"
         flatpak_so = Path.home() / ".var/app/com.valvesoftware.Steam/.local/share/SLSsteam/SLSsteam.so"
         sls_installed = native_so.exists() or flatpak_so.exists()
@@ -1436,7 +1437,7 @@ class SettingsDialog(QDialog):
         try:
             slscheevo_path = _get_slscheevo_path()
 
-            if not os.path.exists(slscheevo_path):
+            if not Path(slscheevo_path).exists():
                 QMessageBox.critical(
                     self, "Error", f"SLScheevo not found at:\n{slscheevo_path}"
                 )
@@ -1465,7 +1466,7 @@ class SettingsDialog(QDialog):
                 ]
             )
 
-            working_dir = os.path.dirname(slscheevo_path)
+            working_dir = str(Path(slscheevo_path).parent)
 
             launched = False
 
@@ -1525,7 +1526,7 @@ class SettingsDialog(QDialog):
         exe_path, _ = QFileDialog.getOpenFileName(
             self,
             "Select Game Executable",
-            os.path.expanduser("~"),
+            str(Path.home()),
             "Executable files (*.exe);;All files (*)",
         )
         if exe_path and self.main_window and hasattr(self.main_window, "task_manager"):

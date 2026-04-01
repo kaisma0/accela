@@ -1,5 +1,6 @@
 import logging
 import os
+from pathlib import Path
 import re
 import subprocess
 from typing import List, Optional
@@ -24,7 +25,7 @@ class SteamlessIntegration(QObject):
 
     def __init__(self, steamless_path: Optional[str] = None):
         super().__init__()
-        self.steamless_path = steamless_path or os.path.join(os.getcwd(), "Steamless")
+        self.steamless_path = steamless_path or str(Path.cwd() / "Steamless")
         self._current_process = None
         self._process_mutex = QMutex()
 
@@ -38,12 +39,12 @@ class SteamlessIntegration(QObject):
         Returns a list of .exe files sorted by priority.
         """
         try:
-            if not os.path.exists(game_directory):
+            if not Path(game_directory).exists():
                 logger.error(f"Game directory not found: {game_directory}")
                 return []
 
             exe_files = []
-            game_name = os.path.basename(game_directory.rstrip("/"))
+            game_name = Path(game_directory).name
 
             # Walk through all subdirectories
             logger.debug(f"Searching for executables in: {game_directory}")
@@ -60,11 +61,11 @@ class SteamlessIntegration(QObject):
                         for file in files:
                             try:
                                 if file.lower().endswith(".exe"):
-                                    file_path = os.path.join(root, file)
+                                    file_path = Path(root) / file
                                     logger.debug(f"Found executable: {file_path}")
 
                                     # Skip system/uninstaller files
-                                    if self._should_skip_exe(file, file_path):
+                                    if self._should_skip_exe(file, str(file_path)):
                                         logger.info(
                                             f"Skipping executable (system/utility): {file}"
                                         )
@@ -72,9 +73,9 @@ class SteamlessIntegration(QObject):
 
                                     # Get file size for priority calculation and size check
                                     try:
-                                        file_size = os.path.getsize(file_path)
+                                        file_size = file_path.stat().st_size
                                         # Additional check: ensure the file is not a broken symlink
-                                        if file_size == 0 and os.path.islink(file_path):
+                                        if file_size == 0 and file_path.is_symlink():
                                             logger.warning(
                                                 f"Skipping broken symlink: {file_path}"
                                             )
@@ -95,7 +96,7 @@ class SteamlessIntegration(QObject):
 
                                     exe_files.append(
                                         {
-                                            "path": file_path,
+                                            "path": str(file_path),
                                             "name": file,
                                             "size": file_size,
                                             "priority": self._calculate_exe_priority(
@@ -139,7 +140,7 @@ class SteamlessIntegration(QObject):
                         for file in files:
                             if file.lower().endswith(".exe"):
                                 logger.debug(
-                                    f"Filtered EXE: {os.path.join(root, file)}"
+                                    f"Filtered EXE: {Path(root) / file}"
                                 )
                 except Exception as e:
                     logger.debug(f"Failed while listing filtered EXEs: {e}")
@@ -192,9 +193,8 @@ class SteamlessIntegration(QObject):
 
             # Skip very small files (likely utilities) - but allow main game executables
             try:
-                # Use full path if available, otherwise assume it's a relative path
                 path_to_check = file_path if file_path else filename
-                file_size = os.path.getsize(path_to_check)
+                file_size = Path(path_to_check).stat().st_size
                 # Only skip if smaller than 100KB AND not matching game name patterns
                 if file_size < 100 * 1024:  # < 100KB
                     return True
@@ -286,24 +286,23 @@ class SteamlessIntegration(QObject):
                 )
                 return False
 
-            if not os.path.exists(self.steamless_path):
+            if not Path(self.steamless_path).exists():
                 self.error.emit(f"Steamless directory not found: {self.steamless_path}")
                 return False
 
-            steamless_dll = os.path.join(self.steamless_path, "Steamless.CLI.dll")
-            if not os.path.exists(steamless_dll):
+            steamless_dll = Path(self.steamless_path) / "Steamless.CLI.dll"
+            if not steamless_dll.exists():
                 self.error.emit(f"Steamless.CLI.dll not found: {steamless_dll}")
                 return False
 
             # Validate game_directory is actually a directory
-            if not os.path.isdir(game_directory):
+            if not Path(game_directory).is_dir():
                 self.error.emit(f"Game path is not a directory: {game_directory}")
                 return False
 
             # Ensure game_directory is an absolute path
-            if not os.path.isabs(game_directory):
-                game_directory = os.path.abspath(game_directory)
-                logger.debug(f"Converted to absolute path: {game_directory}")
+            game_directory = str(Path(game_directory).resolve())
+            logger.debug(f"Converted to absolute path: {game_directory}")
 
             # Check if directory is readable
             if not os.access(game_directory, os.R_OK):
@@ -363,7 +362,7 @@ class SteamlessIntegration(QObject):
     def run_steamless_on_exe(self, exe_path: str) -> bool:
         """Run Steamless CLI on a specific executable."""
         try:
-            steamless_dll = os.path.join(self.steamless_path, "Steamless.CLI.dll")
+            steamless_dll = str(Path(self.steamless_path) / "Steamless.CLI.dll")
 
             # Use native path directly
             target_path = exe_path
@@ -384,9 +383,9 @@ class SteamlessIntegration(QObject):
             # Run Steamless CLI
             # Set DOTNET_ROOT if using ~/.dotnet
             env = None
-            if self.dotnet_path and self.dotnet_path.startswith(os.path.expanduser("~")):
+            if self.dotnet_path and self.dotnet_path.startswith(str(Path.home())):
                 env = os.environ.copy()
-                env["DOTNET_ROOT"] = os.path.expanduser("~/.dotnet")
+                env["DOTNET_ROOT"] = str(Path.home() / ".dotnet")
 
             process = subprocess.Popen(
                 cmd,
@@ -597,7 +596,7 @@ class SteamlessTask(QThread):
         """Set a specific exe file to process (instead of scanning directory)"""
         self._target_exe = exe_path
         # Extract directory from exe path for prerequisite checks
-        self._game_directory = os.path.dirname(exe_path)
+        self._game_directory = str(Path(exe_path).parent)
 
     def run(self):
         """Run Steamless on the game directory (QThread main loop)"""
@@ -619,7 +618,7 @@ class SteamlessTask(QThread):
 
             try:
                 # Check if directory exists
-                if not os.path.exists(self._game_directory):
+                if not Path(self._game_directory).exists():
                     error_msg = f"Game directory not found: {self._game_directory}"
                     self.progress.emit(error_msg)
                     self.error.emit((Exception, error_msg, ""))
@@ -659,7 +658,7 @@ class SteamlessTask(QThread):
                 if self._target_exe:
                     # Process only the specific exe
                     logger.info(f"Processing specific executable: {self._target_exe}")
-                    self.progress.emit(f"Processing: {os.path.basename(self._target_exe)}")
+                    self.progress.emit(f"Processing: {Path(self._target_exe).name}")
                     success = self.steamless_integration.run_steamless_on_exe(
                         self._target_exe
                     )

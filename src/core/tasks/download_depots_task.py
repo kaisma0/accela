@@ -1,5 +1,6 @@
 import logging
 import os
+from pathlib import Path
 import re
 import shutil
 import subprocess
@@ -238,17 +239,18 @@ class DownloadDepotsTask(QObject):
             self.progress.emit("--- Cleaning up temporary files ---")
             temp_dir = tempfile.gettempdir()
             items_to_clean = {
-                "mistwalker_keys.vdf": os.path.join(temp_dir, "mistwalker_keys.vdf"),
+                "mistwalker_keys.vdf": Path(temp_dir) / "mistwalker_keys.vdf",
             }
 
             for name, path in items_to_clean.items():
-                if os.path.exists(path):
+                path_obj = Path(path)
+                if path_obj.exists():
                     try:
-                        if os.path.isdir(path):
-                            shutil.rmtree(path)
+                        if path_obj.is_dir():
+                            shutil.rmtree(path_obj)
                             self.progress.emit(f"Removed temp directory '{name}'.")
                         else:
-                            os.remove(path)
+                            path_obj.unlink()
                             self.progress.emit(f"Removed temp file '{name}'.")
                     except OSError as e:
                         self.progress.emit(f"Error removing temp item '{name}': {e}")
@@ -412,8 +414,8 @@ class DownloadDepotsTask(QObject):
 
     def _prepare_downloads(self, game_data, selected_depots, dest_path):
         temp_dir = tempfile.gettempdir()
-        keys_path = os.path.join(temp_dir, "mistwalker_keys.vdf")
-        manifest_dir = os.path.join(temp_dir, "mistwalker_manifests")
+        keys_path = Path(temp_dir) / "mistwalker_keys.vdf"
+        manifest_dir = Path(temp_dir) / "mistwalker_manifests"
 
         self.progress.emit(f"Generating depot keys file at {keys_path}")
         logger.debug(f"Writing depot key file: {keys_path}")
@@ -431,10 +433,8 @@ class DownloadDepotsTask(QObject):
         if not install_folder_name:
             install_folder_name = f"App_{game_data['appid']}"
 
-        download_dir = os.path.join(
-            dest_path, "steamapps", "common", install_folder_name
-        )
-        os.makedirs(download_dir, exist_ok=True)
+        download_dir = Path(dest_path) / "steamapps" / "common" / install_folder_name
+        download_dir.mkdir(parents=True, exist_ok=True)
         self.progress.emit(f"Download destination set to: {download_dir}")
         logger.info(f"Resolved download destination: {download_dir}")
 
@@ -483,9 +483,7 @@ class DownloadDepotsTask(QObject):
                 self._warning_count += 1
                 self.progress.emit(f"Warning: Invalid size data for depot {depot_id}. Total progress may be inaccurate.")
 
-            manifest_file_path = os.path.join(
-                manifest_dir, f"{depot_id}_{manifest_id}.manifest"
-            )
+            manifest_file_path = manifest_dir / f"{depot_id}_{manifest_id}.manifest"
 
             commands.append(
                 [
@@ -497,13 +495,13 @@ class DownloadDepotsTask(QObject):
                     "-manifest",
                     manifest_id,
                     "-manifestfile",
-                    manifest_file_path,
+                    str(manifest_file_path),
                     "-depotkeys",
-                    keys_path,
+                    str(keys_path),
                     "-max-downloads",
                     str(max_downloads),
                     "-dir",
-                    download_dir,
+                    str(download_dir),
                     "-validate",
                 ]
             )
