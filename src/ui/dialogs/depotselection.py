@@ -20,6 +20,7 @@ from utils.image_fetcher import ImageFetcher
 
 logger = logging.getLogger(__name__)
 
+
 class DepotSelectionDialog(QDialog):
     def __init__(self, app_id, game_name, depots, header_url, parent=None):
         super().__init__(parent)
@@ -56,7 +57,13 @@ class DepotSelectionDialog(QDialog):
             os_val = depot_data.get("oslist")
             os_tokens = []
             if os_val:
-                raw_os = str(os_val).lower().replace(";", ",").replace("|", ",").replace("/", ",")
+                raw_os = (
+                    str(os_val)
+                    .lower()
+                    .replace(";", ",")
+                    .replace("|", ",")
+                    .replace("/", ",")
+                )
                 for chunk in raw_os.split(","):
                     os_tokens.extend(token for token in chunk.split() if token)
 
@@ -262,20 +269,22 @@ class DepotSelectionDialog(QDialog):
             pixmap = QPixmap()
             pixmap.loadFromData(image_data)
             # Scale to full dialog width (485px), height auto (Steam header is ~2.14:1 ratio = ~227px height)
-            scaled = pixmap.scaledToWidth(self.width(), Qt.TransformationMode.SmoothTransformation)
+            scaled = pixmap.scaledToWidth(
+                self.width(), Qt.TransformationMode.SmoothTransformation
+            )
             self.header_label.setPixmap(scaled)
             self.header_label.setFixedHeight(scaled.height())
             self.header_label.setStyleSheet("")  # Remove loading background
         else:
             # Image fetch failed (404), try to get the correct URL from Steam API
-            logger.debug(f"Image fetch failed, attempting to refresh from API")
+            logger.debug("Image fetch failed, attempting to refresh from API")
             self._trigger_header_refresh()
 
     def _trigger_header_refresh(self):
         """
         Fetch the correct header URL from Steam API when generic URL fails.
         """
-        app_id = getattr(self, '_current_app_id', None)
+        app_id = getattr(self, "_current_app_id", None)
         if not app_id:
             self._show_no_image()
             return
@@ -292,6 +301,7 @@ class DepotSelectionDialog(QDialog):
                 # Update database with fresh URL
                 try:
                     from managers.db_manager import DatabaseManager
+
                     db = DatabaseManager.get_instance()
                     db.upsert_app_info(app_id, {"header_url": api_url})
                 except Exception as e:
@@ -321,11 +331,13 @@ class DepotSelectionDialog(QDialog):
         if image_data:
             pixmap = QPixmap()
             pixmap.loadFromData(image_data)
-            scaled = pixmap.scaledToWidth(self.width(), Qt.TransformationMode.SmoothTransformation)
+            scaled = pixmap.scaledToWidth(
+                self.width(), Qt.TransformationMode.SmoothTransformation
+            )
             self.header_label.setPixmap(scaled)
             self.header_label.setFixedHeight(scaled.height())
             self.header_label.setStyleSheet("")
-            logger.info(f"Successfully loaded header image after refresh")
+            logger.info("Successfully loaded header image after refresh")
         else:
             self._show_no_image()
 
@@ -356,4 +368,3 @@ class DepotSelectionDialog(QDialog):
                 # Thread has already been deleted by Qt
                 pass
         super().closeEvent(a0)
-

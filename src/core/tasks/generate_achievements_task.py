@@ -3,6 +3,7 @@ import re
 import subprocess
 
 from PyQt6.QtCore import QObject, pyqtSignal
+import psutil
 
 from utils.helpers import get_venv_python, _get_slscheevo_path, _get_slscheevo_save_path
 
@@ -74,7 +75,16 @@ class GenerateAchievementsTask(QObject):
 
             # Add save directory
             # --silent makes SLScheevo automatically use the last saved account
-            command.extend(["--noclear", "--save-dir", str(save_dir), "--silent", "--max-tries", "101"])
+            command.extend(
+                [
+                    "--noclear",
+                    "--save-dir",
+                    str(save_dir),
+                    "--silent",
+                    "--max-tries",
+                    "101",
+                ]
+            )
 
             # Add app IDs if provided
             if app_ids:
@@ -144,7 +154,9 @@ class GenerateAchievementsTask(QObject):
                 }
                 self.completed.emit(result)
             elif return_code == 10:
-                self.progress.emit("All achievement stats already exist - no generation needed")
+                self.progress.emit(
+                    "All achievement stats already exist - no generation needed"
+                )
                 result = {
                     "success": True,
                     "return_code": return_code,
@@ -152,14 +164,16 @@ class GenerateAchievementsTask(QObject):
                 }
                 self.completed.emit(result)
             else:
-                return self._fail_and_return(f"SLScheevo exited with code {return_code}", return_code)
+                return self._fail_and_return(
+                    f"SLScheevo exited with code {return_code}", return_code
+                )
 
             return result
 
         except FileNotFoundError:
             return self._fail_and_return(
                 "Python interpreter not found. Make sure Python is properly installed.",
-                log_exc=True
+                log_exc=True,
             )
         except Exception as e:
             if self.process:
@@ -167,7 +181,9 @@ class GenerateAchievementsTask(QObject):
             self.process = None
             self.process_pid = None
 
-            return self._fail_and_return(f"Unexpected error during achievement generation: {e}", log_exc=True)
+            return self._fail_and_return(
+                f"Unexpected error during achievement generation: {e}", log_exc=True
+            )
 
     def _handle_output(self, line):
         """Handle output from SLScheevo process"""

@@ -49,22 +49,109 @@ class LainMinigameDialog(QDialog):
 
         # Initialize with Lain-themed commands
         self.commands_pool = [
-            "CONNECT", "DISCONNECT", "NAVI", "LAYER09", "SCHIZOPHRENIA",
-            "KNIGHTS", "ACID", "PROTOCOL7", "WIRED", "TACHIKOMA", "LETSALLLOVELAIN",
-            "ECHIDNA", "BLUE", "ROSE", "PSYCHO", "DIVINE", "CHIPS", "NEURONS",
-            "MEMORY", "REALITY", "INTERFACE", "SERVER", "CLIENT", "UPLOAD", "GODISINTHEWIRED",
-            "ACCELA", "BABEL", "CYBERIA", "DEUS", "EPTO", "FRAGMENT", "GIG", "HORNET",
-            "INFORNO", "JACKIN", "LILITH", "MASK", "NOISE", "OMEGA", "PHANTOM",
-            "QUANTUM", "ROOT", "SCILAB", "TRANCE", "UNIX", "VOID", "WAVE", "XANADU",
-            "YGGDRASIL", "ZERO", "ANOMALY", "BEAR", "CRYPT", "DARK", "ENTITY", "FLOW",
-            "GHOST", "HACK", "ICON", "JUDGMENT", "KEY", "LOGOS", "METAVERSE", "NODE",
-            "OSCILLATION", "PARADOX", "QUERY", "RIBBON", "SHADOW", "TUNNEL", "UNKNOWN",
-            "VISION", "WALL", "XEROX", "YOUTH", "ZEAL", "ABSTRACT", "BOOT", "CHAIN",
-            "DREAM", "ERROR", "FALSE", "GATE", "HELLO", "IDENTITY", "JUMP", "KNOT",
-            "LEGACY", "MIRAGE", "NET", "ORACLE", "PRIME", "QUEST", "RIFT", "SIGNAL",
-            "TRACE", "UTOPIA", "VEIL", "WITNESS", "XENON", "YIELD", "ZENITH"
+            "CONNECT",
+            "DISCONNECT",
+            "NAVI",
+            "LAYER09",
+            "SCHIZOPHRENIA",
+            "KNIGHTS",
+            "ACID",
+            "PROTOCOL7",
+            "WIRED",
+            "TACHIKOMA",
+            "LETSALLLOVELAIN",
+            "ECHIDNA",
+            "BLUE",
+            "ROSE",
+            "PSYCHO",
+            "DIVINE",
+            "CHIPS",
+            "NEURONS",
+            "MEMORY",
+            "REALITY",
+            "INTERFACE",
+            "SERVER",
+            "CLIENT",
+            "UPLOAD",
+            "GODISINTHEWIRED",
+            "ACCELA",
+            "BABEL",
+            "CYBERIA",
+            "DEUS",
+            "EPTO",
+            "FRAGMENT",
+            "GIG",
+            "HORNET",
+            "INFORNO",
+            "JACKIN",
+            "LILITH",
+            "MASK",
+            "NOISE",
+            "OMEGA",
+            "PHANTOM",
+            "QUANTUM",
+            "ROOT",
+            "SCILAB",
+            "TRANCE",
+            "UNIX",
+            "VOID",
+            "WAVE",
+            "XANADU",
+            "YGGDRASIL",
+            "ZERO",
+            "ANOMALY",
+            "BEAR",
+            "CRYPT",
+            "DARK",
+            "ENTITY",
+            "FLOW",
+            "GHOST",
+            "HACK",
+            "ICON",
+            "JUDGMENT",
+            "KEY",
+            "LOGOS",
+            "METAVERSE",
+            "NODE",
+            "OSCILLATION",
+            "PARADOX",
+            "QUERY",
+            "RIBBON",
+            "SHADOW",
+            "TUNNEL",
+            "UNKNOWN",
+            "VISION",
+            "WALL",
+            "XEROX",
+            "YOUTH",
+            "ZEAL",
+            "ABSTRACT",
+            "BOOT",
+            "CHAIN",
+            "DREAM",
+            "ERROR",
+            "FALSE",
+            "GATE",
+            "HELLO",
+            "IDENTITY",
+            "JUMP",
+            "KNOT",
+            "LEGACY",
+            "MIRAGE",
+            "NET",
+            "ORACLE",
+            "PRIME",
+            "QUEST",
+            "RIFT",
+            "SIGNAL",
+            "TRACE",
+            "UTOPIA",
+            "VEIL",
+            "WITNESS",
+            "XENON",
+            "YIELD",
+            "ZENITH",
         ]
-
 
         CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
 
@@ -131,7 +218,9 @@ class LainMinigameDialog(QDialog):
             for j in range(3):  # 3 columns
                 btn = ScaledButton("")
                 btn.setMinimumHeight(30)
-                btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+                btn.setSizePolicy(
+                    QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+                )
                 btn.setHidden(True)
                 index = i * 3 + j
                 btn.clicked.connect(self._create_button_handler(index))
@@ -288,7 +377,9 @@ class LainMinigameDialog(QDialog):
         self.completed_sequences += 1
 
         self._add_terminal_text(">>> SEQUENCE COMPLETE ✓\n")
-        self._add_terminal_text(f">>> BONUS: {sequence_bonus} + TIME: {time_bonus * 0.01}s\n")
+        self._add_terminal_text(
+            f">>> BONUS: {sequence_bonus} + TIME: {time_bonus * 0.01}s\n"
+        )
 
         # Level up every 3 sequences
         if self.completed_sequences % 3 == 0:
@@ -298,7 +389,9 @@ class LainMinigameDialog(QDialog):
         self.add_terminal_message()
 
         # Calculate grace period - starts at 5s, decreases by 0.25s per sequence, minimum 0.5s
-        self.grace_duration = max(0.5, self.grace_duration_start_from - (self.completed_sequences * 0.25))
+        self.grace_duration = max(
+            0.5, self.grace_duration_start_from - (self.completed_sequences * 0.25)
+        )
 
         # Calculate bonus time to add during grace period
         self.bonus_time_to_add = float(time_bonus) * 0.01
@@ -326,10 +419,12 @@ class LainMinigameDialog(QDialog):
             ">>> Psyche integration in progress",
             ">>> Wired signal strength recalibrating",
             ">>> Consciousness upload paused",
-            ">>> Interface with Layer 09 momentarily suspended"
+            ">>> Interface with Layer 09 momentarily suspended",
         ]
 
-        self._add_terminal_text(f"{random.choice(grace_start_messages)} [{self.grace_duration:.1f}s]\n")
+        self._add_terminal_text(
+            f"{random.choice(grace_start_messages)} [{self.grace_duration:.1f}s]\n"
+        )
 
         self.update_display()
 
@@ -385,7 +480,7 @@ class LainMinigameDialog(QDialog):
                     ">>> Wired access: granted",
                     ">>> Tachikoma units: ready",
                     ">>> Schizophrenia protocol: standby",
-                    ">>> Layer 09: accessible"
+                    ">>> Layer 09: accessible",
                 ]
 
                 self._add_terminal_text(f"{random.choice(grace_end_messages)}\n")
@@ -435,7 +530,9 @@ class LainMinigameDialog(QDialog):
         elif self.time_left <= 30:
             self.time_bar.setFormat(f"⚠ TIME CRITICAL: {self.time_left:.1f}s ⚠")
             # Flash warning color
-            flash = int(self.time_left * 5) % 2  # Multiply by 10 for more frequent flashing
+            flash = (
+                int(self.time_left * 5) % 2
+            )  # Multiply by 10 for more frequent flashing
             if flash:
                 self.time_bar.setStyleSheet("""
                     QProgressBar::chunk {
@@ -508,7 +605,7 @@ class LainMinigameDialog(QDialog):
             ">>> WALL BREACH: CONTAINED",
             ">>> XEROX PARC PROTOCOL: ACTIVE",
             ">>> YOUTH MEMORY: ACCESSED",
-            ">>> ZEAL MODE: DISABLED"
+            ">>> ZEAL MODE: DISABLED",
         ]
 
         if random.random() < 0.2:
@@ -567,11 +664,11 @@ class LainMinigameDialog(QDialog):
 
         # Ask to play again
         reply = QMessageBox.question(
-            self, "Session Terminated",
-            f"Final Score: {final_score}\n\n"
-            "Would you like to play again?",
+            self,
+            "Session Terminated",
+            f"Final Score: {final_score}\n\nWould you like to play again?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes
+            QMessageBox.StandardButton.Yes,
         )
 
         if reply == QMessageBox.StandardButton.Yes:

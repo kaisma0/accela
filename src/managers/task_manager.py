@@ -120,7 +120,6 @@ class TaskManager:
         self.STATUS_IN_PROGRESS = "#FFA500"
         self.STATUS_ERROR = "#FF0000"
 
-
     def _get_install_folder_name(self) -> str:
         """Return the sanitised install folder name derived from game_data."""
         if not self.game_data:
@@ -146,9 +145,7 @@ class TaskManager:
 
         self.main_window.progress_bar.setVisible(True)
         self.main_window.progress_bar.setRange(0, 0)
-        self.main_window.drop_text_label.setText(
-            f"Processing: {Path(zip_path).name}"
-        )
+        self.main_window.drop_text_label.setText(f"Processing: {Path(zip_path).name}")
 
         self.zip_task = ProcessZipTask()
         self.zip_task_runner = TaskRunner()
@@ -358,7 +355,9 @@ class TaskManager:
             app_token = self.game_data.get("app_token")
             if app_token:
                 install_folder_name = self._get_install_folder_name()
-                game_dir = Path(dest_path) / "steamapps" / "common" / install_folder_name
+                game_dir = (
+                    Path(dest_path) / "steamapps" / "common" / install_folder_name
+                )
                 token_file = game_dir / "apptoken.txt"
                 try:
                     game_dir.mkdir(parents=True, exist_ok=True)
@@ -428,18 +427,18 @@ class TaskManager:
                 return
 
         # Check for actual errors, avoiding false positives from files with "error" in their name
-        if is_error_prefix or " failed" in lowered or re.search(r'\berror\b', lowered):
+        if is_error_prefix or " failed" in lowered or re.search(r"\berror\b", lowered):
             # Exclude lines that are clearly just progress indicators reporting a file path
-            if not re.match(r'^\d{1,3}(?:\.\d{1,2})?% .+', text):
+            if not re.match(r"^\d{1,3}(?:\.\d{1,2})?% .+", text):
                 logger.error(f"{text}")
                 self._last_download_log_time = now
                 self._last_download_log_line = text
                 return
 
         # Check for actual warnings, avoiding false positives from files with "warning" in their name
-        if is_warning_prefix or re.search(r'\bwarning\b', lowered):
+        if is_warning_prefix or re.search(r"\bwarning\b", lowered):
             # Exclude lines that are clearly just progress indicators reporting a file path
-            if not re.match(r'^\d{1,3}(?:\.\d{1,2})?% .+', text):
+            if not re.match(r"^\d{1,3}(?:\.\d{1,2})?% .+", text):
                 logger.warning(f"{text}")
                 self._last_download_log_time = now
                 self._last_download_log_line = text
@@ -463,7 +462,10 @@ class TaskManager:
                     self._last_download_log_line = text
             return
 
-        if now - self._last_download_log_time >= 15 and text != self._last_download_log_line:
+        if (
+            now - self._last_download_log_time >= 15
+            and text != self._last_download_log_line
+        ):
             logger.info(f"{text}")
             self._last_download_log_time = now
             self._last_download_log_line = text
@@ -550,7 +552,13 @@ class TaskManager:
             and self.game_data
             and self.current_dest_path
         ):
-            game_directory = str(Path(self.current_dest_path) / "steamapps" / "common" / install_folder_name)
+            install_folder_name = self._get_install_folder_name()
+            game_directory = str(
+                Path(self.current_dest_path)
+                / "steamapps"
+                / "common"
+                / install_folder_name
+            )
             logger.info("Auto-application triggered post-download")
             self.apply_goldberg_to_game(
                 game_directory=game_directory,
@@ -563,9 +571,7 @@ class TaskManager:
         steamless_enabled = self.settings.value("use_steamless", False, type=bool)
 
         if steamless_enabled and not self.is_cancelling:
-            logger.info(
-                "Feature enabled; preparing for DRM removal..."
-            )
+            logger.info("Feature enabled; preparing for DRM removal...")
             self.main_window.drop_text_label.setText(
                 f"Running Steamless: {self.game_data.get('game_name', '')}"
             )
@@ -578,14 +584,8 @@ class TaskManager:
         )
         slssteam_mode = self.settings.value("slssteam_mode", False, type=bool)
 
-        if (
-            shortcuts_enabled
-            and slssteam_mode
-            and not self.is_cancelling
-        ):
-            logger.info(
-                "Generating application shortcuts..."
-            )
+        if shortcuts_enabled and slssteam_mode and not self.is_cancelling:
+            logger.info("Generating application shortcuts...")
             self.main_window.drop_text_label.setText(
                 f"Creating Application Shortcuts: {self.game_data.get('game_name', '')}"
             )
@@ -681,7 +681,11 @@ class TaskManager:
             f"Generating .acf for {install_folder_name}"
         )
 
-        acf_path = Path(self.current_dest_path) / "steamapps" / f"appmanifest_{self.game_data['appid']}.acf"
+        acf_path = (
+            Path(self.current_dest_path)
+            / "steamapps"
+            / f"appmanifest_{self.game_data['appid']}.acf"
+        )
 
         # Build depot string
         buildid = self.game_data.get("buildid", "0")
@@ -718,7 +722,7 @@ class TaskManager:
             # Linux-native depots do not need override config.
             if platform == "linux":
                 downloading_linux_depots = True
-                logger.info(f"-> Identified as Linux depot")
+                logger.info("-> Identified as Linux depot")
             elif platform and platform != "unknown":
                 downloading_proton_depots = True
                 depot_source_platform = platform
@@ -871,7 +875,9 @@ class TaskManager:
             return
 
         install_folder_name = self._get_install_folder_name()
-        game_directory = str(Path(self.current_dest_path) / "steamapps" / "common" / install_folder_name)
+        game_directory = str(
+            Path(self.current_dest_path) / "steamapps" / "common" / install_folder_name
+        )
 
         if not Path(game_directory).exists():
             logger.warning(
@@ -903,7 +909,9 @@ class TaskManager:
             return
 
         install_folder_name = self._get_install_folder_name()
-        game_directory = str(Path(self.current_dest_path) / "steamapps" / "common" / install_folder_name)
+        game_directory = str(
+            Path(self.current_dest_path) / "steamapps" / "common" / install_folder_name
+        )
 
         if not Path(game_directory).exists():
             logger.warning(
@@ -986,7 +994,9 @@ class TaskManager:
         self.steamless_task.error.connect(self._handle_steamless_task_error)
         self.steamless_task.start()
 
-    def run_chmod_for_game(self, game_directory: str, game_name: str, show_dialog: bool = False):
+    def run_chmod_for_game(
+        self, game_directory: str, game_name: str, show_dialog: bool = False
+    ):
         """Make all executables in a game directory runnable (from Game Library)"""
         logger.info(f"Starting chmod for game: {game_name}")
         logger.info(f"Game directory: {game_directory}")
@@ -999,17 +1009,25 @@ class TaskManager:
         if show_dialog:
             self._show_chmod_resume_dialog(game_name, file_count)
 
-    def apply_goldberg_to_game(self, game_directory: str, appid: str, game_name: str, show_dialog: bool = True) -> bool:
+    def apply_goldberg_to_game(
+        self, game_directory: str, appid: str, game_name: str, show_dialog: bool = True
+    ) -> bool:
         """Rename steam_api DLLs to .valve and copy Goldberg files into directories where the DLLs were found.
 
         Returns True on success, False otherwise. Shows dialogs when show_dialog is True.
         """
-        logger.info(f"Applying Goldberg for game: {game_name} (AppID: {appid}) in {game_directory}")
+        logger.info(
+            f"Applying Goldberg for game: {game_name} (AppID: {appid}) in {game_directory}"
+        )
 
         if not game_directory or not Path(game_directory).exists():
             logger.warning(f"Game directory not found: {game_directory}")
             if show_dialog:
-                QMessageBox.warning(self.main_window, "Directory Not Found", f"Game directory not found: {game_directory}")
+                QMessageBox.warning(
+                    self.main_window,
+                    "Directory Not Found",
+                    f"Game directory not found: {game_directory}",
+                )
             return False
 
         # Find directories containing steam_api DLLs
@@ -1022,7 +1040,11 @@ class TaskManager:
         if not found_dirs:
             logger.info("No steam_api DLLs found in game directory tree")
             if show_dialog:
-                QMessageBox.information(self.main_window, "No DLLs Found", "No steam_api.dll or steam_api64.dll files were found in the game folder tree.")
+                QMessageBox.information(
+                    self.main_window,
+                    "No DLLs Found",
+                    "No steam_api.dll or steam_api64.dll files were found in the game folder tree.",
+                )
             return False
 
         # Source Goldberg directory in bundled deps
@@ -1030,7 +1052,11 @@ class TaskManager:
         if not goldberg_src.exists():
             logger.error(f"Goldberg source not found: {goldberg_src}")
             if show_dialog:
-                QMessageBox.critical(self.main_window, "Source Missing", f"Goldberg folder not found: {goldberg_src}")
+                QMessageBox.critical(
+                    self.main_window,
+                    "Source Missing",
+                    f"Goldberg folder not found: {goldberg_src}",
+                )
             return False
 
         processed = 0
@@ -1052,7 +1078,9 @@ class TaskManager:
                                 src_path.replace(target_path)
                                 logger.info(f"Renamed {src_path} -> {target_path}")
                             else:
-                                logger.info(f"Target already exists, skipping rename: {target_path}")
+                                logger.info(
+                                    f"Target already exists, skipping rename: {target_path}"
+                                )
                         except Exception as e:
                             logger.warning(f"Failed to rename {src_path}: {e}")
 
@@ -1067,12 +1095,18 @@ class TaskManager:
                         else:
                             logger.warning(f"Goldberg DLL not found in deps: {src_dll}")
                     except Exception as e:
-                        logger.warning(f"Failed to copy Goldberg DLL {src_dll} to {dest_dll}: {e}")
+                        logger.warning(
+                            f"Failed to copy Goldberg DLL {src_dll} to {dest_dll}: {e}"
+                        )
 
                 # Copy Goldberg contents into this directory
                 for item in goldberg_src.iterdir():
                     # Avoid copying DLLs/appid here; handled explicitly above/below
-                    if item.name.lower() in ("steam_api.dll", "steam_api64.dll", "steam_appid.txt"):
+                    if item.name.lower() in (
+                        "steam_api.dll",
+                        "steam_api64.dll",
+                        "steam_appid.txt",
+                    ):
                         continue
                     dest_path = Path(dest_dir) / item.name
                     try:
@@ -1092,32 +1126,48 @@ class TaskManager:
                         f.write(str(appid))
                     logger.info(f"Wrote steam_appid.txt to {appid_file}")
                 except Exception as e:
-                    logger.warning(f"Failed to write steam_appid.txt in {dest_dir}: {e}")
+                    logger.warning(
+                        f"Failed to write steam_appid.txt in {dest_dir}: {e}"
+                    )
 
                 processed += 1
 
             if show_dialog:
-                QMessageBox.information(self.main_window, "Apply Goldberg", f"Applied Goldberg files to {processed} folder(s).")
+                QMessageBox.information(
+                    self.main_window,
+                    "Apply Goldberg",
+                    f"Applied Goldberg files to {processed} folder(s).",
+                )
 
             return True
 
         except Exception as e:
             logger.exception(f"Error applying Goldberg: {e}")
             if show_dialog:
-                QMessageBox.critical(self.main_window, "Error", f"Failed to apply Goldberg: {e}")
+                QMessageBox.critical(
+                    self.main_window, "Error", f"Failed to apply Goldberg: {e}"
+                )
             return False
 
-    def remove_goldberg_from_game(self, game_directory: str, appid: str, game_name: str, show_dialog: bool = True) -> bool:
+    def remove_goldberg_from_game(
+        self, game_directory: str, appid: str, game_name: str, show_dialog: bool = True
+    ) -> bool:
         """Restore original steam_api DLLs from .valve backups and remove Goldberg files.
 
         Returns True on success, False otherwise. Shows dialogs when show_dialog is True.
         """
-        logger.info(f"Removing Goldberg for game: {game_name} (AppID: {appid}) in {game_directory}")
+        logger.info(
+            f"Removing Goldberg for game: {game_name} (AppID: {appid}) in {game_directory}"
+        )
 
         if not game_directory or not Path(game_directory).exists():
             logger.warning(f"Game directory not found: {game_directory}")
             if show_dialog:
-                QMessageBox.warning(self.main_window, "Directory Not Found", f"Game directory not found: {game_directory}")
+                QMessageBox.warning(
+                    self.main_window,
+                    "Directory Not Found",
+                    f"Game directory not found: {game_directory}",
+                )
             return False
 
         # Find directories containing .valve backups
@@ -1130,7 +1180,11 @@ class TaskManager:
         if not found_dirs:
             logger.info("No .valve backups found in game directory tree")
             if show_dialog:
-                QMessageBox.information(self.main_window, "No Backups Found", "No .valve backup files were found in the game folder tree.")
+                QMessageBox.information(
+                    self.main_window,
+                    "No Backups Found",
+                    "No .valve backup files were found in the game folder tree.",
+                )
             return False
 
         # Goldberg source (used to know what to remove). If missing, we'll still attempt to restore backups.
@@ -1142,7 +1196,9 @@ class TaskManager:
             except Exception:
                 goldberg_items = []
         else:
-            logger.debug(f"Goldberg source not found (removal will only restore backups): {goldberg_src}")
+            logger.debug(
+                f"Goldberg source not found (removal will only restore backups): {goldberg_src}"
+            )
 
         processed = 0
         try:
@@ -1174,7 +1230,9 @@ class TaskManager:
                             extra_path.unlink()
                             logger.info(f"Removed extra Goldberg DLL: {extra_path}")
                         except Exception as e:
-                            logger.warning(f"Failed to remove extra DLL {extra_path}: {e}")
+                            logger.warning(
+                                f"Failed to remove extra DLL {extra_path}: {e}"
+                            )
 
                 # Remove Goldberg files that were copied (skip steam_api DLLs and steam_appid.txt)
                 for name in goldberg_items:
@@ -1190,7 +1248,9 @@ class TaskManager:
                             dest_path.unlink()
                             logger.info(f"Removed Goldberg file: {dest_path}")
                     except Exception as e:
-                        logger.warning(f"Failed to remove Goldberg item {dest_path}: {e}")
+                        logger.warning(
+                            f"Failed to remove Goldberg item {dest_path}: {e}"
+                        )
 
                 # Remove steam_appid.txt if it matches provided appid
                 try:
@@ -1206,29 +1266,43 @@ class TaskManager:
                                 appid_file.unlink()
                                 logger.info(f"Removed steam_appid.txt from {dest_dir}")
                             except Exception as e:
-                                logger.warning(f"Failed to remove steam_appid.txt in {dest_dir}: {e}")
+                                logger.warning(
+                                    f"Failed to remove steam_appid.txt in {dest_dir}: {e}"
+                                )
                 except Exception as e:
                     logger.warning(f"Error handling steam_appid.txt in {dest_dir}: {e}")
 
                 processed += 1
 
             if show_dialog:
-                QMessageBox.information(self.main_window, "Remove Goldberg", f"Restored originals and removed Goldberg files from {processed} folder(s).")
+                QMessageBox.information(
+                    self.main_window,
+                    "Remove Goldberg",
+                    f"Restored originals and removed Goldberg files from {processed} folder(s).",
+                )
 
             return True
 
         except Exception as e:
             logger.exception(f"Error removing Goldberg: {e}")
             if show_dialog:
-                QMessageBox.critical(self.main_window, "Error", f"Failed to remove Goldberg: {e}")
+                QMessageBox.critical(
+                    self.main_window, "Error", f"Failed to remove Goldberg: {e}"
+                )
             return False
 
     def _run_chmod_recursive(self, game_directory: str) -> int:
         """Recursively find and chmod executable files in game directory"""
         # Common Linux binary/script extensions used by games
         linux_binary_extensions = {
-            ".sh", ".bash", ".x86", ".x86_64",
-            ".bin", ".run", ".elf", ".pck"
+            ".sh",
+            ".bash",
+            ".x86",
+            ".x86_64",
+            ".bin",
+            ".run",
+            ".elf",
+            ".pck",
         }
 
         # ELF magic bytes (4 bytes: 0x7F + "ELF")
@@ -1255,7 +1329,9 @@ class TaskManager:
                     try:
                         with open(file_path, "rb") as f:
                             header = f.read(4)
-                            if header.startswith(elf_magic) or header.startswith(shebang_magic):
+                            if header.startswith(elf_magic) or header.startswith(
+                                shebang_magic
+                            ):
                                 should_chmod = True
                     except (IOError, OSError):
                         continue
@@ -1275,7 +1351,9 @@ class TaskManager:
                         )
 
         if chmod_count > 0:
-            logger.info(f"Set executable permissions for {chmod_count} Linux binary files")
+            logger.info(
+                f"Set executable permissions for {chmod_count} Linux binary files"
+            )
         else:
             logger.info("No Linux binaries found that needed permission changes")
 
@@ -1342,11 +1420,7 @@ class TaskManager:
             )
             slssteam_mode = self.settings.value("slssteam_mode", False, type=bool)
 
-            if (
-                shortcuts_enabled
-                and slssteam_mode
-                and not self.is_cancelling
-            ):
+            if shortcuts_enabled and slssteam_mode and not self.is_cancelling:
                 logger.info("Generating application shortcuts...")
                 game_name = (
                     self.game_data.get("game_name", "") if self.game_data else ""
@@ -1388,7 +1462,11 @@ class TaskManager:
 
         for message in self._steamless_progress_log:
             # Count executables found (from directory scan)
-            if "Found " in message and "executable(s)" in message and "to evaluate" in message:
+            if (
+                "Found " in message
+                and "executable(s)" in message
+                and "to evaluate" in message
+            ):
                 try:
                     # Extract number from "Found X executable(s) to evaluate"
                     parts = message.split()
@@ -1579,7 +1657,9 @@ class TaskManager:
     def _start_application_shortcuts_processing(self):
         """Start application shortcuts creation after download completion"""
         if not self.game_data:
-            logger.warning("No game_data found, skipping application shortcuts creation")
+            logger.warning(
+                "No game_data found, skipping application shortcuts creation"
+            )
             self._continue_after_download()
             return
 
@@ -1642,9 +1722,7 @@ class TaskManager:
             logger.info(
                 "Starting achievement generation after application shortcuts completion"
             )
-            game_name = (
-                self.game_data.get("game_name", "") if self.game_data else ""
-            )
+            game_name = self.game_data.get("game_name", "") if self.game_data else ""
             self.main_window.drop_text_label.setText(
                 f"Generating Achievements: {game_name}"
             )
@@ -1672,9 +1750,7 @@ class TaskManager:
             logger.info(
                 "Starting achievement generation after application shortcuts error"
             )
-            game_name = (
-                self.game_data.get("game_name", "") if self.game_data else ""
-            )
+            game_name = self.game_data.get("game_name", "") if self.game_data else ""
             self.main_window.drop_text_label.setText(
                 f"Generating Achievements: {game_name}"
             )
@@ -1714,7 +1790,9 @@ class TaskManager:
             main_appid = self.game_data.get("appid")
             game_name = self.game_data.get("game_name", "")
             if main_appid:
-                added = add_list_item(config_path, "AdditionalApps", str(main_appid), game_name)
+                added = add_list_item(
+                    config_path, "AdditionalApps", str(main_appid), game_name
+                )
                 if added:
                     logger.info(
                         f"Added main AppID '{main_appid}' to SLSsteam AdditionalApps"
@@ -1883,9 +1961,17 @@ class TaskManager:
         # 2. Any in_progress → orange
         # 3. At least one component that ran is "ok" → green
         # 4. All are "not_run" (nothing ran yet) → accent_color
-        if ddm_status == "error" or slscheevo_status == "error" or steamless_status == "error":
+        if (
+            ddm_status == "error"
+            or slscheevo_status == "error"
+            or steamless_status == "error"
+        ):
             overall_color = self.STATUS_ERROR
-        elif ddm_status == "in_progress" or slscheevo_status == "in_progress" or steamless_status == "in_progress":
+        elif (
+            ddm_status == "in_progress"
+            or slscheevo_status == "in_progress"
+            or steamless_status == "in_progress"
+        ):
             overall_color = self.STATUS_IN_PROGRESS
         elif ddm_status == "ok" or slscheevo_status == "ok" or steamless_status == "ok":
             overall_color = self.STATUS_OK
@@ -1912,20 +1998,14 @@ class TaskManager:
             if self.is_download_paused:
                 self.main_window.ui_state.pause_button.setText("Resume")
                 current_job_name = (
-                    Path(self.current_job).name
-                    if self.current_job
-                    else "Unknown"
+                    Path(self.current_job).name if self.current_job else "Unknown"
                 )
-                self.main_window.drop_text_label.setText(
-                    f"Paused: {current_job_name}"
-                )
+                self.main_window.drop_text_label.setText(f"Paused: {current_job_name}")
                 self._stop_speed_monitor()
             else:
                 self.main_window.ui_state.pause_button.setText("Pause")
                 current_job_name = (
-                    Path(self.current_job).name
-                    if self.current_job
-                    else "Unknown"
+                    Path(self.current_job).name if self.current_job else "Unknown"
                 )
                 self.main_window.drop_text_label.setText(
                     f"Downloading: {current_job_name}"
@@ -1989,7 +2069,9 @@ class TaskManager:
         install_folder_name = self._get_install_folder_name()
 
         steamapps_dir = Path(self.current_dest_path) / "steamapps"
-        appmanifest_path = steamapps_dir / f"appmanifest_{self.game_data.get('appid', '')}.acf"
+        appmanifest_path = (
+            steamapps_dir / f"appmanifest_{self.game_data.get('appid', '')}.acf"
+        )
         if appmanifest_path.exists():
             return True
 
@@ -2031,7 +2113,9 @@ class TaskManager:
         """Kill the download process"""
         if self.download_task and self.download_task.process:
             if psutil is None:
-                logger.error("psutil is not available; cannot terminate download process safely.")
+                logger.error(
+                    "psutil is not available; cannot terminate download process safely."
+                )
                 return
             logger.info("Terminating active download process...")
             try:
@@ -2281,7 +2365,6 @@ class TaskManager:
         else:
             self._last_slscheevo_status = "ok" if slscheevo_ok else "error"
             self._last_slscheevo_status_text = "Completed" if slscheevo_ok else "Failed"
-
 
         if steamless_ok is None:
             self._last_steamless_status = "not_run"

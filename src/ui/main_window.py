@@ -42,7 +42,6 @@ logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
-
     RESIZE_HANDLE_WIDTH = 6
 
     _update_available = pyqtSignal(object)
@@ -104,7 +103,9 @@ class MainWindow(QMainWindow):
 
         api_key = self.settings.value("morrenus_api_key", "", type=str).strip()
         if not api_key:
-            logger.info("Skipping Morrenus startup auto-refresh because API key is empty.")
+            logger.info(
+                "Skipping Morrenus startup auto-refresh because API key is empty."
+            )
             return
 
         self._morrenus_key_under_validation = api_key
@@ -119,6 +120,7 @@ class MainWindow(QMainWindow):
 
     def _validate_morrenus_key_worker(self, api_key):
         import time
+
         max_retries = 15
         for attempt in range(max_retries):
             is_valid, error = morrenus_api.validate_api_key(api_key)
@@ -129,10 +131,10 @@ class MainWindow(QMainWindow):
 
             error_str = str(error or "")
             is_auth_error = (
-                "Invalid or missing API key" in error_str or
-                "Access denied" in error_str or
-                "API Error (401" in error_str or
-                "API Error (403" in error_str
+                "Invalid or missing API key" in error_str
+                or "Access denied" in error_str
+                or "API Error (401" in error_str
+                or "API Error (403" in error_str
             )
 
             if is_auth_error:
@@ -152,7 +154,9 @@ class MainWindow(QMainWindow):
     def _on_morrenus_key_validation_done(self, is_valid, error):
         current_api_key = self.settings.value("morrenus_api_key", "", type=str).strip()
         if current_api_key != self._morrenus_key_under_validation:
-            logger.info("Morrenus API key changed during startup validation. Skipping auto-refresh.")
+            logger.info(
+                "Morrenus API key changed during startup validation. Skipping auto-refresh."
+            )
             return
 
         if is_valid:
@@ -163,10 +167,10 @@ class MainWindow(QMainWindow):
         # We don't want to wipe the key or interrupt the user for network, server, or rate-limit errors
         error_str = str(error or "")
         is_auth_error = (
-            "Invalid or missing API key" in error_str or
-            "Access denied" in error_str or
-            "API Error (401" in error_str or
-            "API Error (403" in error_str
+            "Invalid or missing API key" in error_str
+            or "Access denied" in error_str
+            or "API Error (401" in error_str
+            or "API Error (403" in error_str
         )
 
         if not is_auth_error:
@@ -188,7 +192,9 @@ class MainWindow(QMainWindow):
             return
 
         if not new_key:
-            logger.warning("Morrenus API key refresh was cancelled or no key was extracted.")
+            logger.warning(
+                "Morrenus API key refresh was cancelled or no key was extracted."
+            )
             return
 
         self.settings.setValue("morrenus_api_key", new_key)
@@ -298,7 +304,9 @@ class MainWindow(QMainWindow):
 
         # Create titlebar first if positioned at top
         if self.titlebar_position == "top":
-            self.bottom_titlebar = CustomTitleBar(self, title="ACCELA", is_main_window=True)
+            self.bottom_titlebar = CustomTitleBar(
+                self, title="ACCELA", is_main_window=True
+            )
             self.layout.addWidget(self.bottom_titlebar)
 
         self._create_main_content()
@@ -307,13 +315,16 @@ class MainWindow(QMainWindow):
 
         # Add titlebar at bottom if not already added at top
         if self.titlebar_position != "top":
-            self.bottom_titlebar = CustomTitleBar(self, title="ACCELA", is_main_window=True)
+            self.bottom_titlebar = CustomTitleBar(
+                self, title="ACCELA", is_main_window=True
+            )
             self.layout.addWidget(self.bottom_titlebar)
 
         self.setAcceptDrops(True)
 
     def _setup_resize_handles(self):
         """Setup invisible resize handles for all edges and corners"""
+
         class ResizeHandle(QWidget):
             EDGE_MAP = {
                 "left": Qt.Edge.LeftEdge,
@@ -389,8 +400,16 @@ class MainWindow(QMainWindow):
                 event.accept()
 
         self.resize_handles = {}
-        all_handles = ["top_left", "top_right", "bottom_left", "bottom_right",
-                       "left", "right", "top", "bottom"]
+        all_handles = [
+            "top_left",
+            "top_right",
+            "bottom_left",
+            "bottom_right",
+            "left",
+            "right",
+            "top",
+            "bottom",
+        ]
 
         for name in all_handles:
             handle = ResizeHandle(name, self)
@@ -470,7 +489,9 @@ class MainWindow(QMainWindow):
         self.drop_zone_gif = ScaledLabel()
         self.drop_zone_gif.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.drop_zone_gif.setMinimumHeight(150)
-        self.drop_zone_gif.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.drop_zone_gif.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
 
         # Instruction label
         self.drop_text_label = ScaledFontLabel("Drag and Drop Zip here")
@@ -482,7 +503,9 @@ class MainWindow(QMainWindow):
         self.drop_text_label.setMaximumHeight(48)
 
         # Add to drop zone layout
-        self.drop_zone_layout.addWidget(self.drop_zone_gif, 9)  # main.gif / downloading gifs SIZE
+        self.drop_zone_layout.addWidget(
+            self.drop_zone_gif, 9
+        )  # main.gif / downloading gifs SIZE
         self.drop_zone_layout.addWidget(self.drop_text_label, 1)  # text below GIF
         self.main_layout.addWidget(self.drop_zone_container, 10)
 
@@ -608,9 +631,7 @@ class MainWindow(QMainWindow):
 
     def dropEvent(self, event: QDropEvent):
         urls = event.mimeData().urls()
-        new_jobs = [
-            url.toLocalFile() for url in urls if self._is_valid_zip_url(url)
-        ]
+        new_jobs = [url.toLocalFile() for url in urls if self._is_valid_zip_url(url)]
 
         if new_jobs:
             logger.info(f"Added {len(new_jobs)} file(s) to the queue via drag-drop.")

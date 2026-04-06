@@ -13,8 +13,12 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 logger = logging.getLogger(__name__)
 
-REMOTE_UPDATES_URL = "https://raw.githubusercontent.com/AceSLS/SLSsteam/refs/heads/main/res/updates.yaml"
-INSTALL_SLS_RAW_URL = "https://raw.githubusercontent.com/kaisma0/accela/main/scripts/install-sls.sh"
+REMOTE_UPDATES_URL = (
+    "https://raw.githubusercontent.com/AceSLS/SLSsteam/refs/heads/main/res/updates.yaml"
+)
+INSTALL_SLS_RAW_URL = (
+    "https://raw.githubusercontent.com/kaisma0/accela/main/scripts/install-sls.sh"
+)
 
 
 class DownloadSLSsteamTask(QObject):
@@ -43,9 +47,7 @@ class DownloadSLSsteamTask(QObject):
                 return
 
             self.progress.emit("SLSsteam installation completed successfully")
-            self.completed.emit(
-                "SLSsteam has been successfully installed/updated."
-            )
+            self.completed.emit("SLSsteam has been successfully installed/updated.")
 
         except Exception as e:
             logger.error(f"SLSsteam installation task failed: {e}", exc_info=True)
@@ -203,16 +205,17 @@ class DownloadSLSsteamTask(QObject):
             result["latest_date"] = release_data.get("published_at", "")
 
             # Combine Native and Flatpak paths into a searchable list
-            xdg_data_home = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+            xdg_data_home = os.environ.get("XDG_DATA_HOME") or str(
+                Path.home() / ".local" / "share"
+            )
             possible_install_dirs = [
                 Path(xdg_data_home) / "SLSsteam",
-                Path.home() / ".var/app/com.valvesoftware.Steam/.local/share/SLSsteam"
+                Path.home() / ".var/app/com.valvesoftware.Steam/.local/share/SLSsteam",
             ]
 
             # Find the first directory that actually contains the .so file
             installed_dir = next(
-                (d for d in possible_install_dirs if (d / "SLSsteam.so").exists()),
-                None
+                (d for d in possible_install_dirs if (d / "SLSsteam.so").exists()), None
             )
 
             if not installed_dir:
@@ -226,8 +229,9 @@ class DownloadSLSsteamTask(QObject):
                 with open(version_file, "r") as f:
                     result["installed_version"] = f.read().strip()
 
-
-                result["update_available"] = int(result["latest_version"]) > int(result["installed_version"])
+                result["update_available"] = int(result["latest_version"]) > int(
+                    result["installed_version"]
+                )
             else:
                 result["installed_version"] = "Unknown"
 
@@ -235,12 +239,14 @@ class DownloadSLSsteamTask(QObject):
             hash_check = DownloadSLSsteamTask.check_steamclient_hash()
 
             # Update the base dict with the hash check results
-            result.update({
-                "steamclient_found": hash_check.get("found", False),
-                "steamclient_hash": hash_check.get("hash", "") or "",
-                "steamclient_mismatch": hash_check.get("mismatch"),
-                "steamclient_error": hash_check.get("error", False),
-            })
+            result.update(
+                {
+                    "steamclient_found": hash_check.get("found", False),
+                    "steamclient_hash": hash_check.get("hash", "") or "",
+                    "steamclient_mismatch": hash_check.get("mismatch"),
+                    "steamclient_error": hash_check.get("error", False),
+                }
+            )
 
             return result
 

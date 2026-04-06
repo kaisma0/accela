@@ -228,7 +228,9 @@ class CustomGifItem(QWidget):
 
         # Create and show the view dialog
         view_dialog = QDialog(self)
-        view_dialog.setWindowFlags(view_dialog.windowFlags() | Qt.WindowType.FramelessWindowHint)
+        view_dialog.setWindowFlags(
+            view_dialog.windowFlags() | Qt.WindowType.FramelessWindowHint
+        )
         view_dialog.setWindowTitle(f"Viewing: {Path(file_to_show).name}")
         view_dialog.setMinimumSize(400, 400)
 
@@ -339,7 +341,9 @@ class CustomGifsDialog(QDialog):
         )
         layout.addWidget(title_label)
 
-        desc_label = QLabel(f"Upload custom GIFs to replace the default ones.\nCustom GIFs are stored in:\n{get_base_path() / 'gifs' / 'custom'}")
+        desc_label = QLabel(
+            f"Upload custom GIFs to replace the default ones.\nCustom GIFs are stored in:\n{get_base_path() / 'gifs' / 'custom'}"
+        )
         desc_label.setStyleSheet("color: #888888; margin-bottom: 20px;")
         desc_label.setWordWrap(True)
         layout.addWidget(desc_label)
@@ -440,7 +444,9 @@ class CustomGifsDialog(QDialog):
         self.renumber_download_gifs()
 
         # Check if there are existing download GIF items in the UI
-        download_items = [item for item in self.gif_items if _is_download_gif(item.gif_name)]
+        download_items = [
+            item for item in self.gif_items if _is_download_gif(item.gif_name)
+        ]
 
         # Sort by the number in the filename
         download_items.sort(key=lambda x: _get_download_num(x.gif_name))
@@ -513,13 +519,18 @@ class CustomGifsDialog(QDialog):
     def renumber_download_gifs(self):
         """Renumber download GIFs to maintain sequential order without gaps"""
         # Get all download GIF items
-        download_items = [item for item in self.gif_items if _is_download_gif(item.gif_name)]
+        download_items = [
+            item for item in self.gif_items if _is_download_gif(item.gif_name)
+        ]
 
         # Sort by current number in filename
         download_items.sort(key=lambda x: _get_download_num(x.gif_name))
 
         # Check if we have gaps in the numbering
-        needs_renumbering = any(_get_download_num(item.gif_name) != i for i, item in enumerate(download_items))
+        needs_renumbering = any(
+            _get_download_num(item.gif_name) != i
+            for i, item in enumerate(download_items)
+        )
 
         # If no gaps, we're done
         if not needs_renumbering:

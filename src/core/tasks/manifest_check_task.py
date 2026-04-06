@@ -4,12 +4,11 @@ from pathlib import Path
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
+from core.steam_api import batched_get_product_info
+
 from utils.helpers import get_base_path
 
 logger = logging.getLogger(__name__)
-
-from core.steam_api import batched_get_product_info
-
 
 
 class ManifestCheckTask(QObject):
@@ -83,11 +82,15 @@ class ManifestCheckTask(QObject):
 
             # Calculate number of batches for progress reporting
             num_batches = (len(appid_list) + batch_size - 1) // batch_size
-            logger.info(f"Will process {len(appid_list)} appids in {num_batches} batches")
+            logger.info(
+                f"Will process {len(appid_list)} appids in {num_batches} batches"
+            )
 
             # Fetch all data in batched calls
             if batched_get_product_info is None:
-                logger.warning("batched_get_product_info is not available; skipping API fetch and assuming no data.")
+                logger.warning(
+                    "batched_get_product_info is not available; skipping API fetch and assuming no data."
+                )
                 batched_results = {}
             else:
                 batched_results = batched_get_product_info(
@@ -113,7 +116,9 @@ class ManifestCheckTask(QObject):
 
                 try:
                     # Use batched results to determine update status
-                    update_status = self._check_game_update_with_batched_data(game, batched_results)
+                    update_status = self._check_game_update_with_batched_data(
+                        game, batched_results
+                    )
                     # Emit signal with results
                     self.game_update_checked.emit(appid, update_status)
 
@@ -161,62 +166,66 @@ class ManifestCheckTask(QObject):
             return depot_id, manifest_id, access_token
 
         except Exception as e:
-            logger.debug(f"Failed to parse depot file '{depot_file}' for appid {appid}: {e}")
+            logger.debug(
+                f"Failed to parse depot file '{depot_file}' for appid {appid}: {e}"
+            )
             return None, None, None
 
     def _check_game_update_with_batched_data(self, game_data, batched_results):
-            """
-            Check if a game has an update available using pre-fetched batched data.
+        """
+        Check if a game has an update available using pre-fetched batched data.
 
-            This method uses the results from a batched API call to determine if a game
-            has an update, comparing the saved manifest ID with the current public manifest ID.
+        This method uses the results from a batched API call to determine if a game
+        has an update, comparing the saved manifest ID with the current public manifest ID.
 
-            Args:
-                game_data: Dictionary containing game information
-                batched_results: Dict mapping appid -> product_info from batched_get_product_info()
+        Args:
+            game_data: Dictionary containing game information
+            batched_results: Dict mapping appid -> product_info from batched_get_product_info()
 
-            Returns:
-                str: Status constant ('update_available', 'up_to_date', 'cannot_determine')
-            """
-            appid = game_data.get("appid")
+        Returns:
+            str: Status constant ('update_available', 'up_to_date', 'cannot_determine')
+        """
+        appid = game_data.get("appid")
 
-            # Skip if no valid appid
-            if not appid or appid in ("0", "N/A", "unknown"):
+        # Skip if no valid appid
+        if not appid or appid in ("0", "N/A", "unknown"):
+            return "cannot_determine"
+
+        # Read saved manifest ID
+        saved_main_depot_id, saved_manifest_id, _ = self._parse_depot_file(appid)
+
+        if not saved_main_depot_id or not saved_manifest_id:
+            logger.debug(
+                f"Cannot determine version: Valid depot data not found for app {appid}"
+            )
+            return "cannot_determine"
+
+        # Get current manifest from batched results
+        try:
+            steam_client_data = batched_results.get(appid)
+            if not steam_client_data:
+                logger.debug(f"App {appid} not found in batched results")
                 return "cannot_determine"
 
-            # Read saved manifest ID
-            saved_main_depot_id, saved_manifest_id, _ = self._parse_depot_file(appid)
+            # Safely grab depots, defaulting to an empty dict if the API returned None
+            depots = steam_client_data.get("depots") or {}
 
-            if not saved_main_depot_id or not saved_manifest_id:
-                logger.debug(f"Cannot determine version: Valid depot data not found for app {appid}")
-                return "cannot_determine"
+            # Safely extract the manifest ID
+            current_manifest_id = depots.get(saved_main_depot_id, {}).get("manifest_id")
 
-            # Get current manifest from batched results
-            try:
-                steam_client_data = batched_results.get(appid)
-                if not steam_client_data:
-                    logger.debug(f"App {appid} not found in batched results")
-                    return "cannot_determine"
+            if current_manifest_id:
+                if saved_manifest_id != current_manifest_id:
+                    logger.info(
+                        f"Update available for app {appid}: saved={saved_manifest_id}, current={current_manifest_id}"
+                    )
+                    return "update_available"
+                return "up_to_date"
 
-                # Safely grab depots, defaulting to an empty dict if the API returned None
-                depots = steam_client_data.get("depots") or {}
+            return "cannot_determine"
 
-                # Safely extract the manifest ID
-                current_manifest_id = depots.get(saved_main_depot_id, {}).get("manifest_id")
-
-                if current_manifest_id:
-                    if saved_manifest_id != current_manifest_id:
-                        logger.info(
-                            f"Update available for app {appid}: saved={saved_manifest_id}, current={current_manifest_id}"
-                        )
-                        return "update_available"
-                    return "up_to_date"
-
-                return "cannot_determine"
-
-            except Exception as e:
-                logger.error(f"Error checking for updates for app {appid}: {e}")
-                return "cannot_determine"
+        except Exception as e:
+            logger.error(f"Error checking for updates for app {appid}: {e}")
+            return "cannot_determine"
 
     def stop(self):
         """Stop the task"""

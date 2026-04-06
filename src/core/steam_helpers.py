@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 from pathlib import Path
 import psutil
@@ -40,7 +41,7 @@ def _parse_vdf_libraries(vdf_path: str) -> Dict[int, str]:
         with vdf_file.open("r", encoding="utf-8") as f:
             content = f.read()
 
-        lines = content.split('\n')
+        lines = content.split("\n")
         current_index = None
 
         for line in lines:
@@ -137,7 +138,9 @@ def kill_steam_process() -> bool:
         return False
 
 
-def _find_library(cached_path: Optional[str], default_paths: List[str], lib_name: str) -> Optional[str]:
+def _find_library(
+    cached_path: Optional[str], default_paths: List[str], lib_name: str
+) -> Optional[str]:
     """Helper to check cache or locate existing default library paths."""
     if cached_path and Path(cached_path).exists():
         return cached_path
@@ -163,9 +166,12 @@ def start_steam() -> str:
             [
                 "/usr/lib32/libSLSsteam.so",
                 str(Path.home() / ".local/share/SLSsteam/SLSsteam.so"),
-                str(Path.home() / ".var/app/com.valvesoftware.Steam/.local/share/SLSsteam/SLSsteam.so"),
+                str(
+                    Path.home()
+                    / ".var/app/com.valvesoftware.Steam/.local/share/SLSsteam/SLSsteam.so"
+                ),
             ],
-            "SLSsteam.so"
+            "SLSsteam.so",
         )
 
         library_inject_path = _find_library(
@@ -173,9 +179,12 @@ def start_steam() -> str:
             [
                 "/usr/lib32/libSLS-library-inject.so",
                 str(Path.home() / ".local/share/SLSsteam/library-inject.so"),
-                str(Path.home() / ".var/app/com.valvesoftware.Steam/.local/share/SLSsteam/library-inject.so"),
+                str(
+                    Path.home()
+                    / ".var/app/com.valvesoftware.Steam/.local/share/SLSsteam/library-inject.so"
+                ),
             ],
-            "library-inject.so"
+            "library-inject.so",
         )
 
         if slssteam_path and library_inject_path:
@@ -199,7 +208,9 @@ def start_steam() -> str:
         return "FAILED"
 
 
-def start_steam_with_slssteam(slssteam_path: str = None, library_inject_path: str = None) -> str:
+def start_steam_with_slssteam(
+    slssteam_path: str = None, library_inject_path: str = None
+) -> str:
     """Start Steam on Linux with SLSsteam.so AND library-inject.so via LD_AUDIT
     Returns: "SUCCESS", "FAILED", or "NEEDS_USER_PATH"
     """
@@ -208,11 +219,15 @@ def start_steam_with_slssteam(slssteam_path: str = None, library_inject_path: st
         return "NEEDS_USER_PATH"
 
     if not library_inject_path or not Path(library_inject_path).exists():
-        logger.error(f"library-inject.so path is invalid or does not exist: {library_inject_path}")
+        logger.error(
+            f"library-inject.so path is invalid or does not exist: {library_inject_path}"
+        )
         return "NEEDS_USER_PATH"
 
     try:
-        logger.info(f"Executing Steam with LD_AUDIT: {library_inject_path}:{slssteam_path}")
+        logger.info(
+            f"Executing Steam with LD_AUDIT: {library_inject_path}:{slssteam_path}"
+        )
         env = os.environ.copy()
         env["LD_AUDIT"] = f"{library_inject_path}:{slssteam_path}"
         subprocess.Popen(["steam"], env=env, start_new_session=True)

@@ -1,9 +1,25 @@
 import logging
 
 from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtGui import QColor, QIcon, QMovie, QPainter, QPixmap, QShortcut, QKeySequence
+from PyQt6.QtGui import (
+    QColor,
+    QIcon,
+    QMovie,
+    QPainter,
+    QPixmap,
+    QShortcut,
+    QKeySequence,
+)
 from PyQt6.QtSvg import QSvgRenderer
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget, QSizePolicy, QVBoxLayout
+from PyQt6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QWidget,
+    QSizePolicy,
+    QVBoxLayout,
+)
 
 from utils.helpers import get_base_path
 from utils.settings import get_settings
@@ -37,9 +53,11 @@ class CustomTitleBar(QFrame):
     @classmethod
     def reposition_dialog_titlebar(cls, dialog, position=None):
         """Reposition an already-created dialog titlebar to top/bottom."""
-        if not (hasattr(dialog, "_base_layout") and
-                hasattr(dialog, "_titlebar") and
-                hasattr(dialog, "_tb_content_widget")):
+        if not (
+            hasattr(dialog, "_base_layout")
+            and hasattr(dialog, "_titlebar")
+            and hasattr(dialog, "_tb_content_widget")
+        ):
             return
 
         if position is None:
@@ -96,10 +114,14 @@ class CustomTitleBar(QFrame):
             self._setup_main_window_widgets(parent)
 
         # Window control buttons (minimize, maximize, close)
-        self.minimize_button = self._create_svg_button(MINIMIZE, self._minimize_window, "Minimize")
+        self.minimize_button = self._create_svg_button(
+            MINIMIZE, self._minimize_window, "Minimize"
+        )
         self.right_layout.addWidget(self.minimize_button)
 
-        self.maximize_button = self._create_svg_button(MAXIMIZE, self._maximize_window, "Maximize")
+        self.maximize_button = self._create_svg_button(
+            MAXIMIZE, self._maximize_window, "Maximize"
+        )
         self.right_layout.addWidget(self.maximize_button)
 
         self.close_button = self._create_svg_button(POWER_SVG, parent.close, "Close")
@@ -107,7 +129,9 @@ class CustomTitleBar(QFrame):
 
         self.title_label = QLabel(title)
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.title_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.title_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
 
         self._update_title_label_style()
 
@@ -118,8 +142,12 @@ class CustomTitleBar(QFrame):
         self.setLayout(self.layout)
 
         # Set policies
-        self.left_widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.right_widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.left_widget.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
+        self.right_widget.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
 
         self._update_sizing()
 
@@ -138,24 +166,37 @@ class CustomTitleBar(QFrame):
         if self.navi_movie.isValid():
             self.navi_movie.jumpToFrame(0)
             orig = self.navi_movie.currentImage().size()
-            h, w = (20, int(20 * (orig.width() / orig.height())) if orig.height() > 0 else 57)
+            h, w = (
+                20,
+                int(20 * (orig.width() / orig.height())) if orig.height() > 0 else 57,
+            )
             self.navi_movie.setScaledSize(QSize(w, h))
             self.navi_label.setFixedSize(w, h)
             self.navi_label.setMovie(self.navi_movie)
             self.navi_movie.start()
 
-        self.left_layout.insertWidget(0, self.navi_label, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.left_layout.insertWidget(
+            0, self.navi_label, alignment=Qt.AlignmentFlag.AlignLeft
+        )
 
-        self.status_button = self._create_colored_circle_button("#FF0000", parent.open_status_dialog, "Download Status")
+        self.status_button = self._create_colored_circle_button(
+            "#FF0000", parent.open_status_dialog, "Download Status"
+        )
         self.right_layout.insertWidget(1, self.status_button)
 
-        self.search_button = self._create_svg_button(SEARCH_SVG, parent.open_fetch_dialog, "Download Game")
+        self.search_button = self._create_svg_button(
+            SEARCH_SVG, parent.open_fetch_dialog, "Download Game"
+        )
         self.right_layout.insertWidget(2, self.search_button)
 
-        self.game_library_button = self._create_svg_button(BOOK_SVG, parent.open_game_library, "Game Library")
+        self.game_library_button = self._create_svg_button(
+            BOOK_SVG, parent.open_game_library, "Game Library"
+        )
         self.right_layout.insertWidget(3, self.game_library_button)
 
-        self.settings_button = self._create_svg_button(GEAR_SVG, parent.open_settings, "Settings")
+        self.settings_button = self._create_svg_button(
+            GEAR_SVG, parent.open_settings, "Settings"
+        )
         self.right_layout.insertWidget(4, self.settings_button)
 
         version_label = ClickableLabel(app_version, parent, parent.open_credits_dialog)
@@ -170,7 +211,9 @@ class CustomTitleBar(QFrame):
         self.left_widget.setMinimumSize(self.left_widget.sizeHint())
         self.right_widget.setMinimumSize(self.right_widget.sizeHint())
 
-        max_side_width = max(self.left_widget.sizeHint().width(), self.right_widget.sizeHint().width())
+        max_side_width = max(
+            self.left_widget.sizeHint().width(), self.right_widget.sizeHint().width()
+        )
         if max_side_width < 70:
             max_side_width = 70
         self.left_widget.setFixedWidth(max_side_width)
@@ -232,7 +275,9 @@ class CustomTitleBar(QFrame):
                 item = layout.itemAt(idx)
                 if item and item.widget():
                     widget = item.widget()
-                    if isinstance(widget, QPushButton) and not widget.property("is_circle"):
+                    if isinstance(widget, QPushButton) and not widget.property(
+                        "is_circle"
+                    ):
                         widget.setStyleSheet(button_style)
 
     def _update_button_colors(self):

@@ -5,8 +5,8 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 logger = logging.getLogger(__name__)
 
-class DownloadMonitorTask(QObject):
 
+class DownloadMonitorTask(QObject):
     progress_percentage = pyqtSignal(int)
 
     def __init__(self, download_path, total_size, initial_size, interval=1):
@@ -16,12 +16,16 @@ class DownloadMonitorTask(QObject):
         self.initial_disk_size = initial_size
         self.interval = interval
         self._is_running = True
-        logger.debug(f"Monitor Task Init: Path={download_path}, TotalSize={total_size}, InitialSize={initial_size}")
+        logger.debug(
+            f"Monitor Task Init: Path={download_path}, TotalSize={total_size}, InitialSize={initial_size}"
+        )
 
     def run(self):
         logger.info(f"Disk monitor task starting for: {self.download_path}")
         if self.total_size_to_download <= 0:
-            logger.warning("Total remaining download size is <= 0. Files may already exist. Reporting 100%.")
+            logger.warning(
+                "Total remaining download size is <= 0. Files may already exist. Reporting 100%."
+            )
             self.progress_percentage.emit(100)
 
         last_emitted_percentage = -1
@@ -39,7 +43,9 @@ class DownloadMonitorTask(QObject):
 
                 percentage = 0
                 if self.total_size_to_download > 0:
-                    percentage = int((downloaded_bytes / self.total_size_to_download) * 100)
+                    percentage = int(
+                        (downloaded_bytes / self.total_size_to_download) * 100
+                    )
                 elif current_size >= self.initial_disk_size:
                     percentage = 100
 

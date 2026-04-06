@@ -973,7 +973,7 @@ class SteamUtils:
         spinner = itertools.cycle("|/-\\")
         for i, owner_id in enumerate(self.main.TOP_OWNER_IDS, start=1):
             sys.stdout.write(
-                f"\r[{next(spinner)}] Checked {i-1}/{total_owners} owners... (no-schema streak: {no_schema_count}/{max_no_schema_in_row})"
+                f"\r[{next(spinner)}] Checked {i - 1}/{total_owners} owners... (no-schema streak: {no_schema_count}/{max_no_schema_in_row})"
             )
             sys.stdout.flush()
 
@@ -1128,7 +1128,7 @@ class SteamUtils:
 
             # Only filter if app_ids were explicitly provided
             if app_ids_str is not None:
-                file_app_id = file_path.stem.split('_')[-1]
+                file_app_id = file_path.stem.split("_")[-1]
                 if file_app_id.isdigit() and file_app_id not in app_ids_str:
                     continue
 
@@ -1192,9 +1192,9 @@ class SteamUtils:
         if self.main.SILENT_MODE:
             return
 
-        self.logger.log_base(f"\n{'='*80}")
+        self.logger.log_base(f"\n{'=' * 80}")
         self.logger.log_base("SLScheevo Security Notice")
-        self.logger.log_base(f"{'='*80}")
+        self.logger.log_base(f"{'=' * 80}")
         self.logger.log_base(
             "Your Steam login tokens have been saved in an encrypted file:"
         )
@@ -1205,7 +1205,7 @@ class SteamUtils:
         self.logger.log_base(
             "If you don't plan to use SLScheevo for a while then please delete this file"
         )
-        self.logger.log_base(f"{'='*80}")
+        self.logger.log_base(f"{'=' * 80}")
 
         try:
             self.logger.log_base("")

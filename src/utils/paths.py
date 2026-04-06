@@ -1,5 +1,6 @@
 from pathlib import Path
 
+
 class Paths:
     # Go up two parents: utils/ -> src/ -> project root
     BASE_DIR = Path(__file__).parent.parent.resolve()
@@ -19,10 +20,12 @@ class Paths:
         return cls.RES / relative_path if relative_path is not None else cls.RES
 
     @classmethod
-    def base(cls,relative_path=None):
+    def base(cls, relative_path=None):
         """Grabs a resource from the base path.
         If no relative path is specified, it returns the base path."""
-        return cls.BASE_DIR / relative_path if relative_path is not None else cls.BASE_DIR
+        return (
+            cls.BASE_DIR / relative_path if relative_path is not None else cls.BASE_DIR
+        )
 
     @classmethod
     def absolute(cls, path):

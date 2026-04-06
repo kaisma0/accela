@@ -83,9 +83,7 @@ class CreditsDialog(QDialog):
         special_thanks_group = QGroupBox("Special Thanks")
         special_thanks_layout = QVBoxLayout()
 
-        tools_label = QLabel(
-            "• SLSsteam\n• Steamless\n• DepotDownloader\n• SLScheevo"
-        )
+        tools_label = QLabel("• SLSsteam\n• Steamless\n• DepotDownloader\n• SLScheevo")
         tools_label.setStyleSheet("font-size: 11px; color: #CCCCCC; margin-left: 15px;")
         special_thanks_layout.addWidget(tools_label)
 

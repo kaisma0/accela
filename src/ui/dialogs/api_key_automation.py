@@ -1,7 +1,6 @@
 from PyQt6.QtCore import Qt
 from ui.custom_titlebar import CustomTitleBar
 import logging
-from pathlib import Path
 import shutil
 from importlib import import_module
 
@@ -320,7 +319,9 @@ class ApiKeyAutomationDialog(QDialog):
             return
 
         if not clicked:
-            self.status_label.setText("Generate button not found. Please copy manually.")
+            self.status_label.setText(
+                "Generate button not found. Please copy manually."
+            )
             self._api_page_processing = False
             return
 

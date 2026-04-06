@@ -8,7 +8,14 @@ import concurrent.futures
 import shutil
 import hashlib
 import json
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QProgressBar, QLabel, QPushButton, QApplication
+from PyQt6.QtWidgets import (
+    QDialog,
+    QVBoxLayout,
+    QProgressBar,
+    QLabel,
+    QPushButton,
+    QApplication,
+)
 from PyQt6.QtCore import Qt, QTimer
 
 from ui.custom_titlebar import CustomTitleBar
@@ -20,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 class ProgressDialog(QDialog):
     """Progress dialog for GIF processing"""
+
     def __init__(self, parent=None):
         # Don't rely on main window - use QApplication.activeWindow() or None
         super().__init__(parent)
@@ -65,8 +73,7 @@ class ProgressDialog(QDialog):
         screen = QApplication.primaryScreen().geometry()
         size = self.geometry()
         self.move(
-            (screen.width() - size.width()) // 2,
-            (screen.height() - size.height()) // 2
+            (screen.width() - size.width()) // 2, (screen.height() - size.height()) // 2
         )
 
 
@@ -74,7 +81,9 @@ class GIFManager:
     def __init__(self, main_window):
         self.main_window = main_window
         self.settings = main_window.settings
-        self.disable_color_gifs = self.settings.value("disable_color_gifs", False, type=bool)
+        self.disable_color_gifs = self.settings.value(
+            "disable_color_gifs", False, type=bool
+        )
         # Store the current disable_color_gifs setting for comparison
         self._current_disable_color_gifs = self.disable_color_gifs
         self.regenerate_anyway = False
@@ -101,10 +110,7 @@ class GIFManager:
         self._cleanup_old_files(output_dir)
 
         # Find all unique GIFs across input directories (first found wins)
-        input_dirs = [
-            get_base_path() / "gifs" / "custom",
-            Paths.resource("gif")
-        ]
+        input_dirs = [get_base_path() / "gifs" / "custom", Paths.resource("gif")]
 
         gif_list = self._find_unique_gifs(input_dirs)
 
@@ -112,20 +118,24 @@ class GIFManager:
             logger.warning("No GIF files found in any input directory")
             return
 
-        logger.info(f"Found {len(gif_list)} unique GIFs across {len(input_dirs)} directories")
+        logger.info(
+            f"Found {len(gif_list)} unique GIFs across {len(input_dirs)} directories"
+        )
 
         # Create color-specific subdirectory
-        color_subdir = output_dir / accent_color.lstrip('#')
+        color_subdir = output_dir / accent_color.lstrip("#")
         color_subdir.mkdir(exist_ok=True)
 
         # Check if disable_color_gifs setting has changed
         setting_changed = self._check_disable_color_gifs_setting_changed(color_subdir)
 
-        regeneration_needed = self._check_regeneration(gif_list, input_dirs, color_subdir)
+        regeneration_needed = self._check_regeneration(
+            gif_list, input_dirs, color_subdir
+        )
 
         # Force regeneration if disable_color_gifs setting has changed
         if setting_changed or self.regenerate_anyway:
-            logger.info(f"disable_color_gifs setting changed, forcing regeneration")
+            logger.info("disable_color_gifs setting changed, forcing regeneration")
             regeneration_needed = True
 
         if not regeneration_needed:
@@ -134,9 +144,16 @@ class GIFManager:
             return
 
         # pt.r stop being stupid, it continues if regeneration_needed is false here
-        QTimer.singleShot(100, lambda: self._process_with_progress(gif_list, input_dirs, color_subdir, output_dir, accent_color))
+        QTimer.singleShot(
+            100,
+            lambda: self._process_with_progress(
+                gif_list, input_dirs, color_subdir, output_dir, accent_color
+            ),
+        )
 
-    def _process_with_progress(self, gif_list, input_dirs, color_subdir, output_dir, accent_color):
+    def _process_with_progress(
+        self, gif_list, input_dirs, color_subdir, output_dir, accent_color
+    ):
         """Process GIFs with progress updates"""
         # Create and show progress dialog
         self._create_progress_dialog()
@@ -156,11 +173,15 @@ class GIFManager:
         QApplication.processEvents()
 
         # Use parallel processing
-        completed_count = self._process_gifs_parallel_with_progress(gif_list, input_dirs, color_subdir, accent_color)
+        completed_count = self._process_gifs_parallel_with_progress(
+            gif_list, input_dirs, color_subdir, accent_color
+        )
 
         total_time = time.time() - start_time
-        logger.info(f"Completed processing {completed_count}/{len(gif_list)} GIFs in {total_time:.2f}s "
-                    f"({total_time / max(completed_count, 1):.2f}s per GIF)")
+        logger.info(
+            f"Completed processing {completed_count}/{len(gif_list)} GIFs in {total_time:.2f}s "
+            f"({total_time / max(completed_count, 1):.2f}s per GIF)"
+        )
 
         self._write_hashes_file(color_subdir)
 
@@ -175,10 +196,12 @@ class GIFManager:
         self.progress_dialog.accept()
 
         # Only reload movies if main window exists and is visible
-        if self.main_window and hasattr(self.main_window.ui_state, '_reload_movies'):
+        if self.main_window and hasattr(self.main_window.ui_state, "_reload_movies"):
             self.main_window.ui_state._reload_movies()
 
-    def _process_gifs_parallel_with_progress(self, gif_list, input_dirs, color_subdir, accent_color):
+    def _process_gifs_parallel_with_progress(
+        self, gif_list, input_dirs, color_subdir, accent_color
+    ):
         """
         Process GIFs in parallel batches with progress updates
         """
@@ -192,19 +215,23 @@ class GIFManager:
         for gif_name in gif_list:
             source_dir = self._find_gif_source(input_dirs, gif_name)
             if source_dir:
-                batch_data.append({
-                    'gif_name': gif_name,
-                    'input_path': str(source_dir / gif_name),
-                    'output_path': str(color_subdir / gif_name),
-                    'accent_color': accent_color,
-                    'disable_color_gifs': self.disable_color_gifs  # Pass the flag as data
-                })
+                batch_data.append(
+                    {
+                        "gif_name": gif_name,
+                        "input_path": str(source_dir / gif_name),
+                        "output_path": str(color_subdir / gif_name),
+                        "accent_color": accent_color,
+                        "disable_color_gifs": self.disable_color_gifs,  # Pass the flag as data
+                    }
+                )
 
         # Process in parallel using ThreadPoolExecutor
         completed_count = 0
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_gif = {
-                executor.submit(self._process_single_gif_thread_worker, gif_data): gif_data
+                executor.submit(
+                    self._process_single_gif_thread_worker, gif_data
+                ): gif_data
                 for gif_data in batch_data
             }
 
@@ -215,14 +242,20 @@ class GIFManager:
                     if result:
                         completed_count += 1
                         # Update progress dialog
-                        self.progress_dialog.update_progress(completed_count, len(batch_data), f"Processed: {gif_data['gif_name']}")
+                        self.progress_dialog.update_progress(
+                            completed_count,
+                            len(batch_data),
+                            f"Processed: {gif_data['gif_name']}",
+                        )
 
                         # Process events to update the UI
                         if completed_count % 5 == 0:  # Update more frequently
                             QApplication.processEvents()
 
                         if completed_count % 10 == 0:
-                            logger.info(f"Progress: {completed_count}/{len(batch_data)} GIFs processed")
+                            logger.info(
+                                f"Progress: {completed_count}/{len(batch_data)} GIFs processed"
+                            )
                 except Exception as e:
                     logger.error(f"Error processing {gif_data['gif_name']}: {e}")
 
@@ -242,17 +275,19 @@ class GIFManager:
         setting_file = color_subdir / "disable_color_gifs_setting.txt"
 
         # Check if there are any GIFs in the directory
-        has_gifs = any(file.suffix.lower() == '.gif' for file in color_subdir.iterdir())
+        has_gifs = any(file.suffix.lower() == ".gif" for file in color_subdir.iterdir())
         if not has_gifs:
             logger.debug(f"No GIFs found in color subdirectory: {color_subdir}")
             return True
 
         if not setting_file.exists():
-            logger.debug(f"No previous disable_color_gifs setting file found at {setting_file}")
+            logger.debug(
+                f"No previous disable_color_gifs setting file found at {setting_file}"
+            )
             return True  # No previous setting, so we need to process
 
         try:
-            with open(setting_file, 'r') as f:
+            with open(setting_file, "r") as f:
                 previous_setting = f.read().strip().lower()
 
             # Convert to boolean - handle both "1"/"0" and "True"/"False" formats
@@ -267,10 +302,14 @@ class GIFManager:
             current_bool = bool(self.disable_color_gifs)
 
             logger.debug(f"Previous setting: '{previous_setting}' -> {previous_bool}")
-            logger.debug(f"Current setting: {self.disable_color_gifs} -> {current_bool}")
+            logger.debug(
+                f"Current setting: {self.disable_color_gifs} -> {current_bool}"
+            )
 
             if previous_bool != current_bool:
-                logger.info(f"disable_color_gifs setting changed: previous={previous_bool}, current={current_bool}")
+                logger.info(
+                    f"disable_color_gifs setting changed: previous={previous_bool}, current={current_bool}"
+                )
                 return True
             else:
                 logger.debug(f"disable_color_gifs setting unchanged: {current_bool}")
@@ -289,7 +328,7 @@ class GIFManager:
         try:
             # Store as 1 for True, 0 for False
             setting_value = "1" if self.disable_color_gifs else "0"
-            with open(setting_file, 'w') as f:
+            with open(setting_file, "w") as f:
                 f.write(setting_value)
             logger.debug(f"Updated disable_color_gifs setting file: {setting_value}")
         except Exception as e:
@@ -309,7 +348,9 @@ class GIFManager:
             for file_path in output_dir.iterdir():
                 if "_" in file_path.name and file_path.is_file():
                     file_path.unlink()
-                    logger.debug(f"Removed non-standard colorized file: {file_path.name}")
+                    logger.debug(
+                        f"Removed non-standard colorized file: {file_path.name}"
+                    )
         except Exception as e:
             logger.warning(f"Error cleaning up non-standard files: {e}")
 
@@ -327,7 +368,7 @@ class GIFManager:
 
             logger.debug(f"Scanning directory: {input_dir}")
             for file_path in input_dir.iterdir():
-                if file_path.is_file() and file_path.suffix.lower() == '.gif':
+                if file_path.is_file() and file_path.suffix.lower() == ".gif":
                     filename = file_path.name
                     if filename not in gif_files:
                         gif_files[filename] = input_dir
@@ -355,7 +396,9 @@ class GIFManager:
             output_path = color_subdir / gif_name
 
             # Check if regeneration is needed
-            if self._should_regenerate_gif(input_path, output_path, gif_name, existing_hashes):
+            if self._should_regenerate_gif(
+                input_path, output_path, gif_name, existing_hashes
+            ):
                 needs_regeneration = True
                 # We can break early if we find at least one that needs regeneration
                 break
@@ -373,7 +416,9 @@ class GIFManager:
             logger.error(f"Worker error for {gif_data['gif_name']}: {e}")
             return False
 
-    def _process_single_gif_thread(self, input_path, output_path, accent_color, gif_name, disable_color_gifs):
+    def _process_single_gif_thread(
+        self, input_path, output_path, accent_color, gif_name, disable_color_gifs
+    ):
         """
         Process a single GIF in a thread with hash-based caching
         """
@@ -395,7 +440,9 @@ class GIFManager:
         if disable_color_gifs:
             return self._copy_gif_directly(input_path, output_path, gif_name)
         else:
-            return self._apply_color_to_gif(input_path, output_path, accent_color, gif_name)
+            return self._apply_color_to_gif(
+                input_path, output_path, accent_color, gif_name
+            )
 
     def _apply_color_to_gif(self, input_path, output_path, accent_color, gif_name):
         """
@@ -405,7 +452,9 @@ class GIFManager:
 
         try:
             # Parse target color
-            target_rgb = tuple(int(accent_color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
+            target_rgb = tuple(
+                int(accent_color.lstrip("#")[i : i + 2], 16) for i in (0, 2, 4)
+            )
             target_h, target_s, target_v = self._rgb_to_hsv(*target_rgb)
 
             with Image.open(input_path) as gif:
@@ -415,9 +464,9 @@ class GIFManager:
                 original_info = gif.info.copy()
                 try:
                     while True:
-                        frame = gif.copy().convert('RGBA')
+                        frame = gif.copy().convert("RGBA")
                         frames.append(frame)
-                        frame_durations.append(gif.info.get('duration', 100))
+                        frame_durations.append(gif.info.get("duration", 100))
                         gif.seek(gif.tell() + 1)
                 except EOFError:
                     pass
@@ -425,9 +474,13 @@ class GIFManager:
                 if not frames:
                     return False
 
-                processed_frames = self._process_frames(frames, target_h, target_s, target_v)
+                processed_frames = self._process_frames(
+                    frames, target_h, target_s, target_v
+                )
 
-                self._save_gif(processed_frames, frame_durations, original_info, output_path)
+                self._save_gif(
+                    processed_frames, frame_durations, original_info, output_path
+                )
 
                 # Store hash for this GIF in temporary storage
                 self._store_temp_hash(gif_name, input_path, output_path.parent)
@@ -446,7 +499,9 @@ class GIFManager:
                 logger.info(f"Fallback copy created for: {input_path.name}")
                 return True
             except Exception as copy_error:
-                logger.error(f"Fallback copy also failed for {input_path}: {copy_error}")
+                logger.error(
+                    f"Fallback copy also failed for {input_path}: {copy_error}"
+                )
                 return False
 
     def _copy_gif_directly(self, input_path, output_path, gif_name):
@@ -477,7 +532,7 @@ class GIFManager:
         hashes_path = output_dir / "hashes.json"
         if hashes_path.exists():
             try:
-                with open(hashes_path, 'r') as f:
+                with open(hashes_path, "r") as f:
                     return json.load(f)
             except Exception as e:
                 logger.warning(f"Could not load hashes.json: {e}")
@@ -490,12 +545,12 @@ class GIFManager:
             # Collect all temporary hashes
             final_hashes = {}
             for file_path in output_dir.iterdir():
-                if file_path.is_file() and file_path.suffix.lower() == '.gif':
+                if file_path.is_file() and file_path.suffix.lower() == ".gif":
                     gif_name = file_path.name
                     hash_file = output_dir / f".{gif_name}.hash"
                     if hash_file.exists():
                         try:
-                            with open(hash_file, 'r') as f:
+                            with open(hash_file, "r") as f:
                                 final_hashes[gif_name] = f.read().strip()
                             # Clean up temp hash file
                             hash_file.unlink()
@@ -503,7 +558,7 @@ class GIFManager:
                             logger.warning(f"Could not read hash for {gif_name}: {e}")
 
             # Write final hashes.json
-            with open(hashes_path, 'w') as f:
+            with open(hashes_path, "w") as f:
                 json.dump(final_hashes, f, indent=2)
             logger.info(f"Saved {len(final_hashes)} hashes to {hashes_path}")
 
@@ -516,7 +571,7 @@ class GIFManager:
             source_hash = self._calculate_gif_hash(input_path)
             if source_hash:
                 hash_file = output_dir / f".{gif_name}.hash"
-                with open(hash_file, 'w') as f:
+                with open(hash_file, "w") as f:
                     f.write(source_hash)
         except Exception as e:
             logger.warning(f"Could not store temp hash for {gif_name}: {e}")
@@ -526,7 +581,7 @@ class GIFManager:
         hash_file = output_dir / f".{gif_name}.hash"
         if hash_file.exists():
             try:
-                with open(hash_file, 'r') as f:
+                with open(hash_file, "r") as f:
                     return f.read().strip()
             except Exception:
                 pass
@@ -536,7 +591,7 @@ class GIFManager:
         """Calculate SHA256 hash of a GIF file"""
         try:
             hasher = hashlib.sha256()
-            with open(file_path, 'rb') as f:
+            with open(file_path, "rb") as f:
                 for chunk in iter(lambda: f.read(4096), b""):
                     hasher.update(chunk)
             return hasher.hexdigest()
@@ -544,31 +599,43 @@ class GIFManager:
             logger.error(f"Error calculating hash for {file_path}: {e}")
             return None
 
-    def _should_regenerate_gif(self, input_path, output_path, gif_name, existing_hashes):
+    def _should_regenerate_gif(
+        self, input_path, output_path, gif_name, existing_hashes
+    ):
         """Check if we need to regenerate the colorized GIF"""
         if self.regenerate_anyway:
             logger.info("GIFs Regeneration has been forced.")
             return True
 
         if not output_path.exists():
-            logger.info(f"GIFs Regeneration has started because {output_path} doesn't exist")
+            logger.info(
+                f"GIFs Regeneration has started because {output_path} doesn't exist"
+            )
             return True
 
         if not input_path.exists():
-            logger.warning(f"Detected that {input_path} doesn't exist, but won't do anything about it")
+            logger.warning(
+                f"Detected that {input_path} doesn't exist, but won't do anything about it"
+            )
 
         current_hash = self._calculate_gif_hash(input_path)
         if not current_hash:
-            logger.info(f"GIFs need regeneration: {input_path}/{gif_name} -> {output_path}/{gif_name} because the hash doesn't exist")
+            logger.info(
+                f"GIFs need regeneration: {input_path}/{gif_name} -> {output_path}/{gif_name} because the hash doesn't exist"
+            )
             return True
 
         existing_hash = existing_hashes.get(gif_name)
         if not existing_hash:
-            logger.info(f"GIFs need regeneration: {input_path}/{gif_name} -> {output_path}/{gif_name} because gifs' hash doesn't exist")
+            logger.info(
+                f"GIFs need regeneration: {input_path}/{gif_name} -> {output_path}/{gif_name} because gifs' hash doesn't exist"
+            )
             return True
 
         if existing_hash != current_hash:
-            logger.info(f"GIFs need regeneration: {input_path}/{gif_name} -> {output_path}/{gif_name} because the hash {existing_hash} != {current_hash}")
+            logger.info(
+                f"GIFs need regeneration: {input_path}/{gif_name} -> {output_path}/{gif_name} because the hash {existing_hash} != {current_hash}"
+            )
             return True
 
         return False
@@ -579,19 +646,30 @@ class GIFManager:
 
         for frame in frames:
             img_array = np.array(frame, dtype=np.float32)
-            processed_array = self._apply_color_transform(img_array, target_h, target_s, target_v)
-            processed_frames.append(Image.fromarray(processed_array.astype(np.uint8), 'RGBA'))
+            processed_array = self._apply_color_transform(
+                img_array, target_h, target_s, target_v
+            )
+            processed_frames.append(
+                Image.fromarray(processed_array.astype(np.uint8), "RGBA")
+            )
 
         return processed_frames
 
     def _apply_color_transform(self, img_array, target_h, target_s, target_v):
         """Apply color transformation to image array"""
         # Extract channels
-        r, g, b, a = img_array[..., 0], img_array[..., 1], img_array[..., 2], img_array[..., 3]
+        r, g, b, a = (
+            img_array[..., 0],
+            img_array[..., 1],
+            img_array[..., 2],
+            img_array[..., 3],
+        )
 
         # Calculate colorfulness (std dev) for each pixel
         rgb_mean = (r + g + b) / 3.0
-        rgb_std = np.sqrt(((r - rgb_mean)**2 + (g - rgb_mean)**2 + (b - rgb_mean)**2) / 3.0)
+        rgb_std = np.sqrt(
+            ((r - rgb_mean) ** 2 + (g - rgb_mean) ** 2 + (b - rgb_mean) ** 2) / 3.0
+        )
 
         # Create mask for colored pixels
         colored_mask = (a > 10) & (rgb_std > 5)
@@ -631,7 +709,7 @@ class GIFManager:
     def _rgb_to_hsv_batch(self, rgb_array):
         """Convert RGB to HSV for batch of pixels"""
         r, g, b = rgb_array[..., 0], rgb_array[..., 1], rgb_array[..., 2]
-        r, g, b = r/255.0, g/255.0, b/255.0
+        r, g, b = r / 255.0, g / 255.0, b / 255.0
 
         mx = np.maximum(np.maximum(r, g), b)
         mn = np.minimum(np.minimum(r, g), b)
@@ -676,12 +754,12 @@ class GIFManager:
         # Assign based on hue segment
         masks = [hi == i for i in range(6)]
         conditions = [
-            (v, t, p),    # hi == 0
-            (q, v, p),    # hi == 1
-            (p, v, t),    # hi == 2
-            (p, q, v),    # hi == 3
-            (t, p, v),    # hi == 4
-            (v, p, q)     # hi == 5
+            (v, t, p),  # hi == 0
+            (q, v, p),  # hi == 1
+            (p, v, t),  # hi == 2
+            (p, q, v),  # hi == 3
+            (t, p, v),  # hi == 4
+            (v, p, q),  # hi == 5
         ]
 
         for i, (rr, gg, bb) in enumerate(conditions):
@@ -696,7 +774,7 @@ class GIFManager:
 
     def _rgb_to_hsv(self, r, g, b):
         """Convert single RGB pixel to HSV"""
-        r, g, b = r/255.0, g/255.0, b/255.0
+        r, g, b = r / 255.0, g / 255.0, b / 255.0
         mx = max(r, g, b)
         mn = min(r, g, b)
         df = mx - mn
@@ -724,9 +802,9 @@ class GIFManager:
                 save_all=True,
                 append_images=frames[1:],
                 duration=durations,
-                loop=gif_info.get('loop', 0),
+                loop=gif_info.get("loop", 0),
                 optimize=True,
-                disposal=2
+                disposal=2,
             )
 
     def _update_color_symlinks(self, gif_list, color_subdir, output_dir):
@@ -752,7 +830,9 @@ class GIFManager:
             else:
                 logger.warning(f"Colorized file not found for {gif_name}")
 
-        logger.info(f"Update complete: {successful_links}/{len(gif_list)} links/copies created")
+        logger.info(
+            f"Update complete: {successful_links}/{len(gif_list)} links/copies created"
+        )
 
     def _create_color_symlink(self, target_path, symlink_path):
         """Create symlink pointing to colorized file"""

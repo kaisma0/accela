@@ -62,7 +62,9 @@ class StatusDialog(QDialog):
             # Map status strings to colors (falling back to class defaults if missing)
             status_map = {
                 "ok": getattr(task_manager, "STATUS_OK", self.STATUS_OK),
-                "in_progress": getattr(task_manager, "STATUS_IN_PROGRESS", self.STATUS_IN_PROGRESS),
+                "in_progress": getattr(
+                    task_manager, "STATUS_IN_PROGRESS", self.STATUS_IN_PROGRESS
+                ),
                 "error": getattr(task_manager, "STATUS_ERROR", self.STATUS_ERROR),
                 "not_run": accent_color,
             }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -26,7 +27,9 @@ logger = logging.getLogger(__name__)
 
 GITHUB_REPO = "kaisma0/accela"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-INSTALL_SCRIPT_URL = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/scripts/install-accela.sh"
+INSTALL_SCRIPT_URL = (
+    f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/scripts/install-accela.sh"
+)
 
 _DOWNLOAD_CHUNK_SIZE = 128 * 1024
 
@@ -81,7 +84,9 @@ def _fetch_latest_release() -> dict:
         response.raise_for_status()
         return response.json()
     except requests.HTTPError as exc:
-        raise NetworkError(f"GitHub API returned HTTP {exc.response.status_code}") from exc
+        raise NetworkError(
+            f"GitHub API returned HTTP {exc.response.status_code}"
+        ) from exc
     except requests.RequestException as exc:
         raise NetworkError(f"Network request failed: {exc}") from exc
     except ValueError as exc:
@@ -110,7 +115,9 @@ def check_for_update(current_version: str) -> Optional[UpdateInfo]:
     latest_tag: str = release.get("tag_name", "")
 
     if not is_update_available(latest_tag, current_version):
-        logger.info("No update available (current=%s, latest=%s).", current_version, latest_tag)
+        logger.info(
+            "No update available (current=%s, latest=%s).", current_version, latest_tag
+        )
         return None
 
     asset = _pick_appimage_asset(release)
@@ -175,8 +182,6 @@ def _download_install_script() -> Path:
     return script_path
 
 
-import os
-
 def delegate_install_and_quit(downloaded_appimage: Path, script_path: Path) -> None:
     logger.info(
         "Launching installer: bash %s --relaunch -- %s (detached)",
@@ -184,11 +189,19 @@ def delegate_install_and_quit(downloaded_appimage: Path, script_path: Path) -> N
         downloaded_appimage,
     )
     env = os.environ.copy()
-    for var in ("APPDIR", "APPIMAGE", "LD_LIBRARY_PATH", "LD_PRELOAD",
-                "ARGV0", "OWD", "APPIMAGE_EXTRACT_AND_RUN"):
+    for var in (
+        "APPDIR",
+        "APPIMAGE",
+        "LD_LIBRARY_PATH",
+        "LD_PRELOAD",
+        "ARGV0",
+        "OWD",
+        "APPIMAGE_EXTRACT_AND_RUN",
+    ):
         env.pop(var, None)
 
-    subprocess.Popen(["bash", str(script_path), "--relaunch", "--", str(downloaded_appimage)],
+    subprocess.Popen(
+        ["bash", str(script_path), "--relaunch", "--", str(downloaded_appimage)],
         start_new_session=True,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
@@ -321,7 +334,9 @@ class UpdateDialog(QDialog):
         self._progress_bar.setRange(0, 0)
         self._set_status("Downloading installer script…")
 
-    def _on_download_finished(self, downloaded_appimage: Path, script_path: Path) -> None:
+    def _on_download_finished(
+        self, downloaded_appimage: Path, script_path: Path
+    ) -> None:
         self._progress_bar.setRange(0, 100)
         self._progress_bar.setValue(100)
         self._set_status("Launching installer…")

@@ -79,8 +79,6 @@ class DownloadDepotsTask(QObject):
         self._current_depot_started_at = None
         self._current_depot_id = None
 
-
-
         # Run metrics for end-of-job summary logging
         self._run_started_at = None
         self._attempted_depots = 0
@@ -162,7 +160,12 @@ class DownloadDepotsTask(QObject):
         try:
             # --- Initial download pass ---
             cancelled, _ = self._run_depot_commands(
-                commands, depot_sizes, total_depots, dotnet_env, appid, is_verification=False
+                commands,
+                depot_sizes,
+                total_depots,
+                dotnet_env,
+                appid,
+                is_verification=False,
             )
             if cancelled:
                 return
@@ -197,7 +200,12 @@ class DownloadDepotsTask(QObject):
                 self.progress_percentage.emit(0)
 
                 cancelled, verification_bytes = self._run_depot_commands(
-                    commands, depot_sizes, total_depots, dotnet_env, appid, is_verification=True
+                    commands,
+                    depot_sizes,
+                    total_depots,
+                    dotnet_env,
+                    appid,
+                    is_verification=True,
                 )
                 if cancelled:
                     return
@@ -280,7 +288,15 @@ class DownloadDepotsTask(QObject):
             self.error.emit((type(e), str(e), None))
             raise
 
-    def _run_depot_commands(self, commands, depot_sizes, total_depots, dotnet_env, appid, is_verification=False):
+    def _run_depot_commands(
+        self,
+        commands,
+        depot_sizes,
+        total_depots,
+        dotnet_env,
+        appid,
+        is_verification=False,
+    ):
         """Run a set of DepotDownloader commands.
 
         Returns:
@@ -345,7 +361,9 @@ class DownloadDepotsTask(QObject):
             reader_thread.deleteLater()
 
             if not self._is_running:
-                logger.info(f"Download task stopping because stop() was called ({label}).")
+                logger.info(
+                    f"Download task stopping because stop() was called ({label})."
+                )
                 self._log_run_summary(appid, "cancelled")
                 self.completed.emit()
                 return True, total_bytes_downloaded
@@ -459,14 +477,22 @@ class DownloadDepotsTask(QObject):
 
         # Validate that manifests exist in game_data
         if not game_data.get("manifests"):
-            self.progress.emit("ERROR: No manifest files found in the zip. The zip file may be incomplete or corrupted.")
-            logger.error("No 'manifests' key found in game_data. Cannot proceed with download.")
-            raise Exception("No manifest files were detected in the zip. Please ensure you're using a zip from a trusted source.")
+            self.progress.emit(
+                "ERROR: No manifest files found in the zip. The zip file may be incomplete or corrupted."
+            )
+            logger.error(
+                "No 'manifests' key found in game_data. Cannot proceed with download."
+            )
+            raise Exception(
+                "No manifest files were detected in the zip. Please ensure you're using a zip from a trusted source."
+            )
 
         for depot_id in selected_depots:
             manifest_id = game_data.get("manifests", {}).get(depot_id)
             if not manifest_id:
-                self.progress.emit(f"Warning: No manifest ID for depot {depot_id}. Skipping.")
+                self.progress.emit(
+                    f"Warning: No manifest ID for depot {depot_id}. Skipping."
+                )
                 skipped_depots.append(str(depot_id))
                 continue
 
@@ -477,11 +503,15 @@ class DownloadDepotsTask(QObject):
                 else:
                     depot_sizes.append(0)
                     self._warning_count += 1
-                    self.progress.emit(f"Warning: No size data for depot {depot_id}. Total progress may be inaccurate.")
+                    self.progress.emit(
+                        f"Warning: No size data for depot {depot_id}. Total progress may be inaccurate."
+                    )
             except (ValueError, TypeError):
                 depot_sizes.append(0)
                 self._warning_count += 1
-                self.progress.emit(f"Warning: Invalid size data for depot {depot_id}. Total progress may be inaccurate.")
+                self.progress.emit(
+                    f"Warning: Invalid size data for depot {depot_id}. Total progress may be inaccurate."
+                )
 
             manifest_file_path = manifest_dir / f"{depot_id}_{manifest_id}.manifest"
 
@@ -555,7 +585,9 @@ class DownloadDepotsTask(QObject):
             logger.info(f"Download process tree {status}.")
 
         except psutil.NoSuchProcess:
-            logger.error(f"Main process {self.process_pid} not found. Cannot pause/resume.")
+            logger.error(
+                f"Main process {self.process_pid} not found. Cannot pause/resume."
+            )
             self.process_pid = None
             self.process = None
         except Exception as e:

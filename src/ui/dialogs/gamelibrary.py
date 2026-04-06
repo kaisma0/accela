@@ -104,7 +104,6 @@ class GameLibraryDialog(QDialog):
         self.setMinimumWidth(800)
         self.setMinimumHeight(800)
 
-
         CustomTitleBar.setup_dialog_layout(self, title=self.windowTitle())
 
         layout = QVBoxLayout(self._tb_content_widget)
@@ -198,7 +197,9 @@ class GameLibraryDialog(QDialog):
             # Start a timer to check if update checking is done
             QTimer.singleShot(100, self._check_if_updates_complete)
         else:
-            self.info_label.setText(f"Scan complete: Found {count} game(s) installed by ACCELA")
+            self.info_label.setText(
+                f"Scan complete: Found {count} game(s) installed by ACCELA"
+            )
             self._scanning = False
 
         # Note: _refreshing flag is cleared in _refresh_game_list
@@ -366,7 +367,9 @@ class GameLibraryDialog(QDialog):
                 # Find the item with matching app_id (safer than storing item reference)
                 item = self._find_item_by_appid(app_id)
                 if item is None:
-                    logger.debug(f"Item for game {app_id} not found in list, skipping icon set")
+                    logger.debug(
+                        f"Item for game {app_id} not found in list, skipping icon set"
+                    )
                     return
 
                 try:
@@ -379,7 +382,7 @@ class GameLibraryDialog(QDialog):
                     )
                     item.setIcon(QIcon(resized_pixmap))
                     logger.debug(f"Successfully set icon for game {app_id}")
-                except RuntimeError as e:
+                except RuntimeError:
                     # Item was deleted, ignore
                     logger.debug(
                         f"Item for game {app_id} was deleted, skipping icon set"
@@ -387,7 +390,9 @@ class GameLibraryDialog(QDialog):
                 except Exception as e:
                     logger.warning(f"Error setting icon for game {app_id}: {e}")
         else:
-            logger.debug(f"No image data received for game {app_id}, attempting to refresh from API")
+            logger.debug(
+                f"No image data received for game {app_id}, attempting to refresh from API"
+            )
             # Trigger a database refresh for this appid to fetch fresh metadata
             # Use QTimer to avoid blocking the UI
             QTimer.singleShot(0, lambda aid=app_id: self._trigger_header_refresh(aid))
@@ -418,7 +423,9 @@ class GameLibraryDialog(QDialog):
                 api_url = future.result()
                 if api_url and not self._closing:
                     # Update database and re-fetch image (must be done on main thread)
-                    QTimer.singleShot(0, lambda: self._apply_header_refresh(app_id, api_url))
+                    QTimer.singleShot(
+                        0, lambda: self._apply_header_refresh(app_id, api_url)
+                    )
             except Exception as e:
                 logger.warning(f"Header refresh failed for appid {app_id}: {e}")
 
@@ -449,7 +456,9 @@ class GameLibraryDialog(QDialog):
                 fetcher.setProperty("is_retry", True)
                 self._active_fetchers[app_id] = fetcher
                 fetcher.finished.connect(self._on_retry_image_fetched)
-                fetcher.finished.connect(lambda _, aid=app_id: self._cleanup_fetcher(aid))
+                fetcher.finished.connect(
+                    lambda _, aid=app_id: self._cleanup_fetcher(aid)
+                )
                 fetcher.start()
         except Exception as e:
             logger.warning(f"Failed to apply header refresh for appid {app_id}: {e}")
@@ -479,14 +488,19 @@ class GameLibraryDialog(QDialog):
                 if item:
                     try:
                         resized_pixmap = pixmap.scaled(
-                            230, 108,
+                            230,
+                            108,
                             Qt.AspectRatioMode.KeepAspectRatio,
                             Qt.TransformationMode.SmoothTransformation,
                         )
                         item.setIcon(QIcon(resized_pixmap))
-                        logger.info(f"Successfully set icon for game {app_id} after retry")
+                        logger.info(
+                            f"Successfully set icon for game {app_id} after retry"
+                        )
                     except Exception as e:
-                        logger.warning(f"Error setting icon for game {app_id} on retry: {e}")
+                        logger.warning(
+                            f"Error setting icon for game {app_id} on retry: {e}"
+                        )
         else:
             logger.warning(f"Image retry also failed for game {app_id}")
 
@@ -739,7 +753,10 @@ class GameLibraryDialog(QDialog):
                 # Check if already in FakeAppIds
                 config_path = get_user_config_path()
                 if config_path.exists():
-                    items = {str(k): str(v) for k, v in get_map_items(config_path, "FakeAppIds").items()}
+                    items = {
+                        str(k): str(v)
+                        for k, v in get_map_items(config_path, "FakeAppIds").items()
+                    }
                     if appid in items:
                         self.fake_appid_checkbox.setChecked(True)
                         mapped_val = items[appid]
@@ -752,7 +769,9 @@ class GameLibraryDialog(QDialog):
 
                 # Connect signal
                 self.fake_appid_checkbox.stateChanged.connect(
-                    lambda state, gd=game_data, dlg=dialog: self._toggle_fake_appid(state, gd, dlg)
+                    lambda state, gd=game_data, dlg=dialog: self._toggle_fake_appid(
+                        state, gd, dlg
+                    )
                 )
             else:
                 self.fake_appid_checkbox.setEnabled(False)
@@ -792,6 +811,7 @@ class GameLibraryDialog(QDialog):
         btn_row = QHBoxLayout()
 
         open_btn = QPushButton("Open Folder")
+
         def _open_folder():
             path = install_path
             if not path or path == "N/A" or not Path(path).exists():
@@ -811,7 +831,6 @@ class GameLibraryDialog(QDialog):
                     "Open Folder",
                     f"Failed to open folder: {e}",
                 )
-
 
         open_btn.clicked.connect(_open_folder)
 
@@ -843,9 +862,13 @@ class GameLibraryDialog(QDialog):
 
         appid_is_valid = appid and appid not in ("0", "N/A", "unknown")
 
-        self.remove_game_data_checkbox = QCheckBox("Remove base game files and manifests")
+        self.remove_game_data_checkbox = QCheckBox(
+            "Remove base game files and manifests"
+        )
         self.remove_game_data_checkbox.setChecked(False)
-        self.remove_game_data_checkbox.setToolTip("Deletes the game folder, Steam manifest (.acf), and depot manifest")
+        self.remove_game_data_checkbox.setToolTip(
+            "Deletes the game folder, Steam manifest (.acf), and depot manifest"
+        )
         uninstall_layout.addWidget(self.remove_game_data_checkbox)
 
         uninstall_layout.addSpacing(10)
@@ -953,12 +976,11 @@ class GameLibraryDialog(QDialog):
 
         # Steamless button
         steamless_btn = QPushButton("Remove DRM")
-        steamless_btn.setToolTip(
-            "Remove copy protection (DRM) from game executables"
-        )
+        steamless_btn.setToolTip("Remove copy protection (DRM) from game executables")
         steamless_btn.clicked.connect(
-            lambda checked, dir=install_path, name=game_data.get("game_name", "Unknown"):
+            lambda checked, dir=install_path, name=game_data.get("game_name", "Unknown"): (
                 self.main_window.task_manager.run_steamless_for_game(dir, name)
+            )
         )
         tools_layout.addWidget(steamless_btn)
 
@@ -968,8 +990,11 @@ class GameLibraryDialog(QDialog):
             "Make all executables and scripts in the game folder runnable"
         )
         chmod_btn.clicked.connect(
-            lambda checked, dir=install_path, name=game_data.get("game_name", "Unknown"):
-                self.main_window.task_manager.run_chmod_for_game(dir, name, show_dialog=True)
+            lambda checked, dir=install_path, name=game_data.get("game_name", "Unknown"): (
+                self.main_window.task_manager.run_chmod_for_game(
+                    dir, name, show_dialog=True
+                )
+            )
         )
         tools_layout.addWidget(chmod_btn)
 
@@ -990,7 +1015,9 @@ class GameLibraryDialog(QDialog):
             "Remove Steam installation file and reinstall to fix issues"
         )
         fix_install_btn.clicked.connect(
-            lambda checked, data=game_data, dlg=dialog: self._fix_game_install(data, dlg)
+            lambda checked, data=game_data, dlg=dialog: self._fix_game_install(
+                data, dlg
+            )
         )
         tools_layout.addWidget(fix_install_btn)
 
@@ -1134,7 +1161,9 @@ class GameLibraryDialog(QDialog):
                 progress.close()
                 logger.exception(f"Error fetching manifest for AppID {app_id}: {e}")
                 QMessageBox.critical(
-                    self, "Error", f"An error occurred while fetching manifest:\n\n{str(e)}"
+                    self,
+                    "Error",
+                    f"An error occurred while fetching manifest:\n\n{str(e)}",
                 )
         else:
             # Use local ZIP directly without API call
@@ -1189,11 +1218,15 @@ class GameLibraryDialog(QDialog):
             else False
         )
 
-        if not (remove_game_data or remove_compatdata or remove_saves or remove_from_library or remove_shortcuts):
+        if not (
+            remove_game_data
+            or remove_compatdata
+            or remove_saves
+            or remove_from_library
+            or remove_shortcuts
+        ):
             QMessageBox.information(
-                self,
-                "Nothing Selected",
-                "Please select at least one item to remove."
+                self, "Nothing Selected", "Please select at least one item to remove."
             )
             return
 
@@ -1204,7 +1237,7 @@ class GameLibraryDialog(QDialog):
             remove_compatdata=remove_compatdata,
             remove_saves=remove_saves,
             remove_from_library=remove_from_library,
-            remove_shortcuts=remove_shortcuts
+            remove_shortcuts=remove_shortcuts,
         )
 
         # Confirm uninstall
@@ -1221,7 +1254,12 @@ class GameLibraryDialog(QDialog):
 
         # Perform uninstall using GameManager
         success, error_msg = self.game_manager.uninstall_game(
-            game_data, remove_game_data=remove_game_data, remove_compatdata=remove_compatdata, remove_saves=remove_saves, remove_from_library=remove_from_library, remove_shortcuts=remove_shortcuts
+            game_data,
+            remove_game_data=remove_game_data,
+            remove_compatdata=remove_compatdata,
+            remove_saves=remove_saves,
+            remove_from_library=remove_from_library,
+            remove_shortcuts=remove_shortcuts,
         )
 
         if success:
@@ -1302,7 +1340,7 @@ class GameLibraryDialog(QDialog):
 
             # Run the task
             task_runner = TaskRunner()
-            worker = task_runner.run(shortcuts_task.run, app_id, game_name)
+            task_runner.run(shortcuts_task.run, app_id, game_name)
 
             # Store references to prevent garbage collection
             self._current_shortcuts_task = shortcuts_task
@@ -1366,7 +1404,7 @@ class GameLibraryDialog(QDialog):
             f"Remove Steam installation file (.acf) for '{game_name}'?\n\n"
             f"Steam will verify and download any missing files.\n\n"
             f"Continue?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
 
         if reply != QMessageBox.StandardButton.Yes:
@@ -1374,7 +1412,9 @@ class GameLibraryDialog(QDialog):
 
         # Remove ACF file
         if library_path and appid and appid not in ("0", "N/A", "unknown"):
-            acf_path = str(Path(library_path) / "steamapps" / f"appmanifest_{appid}.acf")
+            acf_path = str(
+                Path(library_path) / "steamapps" / f"appmanifest_{appid}.acf"
+            )
             if Path(acf_path).exists():
                 Path(acf_path).unlink()
                 logger.info(f"Removed ACF file: {acf_path}")
@@ -1388,20 +1428,20 @@ class GameLibraryDialog(QDialog):
                     self,
                     "Game Install Fixed",
                     f"The Steam installation file for '{game_name}' has been removed.\n\n"
-                    f"Steam will verify and download any missing files."
+                    f"Steam will verify and download any missing files.",
                 )
             else:
                 QMessageBox.warning(
                     self,
                     "File Not Found",
                     f"Could not find installation file for '{game_name}'.\n\n"
-                    f"The game may already be removed from Steam."
+                    f"The game may already be removed from Steam.",
                 )
         else:
             QMessageBox.warning(
                 self,
                 "Invalid Game Data",
-                f"Cannot fix installation: App ID is invalid or missing for '{game_name}'."
+                f"Cannot fix installation: App ID is invalid or missing for '{game_name}'.",
             )
 
     def _toggle_fake_appid(self, state, game_data, dialog):

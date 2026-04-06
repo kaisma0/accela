@@ -57,6 +57,7 @@ logger = logging.getLogger(__name__)
 
 class StatsFetchWorker(QThread):
     """Background thread to fetch API stats without freezing the GUI."""
+
     stats_ready = pyqtSignal(dict)
 
     def run(self):
@@ -70,11 +71,13 @@ class StatsFetchWorker(QThread):
 
 class SLSsteamStatusWorker(QThread):
     """Background thread to check SLSsteam update status."""
+
     status_ready = pyqtSignal(dict)
 
     def run(self):
         try:
             from core.tasks.download_slssteam_task import DownloadSLSsteamTask
+
             status = DownloadSLSsteamTask.check_update_available()
             self.status_ready.emit(status)
         except Exception as e:
@@ -225,18 +228,20 @@ class SettingsDialog(QDialog):
         self.accent_color = self.settings.value("accent_color", "#C06C84")
 
         # Save original API keys for restore on cancel
-        self._original_morrenus_key = self.settings.value("morrenus_api_key", "", type=str)
+        self._original_morrenus_key = self.settings.value(
+            "morrenus_api_key", "", type=str
+        )
         self._original_sgdb_key = self.settings.value("sgdb_api_key", "", type=str)
 
         self._user_accent_color = self.settings.value(
             "user_accent_color",
             self.settings.value("accent_color", "#C06C84"),
-            type=str
+            type=str,
         )
         self._user_background_color = self.settings.value(
             "user_background_color",
             self.settings.value("background_color", "#000000"),
-            type=str
+            type=str,
         )
 
         logger.debug("Opening SettingsDialog.")
@@ -315,7 +320,9 @@ class SettingsDialog(QDialog):
 
         # Toggle button
         toggle_btn = QPushButton("Show")
-        toggle_btn.clicked.connect(lambda: self._toggle_api_key_visibility(api_key_input, toggle_btn))
+        toggle_btn.clicked.connect(
+            lambda: self._toggle_api_key_visibility(api_key_input, toggle_btn)
+        )
 
         input_layout.addWidget(api_key_input)
         input_layout.addWidget(toggle_btn)
@@ -324,7 +331,9 @@ class SettingsDialog(QDialog):
         # Help text/link
         accent_color = self.settings.value("accent_color", "#C06C84")
         if help_url:
-            help_label = QLabel(f'<a href="{help_url}" style="color: {accent_color};">Get API key</a>')
+            help_label = QLabel(
+                f'<a href="{help_url}" style="color: {accent_color};">Get API key</a>'
+            )
             help_label.setOpenExternalLinks(True)
             layout.addWidget(help_label)
         elif help_text:
@@ -351,9 +360,7 @@ class SettingsDialog(QDialog):
 
         scroll_area = QScrollArea(tab)
         scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         content = QWidget()
         content_layout = QVBoxLayout(content)
@@ -390,7 +397,9 @@ class SettingsDialog(QDialog):
         download_layout.addWidget(self.auto_skip_single_choice_checkbox)
 
         max_dl_label = QLabel("Maximum concurrent downloads")
-        max_dl_label.setToolTip("Set the maximum number of concurrent downloads (0-255)")
+        max_dl_label.setToolTip(
+            "Set the maximum number of concurrent downloads (0-255)"
+        )
 
         self.max_downloads_spinbox = QSpinBox()
         self.max_downloads_spinbox.setRange(0, 255)
@@ -418,7 +427,7 @@ class SettingsDialog(QDialog):
             "generate_achievements",
             False,
             self,
-            "Generate achievement files for your games after downloads."
+            "Generate achievement files for your games after downloads.",
         )
         processing_layout.addWidget(self.achievements_checkbox)
 
@@ -427,7 +436,7 @@ class SettingsDialog(QDialog):
             "use_steamless",
             False,
             self,
-            "Remove copy protection (DRM) from game executables after downloading."
+            "Remove copy protection (DRM) from game executables after downloading.",
         )
         processing_layout.addWidget(self.steamless_checkbox)
 
@@ -436,7 +445,7 @@ class SettingsDialog(QDialog):
             "auto_apply_goldberg",
             False,
             self,
-            "Automatically apply Goldberg after downloads."
+            "Automatically apply Goldberg after downloads.",
         )
         processing_layout.addWidget(self.auto_apply_goldberg_checkbox)
 
@@ -445,7 +454,7 @@ class SettingsDialog(QDialog):
             "create_application_shortcuts",
             False,
             self,
-            "Create desktop shortcuts and install game icons from SteamGridDB."
+            "Create desktop shortcuts and install game icons from SteamGridDB.",
         )
         processing_layout.addWidget(self.application_shortcuts_checkbox)
 
@@ -468,7 +477,7 @@ class SettingsDialog(QDialog):
             "Morrenus API Key:",
             "Paste your Morrenus API key",
             "morrenus_api_key",
-            help_url="https://manifest.morrenus.xyz"
+            help_url="https://manifest.morrenus.xyz",
         )
         api_key_layout.addLayout(key_layout)
 
@@ -477,7 +486,7 @@ class SettingsDialog(QDialog):
             "SteamGridDB API Key:",
             "Paste your SteamGridDB API key",
             "sgdb_api_key",
-            help_url="https://www.steamgriddb.com/profile/account"
+            help_url="https://www.steamgriddb.com/profile/account",
         )
         api_key_layout.addLayout(sgdb_key_layout)
 
@@ -575,7 +584,7 @@ class SettingsDialog(QDialog):
             "block_steam_updates",
             self._is_steam_updates_blocked(),
             self,
-            "Prevent Steam from automatically updating itself."
+            "Prevent Steam from automatically updating itself.",
         )
         steam_settings_layout.addWidget(self.block_steam_updates_checkbox)
 
@@ -639,7 +648,7 @@ class SettingsDialog(QDialog):
         # Steamclient.so hash warning label
         self.slssteam_hash_warning_label = QLabel()
         self.slssteam_hash_warning_label.setStyleSheet(
-            f"color: #C06C84; font-size: 11px;"  # Pink warning color
+            "color: #C06C84; font-size: 11px;"  # Pink warning color
         )
         self.slssteam_hash_warning_label.setWordWrap(True)
         self.slssteam_hash_warning_label.setMaximumWidth(300)
@@ -665,11 +674,15 @@ class SettingsDialog(QDialog):
         return spinbox
 
     # Helper for repetitive lineedit rows
-    def _add_lineedit_row(self, layout, label, tooltip, placeholder, setting_key, default_val=""):
+    def _add_lineedit_row(
+        self, layout, label, tooltip, placeholder, setting_key, default_val=""
+    ):
         lineedit = QLineEdit()
         lineedit.setPlaceholderText(placeholder)
         lineedit.setToolTip(tooltip)
-        lineedit.setText(str(self.settings.value(setting_key, default_val, type=str)).strip())
+        lineedit.setText(
+            str(self.settings.value(setting_key, default_val, type=str)).strip()
+        )
         layout.addRow(label, lineedit)
         return lineedit
 
@@ -729,12 +742,17 @@ class SettingsDialog(QDialog):
         identity_layout = QFormLayout()
 
         self.sls_fake_email_input = self._add_lineedit_row(
-            identity_layout, "Fake Email:", "Override account e-mail on the client side only.",
-            "Leave empty to disable", "sls_fake_email"
+            identity_layout,
+            "Fake Email:",
+            "Override account e-mail on the client side only.",
+            "Leave empty to disable",
+            "sls_fake_email",
         )
         self.sls_fake_wallet_spinbox = self._add_spinbox_row(
-            identity_layout, "Fake Wallet Balance:", "Client-side wallet balance override. Use 0 to disable.",
-            "sls_fake_wallet_balance"
+            identity_layout,
+            "Fake Wallet Balance:",
+            "Client-side wallet balance override. Use 0 to disable.",
+            "sls_fake_wallet_balance",
         )
 
         identity_group.setLayout(identity_layout)
@@ -744,20 +762,30 @@ class SettingsDialog(QDialog):
         status_layout = QFormLayout()
 
         self.sls_idle_status_appid_spinbox = self._add_spinbox_row(
-            status_layout, "Idle Status AppId:", "Idle status AppId override. Use 0 to disable.",
-            "sls_idle_status_appid"
+            status_layout,
+            "Idle Status AppId:",
+            "Idle status AppId override. Use 0 to disable.",
+            "sls_idle_status_appid",
         )
         self.sls_idle_status_title_input = self._add_lineedit_row(
-            status_layout, "Idle Status Title:", "Idle status title override.",
-            "Leave empty to disable", "sls_idle_status_title"
+            status_layout,
+            "Idle Status Title:",
+            "Idle status title override.",
+            "Leave empty to disable",
+            "sls_idle_status_title",
         )
         self.sls_unowned_status_appid_spinbox = self._add_spinbox_row(
-            status_layout, "Unowned Status AppId:", "Unowned status AppId override. Use 0 to disable.",
-            "sls_unowned_status_appid"
+            status_layout,
+            "Unowned Status AppId:",
+            "Unowned status AppId override. Use 0 to disable.",
+            "sls_unowned_status_appid",
         )
         self.sls_unowned_status_title_input = self._add_lineedit_row(
-            status_layout, "Unowned Status Title:", "Unowned status title override.",
-            "Leave empty to disable", "sls_unowned_status_title"
+            status_layout,
+            "Unowned Status Title:",
+            "Unowned status title override.",
+            "Leave empty to disable",
+            "sls_unowned_status_title",
         )
 
         status_group.setLayout(status_layout)
@@ -791,19 +819,39 @@ class SettingsDialog(QDialog):
             # Define scalar values to update
             scalar_updates = {
                 "SafeMode": self.settings.value("sls_safe_mode", False, type=bool),
-                "Notifications": self.settings.value("sls_notifications", True, type=bool),
-                "WarnHashMissmatch": self.settings.value("sls_warn_hash_missmatch", False, type=bool),
+                "Notifications": self.settings.value(
+                    "sls_notifications", True, type=bool
+                ),
+                "WarnHashMissmatch": self.settings.value(
+                    "sls_warn_hash_missmatch", False, type=bool
+                ),
                 "NotifyInit": self.settings.value("sls_notify_init", True, type=bool),
-                "FakeEmail": self.settings.value("sls_fake_email", "", type=str).strip(),
-                "FakeWalletBalance": _get_safe_int("sls_fake_wallet_balance", 0)
+                "FakeEmail": self.settings.value(
+                    "sls_fake_email", "", type=str
+                ).strip(),
+                "FakeWalletBalance": _get_safe_int("sls_fake_wallet_balance", 0),
             }
 
             # Define nested values to update (Parent, Child, Value)
             nested_updates = [
                 ("IdleStatus", "AppId", _get_safe_int("sls_idle_status_appid", 0)),
-                ("IdleStatus", "Title", self.settings.value("sls_idle_status_title", "", type=str).strip()),
-                ("UnownedStatus", "AppId", _get_safe_int("sls_unowned_status_appid", 0)),
-                ("UnownedStatus", "Title", self.settings.value("sls_unowned_status_title", "", type=str).strip()),
+                (
+                    "IdleStatus",
+                    "Title",
+                    self.settings.value("sls_idle_status_title", "", type=str).strip(),
+                ),
+                (
+                    "UnownedStatus",
+                    "AppId",
+                    _get_safe_int("sls_unowned_status_appid", 0),
+                ),
+                (
+                    "UnownedStatus",
+                    "Title",
+                    self.settings.value(
+                        "sls_unowned_status_title", "", type=str
+                    ).strip(),
+                ),
             ]
 
             changed = 0
@@ -814,7 +862,9 @@ class SettingsDialog(QDialog):
 
             # Loop and apply nested
             for parent, child, val in nested_updates:
-                changed += int(update_yaml_nested_scalar_value(config_path, parent, child, val))
+                changed += int(
+                    update_yaml_nested_scalar_value(config_path, parent, child, val)
+                )
 
             if changed > 0:
                 logger.info(f"Synced {changed} SLSsteam setting(s) to config.yaml")
@@ -834,7 +884,9 @@ class SettingsDialog(QDialog):
         accent_layout = QHBoxLayout()
         accent_label = QLabel("Accent Color:")
         self.accent_color_button = QPushButton()
-        self.accent_color_button.setStyleSheet(f"background-color: {self._user_accent_color};")
+        self.accent_color_button.setStyleSheet(
+            f"background-color: {self._user_accent_color};"
+        )
         self.accent_reset_button = QPushButton("Reset")
         accent_layout.addWidget(accent_label)
         accent_layout.addWidget(self.accent_color_button)
@@ -847,7 +899,9 @@ class SettingsDialog(QDialog):
         bg_layout = QHBoxLayout()
         bg_label = QLabel("Background Color:")
         self.bg_color_button = QPushButton()
-        self.bg_color_button.setStyleSheet(f"background-color: {self._user_background_color};")
+        self.bg_color_button.setStyleSheet(
+            f"background-color: {self._user_background_color};"
+        )
         self.bg_reset_button = QPushButton("Reset")
         bg_layout.addWidget(bg_label)
         bg_layout.addWidget(self.bg_color_button)
@@ -899,7 +953,6 @@ class SettingsDialog(QDialog):
         titlebar_ex_layout.addSpacing(14)
         titlebar_ex_layout.addWidget(titlebar_explanation)
         display_layout.addLayout(titlebar_ex_layout)
-
 
         self.gif_display_checkbox = create_checkbox_setting(
             "Show GIF Display",
@@ -954,20 +1007,29 @@ class SettingsDialog(QDialog):
         playback_layout = QVBoxLayout()
 
         self.play_etw_checkbox = create_checkbox_setting(
-            'Play "Entering The Wired" on start', "play_etw", True, self,
-            "Play the 'Entering The Wired' intro audio when ACCELA starts."
+            'Play "Entering The Wired" on start',
+            "play_etw",
+            True,
+            self,
+            "Play the 'Entering The Wired' intro audio when ACCELA starts.",
         )
         playback_layout.addWidget(self.play_etw_checkbox)
 
         self.play_lall_checkbox = create_checkbox_setting(
-            'Play "Let\'s All Love Lain" on exit', "play_lall", True, self,
-            "Play the 'Let's All Love Lain' audio when ACCELA exits."
+            'Play "Let\'s All Love Lain" on exit',
+            "play_lall",
+            True,
+            self,
+            "Play the 'Let's All Love Lain' audio when ACCELA exits.",
         )
         playback_layout.addWidget(self.play_lall_checkbox)
 
         self.play_50hz_hum_checkbox = create_checkbox_setting(
-            "Play background hum sound", "play_50hz_hum", True, self,
-            "Play a low 50Hz hum ambient sound in the background."
+            "Play background hum sound",
+            "play_50hz_hum",
+            True,
+            self,
+            "Play a low 50Hz hum ambient sound in the background.",
         )
         playback_layout.addWidget(self.play_50hz_hum_checkbox)
 
@@ -1074,7 +1136,9 @@ class SettingsDialog(QDialog):
                 )
                 return
         self._user_accent_color = color.name()
-        self.accent_color_button.setStyleSheet(f"background-color: {self._user_accent_color};")
+        self.accent_color_button.setStyleSheet(
+            f"background-color: {self._user_accent_color};"
+        )
 
     def reset_accent_color(self):
         default = "#C06C84"
@@ -1087,7 +1151,9 @@ class SettingsDialog(QDialog):
         if not color.isValid():
             return
         self._user_background_color = color.name()
-        self.bg_color_button.setStyleSheet(f"background-color: {self._user_background_color};")
+        self.bg_color_button.setStyleSheet(
+            f"background-color: {self._user_background_color};"
+        )
 
     def reset_bg_color(self):
         default = "#000000"
@@ -1191,15 +1257,33 @@ class SettingsDialog(QDialog):
     def accept(self):
         # --- API Keys ---
         self._save_text("api_key_input", "morrenus_api_key", "Morrenus API key saved")
-        self._save_text("sgdb_api_key_input", "sgdb_api_key", "Steam Grid DB API key saved")
-        self._save_bool("auto_refresh_morrenus_api_key_checkbox", "auto_refresh_morrenus_api_key", "Auto Refresh Morrenus API Key set to")
+        self._save_text(
+            "sgdb_api_key_input", "sgdb_api_key", "Steam Grid DB API key saved"
+        )
+        self._save_bool(
+            "auto_refresh_morrenus_api_key_checkbox",
+            "auto_refresh_morrenus_api_key",
+            "Auto Refresh Morrenus API Key set to",
+        )
 
         # --- Download Settings ---
         self._save_bool("sls_mode_checkbox", "slssteam_mode", "SLSsteam mode")
-        self._save_bool("sls_config_management_checkbox", "sls_config_management", "SLSsteam Config Management")
+        self._save_bool(
+            "sls_config_management_checkbox",
+            "sls_config_management",
+            "SLSsteam Config Management",
+        )
         self._save_bool("library_mode_checkbox", "library_mode", "Library mode setting")
-        self._save_bool("auto_skip_single_choice_checkbox", "auto_skip_single_choice", "Auto-skip single-choice selection")
-        self._save_bool("prompt_steam_restart_checkbox", "prompt_steam_restart", "Prompt Steam Restart")
+        self._save_bool(
+            "auto_skip_single_choice_checkbox",
+            "auto_skip_single_choice",
+            "Auto-skip single-choice selection",
+        )
+        self._save_bool(
+            "prompt_steam_restart_checkbox",
+            "prompt_steam_restart",
+            "Prompt Steam Restart",
+        )
 
         try:
             val = int(getattr(self, "max_downloads_spinbox").value())
@@ -1220,13 +1304,23 @@ class SettingsDialog(QDialog):
         self._save_text("sls_unowned_status_title_input", "sls_unowned_status_title")
 
         # --- Post-Processing Settings ---
-        self._save_bool("achievements_checkbox", "generate_achievements", "Generate Achievements")
+        self._save_bool(
+            "achievements_checkbox", "generate_achievements", "Generate Achievements"
+        )
         self._save_bool("steamless_checkbox", "use_steamless", "Use Steamless")
-        self._save_bool("auto_apply_goldberg_checkbox", "auto_apply_goldberg", "Auto-apply Goldberg")
-        self._save_bool("application_shortcuts_checkbox", "create_application_shortcuts", "Create Application Shortcuts")
+        self._save_bool(
+            "auto_apply_goldberg_checkbox", "auto_apply_goldberg", "Auto-apply Goldberg"
+        )
+        self._save_bool(
+            "application_shortcuts_checkbox",
+            "create_application_shortcuts",
+            "Create Application Shortcuts",
+        )
 
         # --- System Settings ---
-        block_steam_updates = self._save_bool("block_steam_updates_checkbox", "block_steam_updates", "Block Steam Updates")
+        block_steam_updates = self._save_bool(
+            "block_steam_updates_checkbox", "block_steam_updates", "Block Steam Updates"
+        )
         self._apply_steam_updates_block(block_steam_updates)
 
         # --- Audio Settings ---
@@ -1245,11 +1339,19 @@ class SettingsDialog(QDialog):
         self.settings.setValue("user_accent_color", self._user_accent_color)
         self.settings.setValue("user_background_color", self._user_background_color)
 
-        ignore_color_warnings = self._save_bool("ignore_color_warnings_checkbox", "ignore_color_warnings")
+        ignore_color_warnings = self._save_bool(
+            "ignore_color_warnings_checkbox", "ignore_color_warnings"
+        )
 
         if not ignore_color_warnings:
-            if self.is_too_close_to_accent_color(QColor(self._user_accent_color), QColor(self._user_background_color)):
-                QMessageBox.warning(self, "Invalid Color", "The background color is too similar to the accent color and will reduce contrast.")
+            if self.is_too_close_to_accent_color(
+                QColor(self._user_accent_color), QColor(self._user_background_color)
+            ):
+                QMessageBox.warning(
+                    self,
+                    "Invalid Color",
+                    "The background color is too similar to the accent color and will reduce contrast.",
+                )
                 return
 
         # Save the applied colors
@@ -1257,17 +1359,24 @@ class SettingsDialog(QDialog):
         self.settings.setValue("background_color", self._user_background_color)
 
         # Font settings
-        if hasattr(self, 'current_font'):
+        if hasattr(self, "current_font"):
             self.settings.setValue("font", self.current_font.family())
             self.settings.setValue("font-size", self.current_font.pointSize())
             font_style = "Normal"
-            if self.current_font.bold() and self.current_font.italic(): font_style = "Bold Italic"
-            elif self.current_font.bold(): font_style = "Bold"
-            elif self.current_font.italic(): font_style = "Italic"
+            if self.current_font.bold() and self.current_font.italic():
+                font_style = "Bold Italic"
+            elif self.current_font.bold():
+                font_style = "Bold"
+            elif self.current_font.italic():
+                font_style = "Italic"
             self.settings.setValue("font-style", font_style)
 
         # Display settings
-        titlebar_position = "bottom" if getattr(self, "titlebar_position_checkbox").isChecked() else "top"
+        titlebar_position = (
+            "bottom"
+            if getattr(self, "titlebar_position_checkbox").isChecked()
+            else "top"
+        )
         self.settings.setValue("titlebar_position", titlebar_position)
         self._save_bool("gif_display_checkbox", "gif_display_enabled")
 
@@ -1297,6 +1406,7 @@ class SettingsDialog(QDialog):
         """Helper to find the path to steam.cfg if steam is installed"""
         try:
             from core.steam_helpers import find_steam_install
+
             steam_path = find_steam_install()
             if steam_path:
                 return str(Path(steam_path) / "steam.cfg")
@@ -1314,14 +1424,18 @@ class SettingsDialog(QDialog):
         try:
             steam_cfg_path = self._get_steam_cfg_path()
             if not steam_cfg_path:
-                logger.warning("Could not find Steam installation. Skipping steam.cfg configuration.")
+                logger.warning(
+                    "Could not find Steam installation. Skipping steam.cfg configuration."
+                )
                 return
 
             source_cfg_path = Paths.deps("steam.cfg")
 
             if block_enabled:
                 if not source_cfg_path.exists():
-                    logger.error(f"Source steam.cfg not found at: {str(source_cfg_path)}")
+                    logger.error(
+                        f"Source steam.cfg not found at: {str(source_cfg_path)}"
+                    )
                     return
                 try:
                     shutil.copy2(str(source_cfg_path), steam_cfg_path)
@@ -1332,9 +1446,13 @@ class SettingsDialog(QDialog):
                 if Path(steam_cfg_path).exists():
                     try:
                         Path(steam_cfg_path).unlink()
-                        logger.info(f"Successfully removed steam.cfg from: {steam_cfg_path}")
+                        logger.info(
+                            f"Successfully removed steam.cfg from: {steam_cfg_path}"
+                        )
                     except Exception as e:
-                        logger.error(f"Failed to remove steam.cfg from {steam_cfg_path}: {e}")
+                        logger.error(
+                            f"Failed to remove steam.cfg from {steam_cfg_path}: {e}"
+                        )
 
         except Exception as e:
             logger.error(f"Failed to apply steam.cfg configuration: {e}", exc_info=True)
@@ -1344,9 +1462,14 @@ class SettingsDialog(QDialog):
         from pathlib import Path
 
         # Check if SLSsteam is installed in either native or Flatpak path
-        xdg_data_home = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local/share")
+        xdg_data_home = os.environ.get("XDG_DATA_HOME") or str(
+            Path.home() / ".local/share"
+        )
         native_so = Path(xdg_data_home) / "SLSsteam" / "SLSsteam.so"
-        flatpak_so = Path.home() / ".var/app/com.valvesoftware.Steam/.local/share/SLSsteam/SLSsteam.so"
+        flatpak_so = (
+            Path.home()
+            / ".var/app/com.valvesoftware.Steam/.local/share/SLSsteam/SLSsteam.so"
+        )
         sls_installed = native_so.exists() or flatpak_so.exists()
 
         if not sls_installed:
@@ -1394,7 +1517,9 @@ class SettingsDialog(QDialog):
         elif not found:
             self._set_hash_warning("Steam client not found.")
         elif mismatch is False:
-            self._set_hash_warning("Your Steam client is compatible.", "color: #7FC97F; font-size: 11px;")
+            self._set_hash_warning(
+                "Your Steam client is compatible.", "color: #7FC97F; font-size: 11px;"
+            )
 
     def _format_status_text(self, status):
         """Format the status text for display"""
@@ -1502,7 +1627,8 @@ class SettingsDialog(QDialog):
                 venv_activate = get_venv_activate()
                 command_text = (
                     f'bash -c \'cd "{working_dir}" && source "{venv_activate}" && {" ".join(command)}\''
-                    if venv_activate else " ".join(command)
+                    if venv_activate
+                    else " ".join(command)
                 )
 
                 msg_box = QMessageBox(self)
@@ -1513,7 +1639,9 @@ class SettingsDialog(QDialog):
                 )
                 msg_box.setInformativeText(command_text)
                 msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-                msg_box.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+                msg_box.setTextInteractionFlags(
+                    Qt.TextInteractionFlag.TextSelectableByMouse
+                )
                 msg_box.exec()
 
         except Exception as e:
@@ -1551,7 +1679,7 @@ class SettingsDialog(QDialog):
         reply = QMessageBox.question(
             self,
             "Clear GIF Cache?",
-            f"This will regenerate all GIFs.",
+            "This will regenerate all GIFs.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )

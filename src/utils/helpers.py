@@ -68,7 +68,6 @@ def get_dotnet_path() -> str | None:
     return None
 
 
-
 def get_base_path(app_name="ACCELA"):
     """
     Return the base directory for the current platform, WITHOUT the logs directory.
@@ -160,9 +159,9 @@ def check_venv(path):
 
     if venv_path.exists() and venv_path.is_dir():
         # Check for standard venv markers
-        has_cfg = (venv_path / 'pyvenv.cfg').exists()
+        has_cfg = (venv_path / "pyvenv.cfg").exists()
         # Check for the actual python binary
-        has_bin = (venv_path / 'bin' / 'python').exists()
+        has_bin = (venv_path / "bin" / "python").exists()
 
         if has_cfg or has_bin:
             return venv_path
@@ -175,17 +174,17 @@ def get_venv_path():
     venv_dir = None
 
     # 1. Check AppImage environment (Highest priority for your use case)
-    appdir = os.environ.get('APPDIR')
+    appdir = os.environ.get("APPDIR")
     if appdir:
         # Should be at {APPDIR}/bin/.venv
-        venv_dir = check_venv(Path(appdir) / 'bin' / '.venv')
+        venv_dir = check_venv(Path(appdir) / "bin" / ".venv")
         if venv_dir:
             return venv_dir
 
     # 2. Check relative to this script file (Absolute traversal)
     current_file_dir = Path(__file__).resolve().parent
     for _ in range(4):
-        venv_dir = check_venv(current_file_dir / '.venv')
+        venv_dir = check_venv(current_file_dir / ".venv")
         if venv_dir:
             return venv_dir
         if current_file_dir == current_file_dir.parent:
@@ -194,7 +193,7 @@ def get_venv_path():
 
     # 3. Final Fallback: CWD (Forced to absolute)
     if not venv_dir:
-        venv_dir = check_venv(Path.cwd() / '.venv')
+        venv_dir = check_venv(Path.cwd() / ".venv")
 
     if venv_dir:
         logger.info(f"Found absolute venv path at: {venv_dir}")
@@ -210,7 +209,7 @@ def get_venv_python():
 
     if venv_path:
         # Return Python from venv
-        python_exe = venv_path / 'bin' / 'python'
+        python_exe = venv_path / "bin" / "python"
 
         if python_exe.exists():
             return str(python_exe)
@@ -223,7 +222,7 @@ def get_venv_activate():
     venv_path = get_venv_path()
 
     if venv_path:
-        activate_script = venv_path / 'bin' / 'activate'
+        activate_script = venv_path / "bin" / "activate"
 
         if activate_script.exists():
             return str(activate_script)
@@ -246,7 +245,9 @@ def add_gradient_border(element, accent_color: str, background_color: str):
     """)
 
 
-def create_slider_setting(name: str, setting_key: str, default_value: int, parent_widget=None):
+def create_slider_setting(
+    name: str, setting_key: str, default_value: int, parent_widget=None
+):
     """Helper function to create a slider setting with value label and reset button"""
     layout = QHBoxLayout()
 
@@ -296,7 +297,14 @@ class CheckboxSetting(QWidget):
     stateChanged signal proxy) so callers can use it like a plain checkbox.
     """
 
-    def __init__(self, text: str, setting_key: str, default_value: bool, parent_widget=None, tooltip: str | None = None):
+    def __init__(
+        self,
+        text: str,
+        setting_key: str,
+        default_value: bool,
+        parent_widget=None,
+        tooltip: str | None = None,
+    ):
         super().__init__()
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
@@ -304,7 +312,9 @@ class CheckboxSetting(QWidget):
 
         # Initialize checked state from settings when parent_widget provided
         if parent_widget:
-            current_value = parent_widget.settings.value(setting_key, default_value, type=bool)
+            current_value = parent_widget.settings.value(
+                setting_key, default_value, type=bool
+            )
             self.checkbox.setChecked(current_value)
         else:
             self.checkbox.setChecked(default_value)
@@ -344,12 +354,21 @@ class CheckboxSetting(QWidget):
             self.explanation_label.setText(a0 if a0 is not None else "")
 
 
-def create_checkbox_setting(text: str, setting_key: str, default_value: bool, parent_widget=None, tooltip=None):
+def create_checkbox_setting(
+    text: str, setting_key: str, default_value: bool, parent_widget=None, tooltip=None
+):
     """Helper function to create a checkbox setting (returns a CheckboxSetting widget)"""
     return CheckboxSetting(text, setting_key, default_value, parent_widget, tooltip)
 
 
-def create_text_setting(name: str, setting_key: str, default_value: str, parent_widget=None, placeholder=None, tooltip=None):
+def create_text_setting(
+    name: str,
+    setting_key: str,
+    default_value: str,
+    parent_widget=None,
+    placeholder=None,
+    tooltip=None,
+):
     """Helper function to create a text input setting"""
     layout = QHBoxLayout()
 
@@ -362,7 +381,9 @@ def create_text_setting(name: str, setting_key: str, default_value: str, parent_
 
     current_value = default_value
     if parent_widget:
-        current_value = parent_widget.settings.value(setting_key, default_value, type=str)
+        current_value = parent_widget.settings.value(
+            setting_key, default_value, type=str
+        )
 
     lineedit.setText(current_value)
 
@@ -374,7 +395,9 @@ def create_text_setting(name: str, setting_key: str, default_value: str, parent_
     return layout, lineedit
 
 
-def create_color_setting(name: str, setting_key: str, default_color: str, parent_widget=None):
+def create_color_setting(
+    name: str, setting_key: str, default_color: str, parent_widget=None
+):
     """Helper function to create a color picker setting"""
     layout = QHBoxLayout()
 
@@ -411,7 +434,9 @@ def create_font_setting(parent_widget=None):
         # Load current font settings
         current_font = QFont()
         current_font.setFamily(parent_widget.settings.value("font", "TrixieCyrG-Plain"))
-        current_font.setPointSize(parent_widget.settings.value("font-size", 12, type=int))
+        current_font.setPointSize(
+            parent_widget.settings.value("font-size", 12, type=int)
+        )
 
         font_style = parent_widget.settings.value("font-style", "Normal")
         if font_style == "Italic":

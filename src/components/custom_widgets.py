@@ -3,7 +3,9 @@ from PyQt6.QtGui import QFont, QFontMetrics
 from PyQt6.QtWidgets import QLabel, QPushButton
 
 
-def _calculate_fitting_font_size(text, base_font, width, height, max_size, min_size=8, word_wrap=False):
+def _calculate_fitting_font_size(
+    text, base_font, width, height, max_size, min_size=8, word_wrap=False
+):
     """Helper function to find the largest font size that fits within the given dimensions."""
     new_size = max(min_size, min(max_size, int(height * 0.4)))
     test_font = QFont(base_font)
@@ -20,7 +22,7 @@ def _calculate_fitting_font_size(text, base_font, width, height, max_size, min_s
             rect = metrics.boundingRect(
                 QRect(0, 0, target_width, 10000),
                 Qt.TextFlag.TextWordWrap | Qt.AlignmentFlag.AlignCenter,
-                text
+                text,
             )
             if rect.width() <= target_width and rect.height() <= target_height:
                 break
@@ -50,12 +52,12 @@ class ScaledLabel(QLabel):
             try:
                 self._movie.frameChanged.disconnect(self.on_frame_changed)
             except TypeError:
-                pass # Ignore if it wasn't connected
+                pass  # Ignore if it wasn't connected
 
         self._movie = movie
         if self._movie:
             self._movie.frameChanged.connect(self.on_frame_changed)
-            self.on_frame_changed(0) # Trigger immediate update for current frame
+            self.on_frame_changed(0)  # Trigger immediate update for current frame
 
     def on_frame_changed(self, frame_number=0):
         if self.size().width() > 0 and self.size().height() > 0 and self._movie:
@@ -96,8 +98,12 @@ class ScaledFontLabel(QLabel):
         if text and self.width() > 0 and self.height() > 0:
             font = self.font()
             new_size = _calculate_fitting_font_size(
-                text, font, self.width(), self.height(),
-                max_size=self.max_font_size, word_wrap=self.wordWrap()
+                text,
+                font,
+                self.width(),
+                self.height(),
+                max_size=self.max_font_size,
+                word_wrap=self.wordWrap(),
             )
             font.setPointSize(new_size)
             self.setFont(font)
@@ -105,6 +111,7 @@ class ScaledFontLabel(QLabel):
 
 class ScaledButton(QPushButton):
     """QPushButton that automatically scales its font to fit the button size"""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.setMinimumSize(1, 1)
@@ -130,8 +137,12 @@ class ScaledButton(QPushButton):
         if text and self.width() > 0 and self.height() > 0:
             font = self.font()
             new_size = _calculate_fitting_font_size(
-                text, font, self.width(), self.height(),
-                max_size=self.max_font_size, word_wrap=False
+                text,
+                font,
+                self.width(),
+                self.height(),
+                max_size=self.max_font_size,
+                word_wrap=False,
             )
             font.setPointSize(new_size)
             self.setFont(font)

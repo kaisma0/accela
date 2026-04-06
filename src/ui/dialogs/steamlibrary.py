@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 
 logger = logging.getLogger(__name__)
 
+
 class SteamLibraryDialog(QDialog):
     def __init__(self, library_paths, parent=None):
         super().__init__(parent)

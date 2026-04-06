@@ -40,7 +40,9 @@ class UIStateManager:
         self.pause_button = None
         self.cancel_button = None
 
-        self.disable_default_gifs = self.settings.value("disable_default_gifs", False, type=bool)
+        self.disable_default_gifs = self.settings.value(
+            "disable_default_gifs", False, type=bool
+        )
 
         # Cache lists for GIFs
         self.custom_download_gifs = []
@@ -57,14 +59,14 @@ class UIStateManager:
         self.remove_old_downloading_gifs()
 
         # Cache custom downloading GIFs
-        self.custom_download_gifs = sorted([
-            str(p) for p in colored_dir.glob("downloading_custom*.gif")
-        ])
+        self.custom_download_gifs = sorted(
+            [str(p) for p in colored_dir.glob("downloading_custom*.gif")]
+        )
 
         # Cache default downloading GIFs
-        self.default_download_gifs = sorted([
-            str(p) for p in colored_dir.glob("downloading_lain*.gif")
-        ])
+        self.default_download_gifs = sorted(
+            [str(p) for p in colored_dir.glob("downloading_lain*.gif")]
+        )
 
         logger.debug(f"Found {len(self.custom_download_gifs)} custom GIFs")
         logger.debug(f"Found {len(self.default_download_gifs)} default GIFs")
@@ -88,7 +90,10 @@ class UIStateManager:
             for file_path in colorized_dir.rglob("downloading*.gif"):
                 # EXCLUDE downloading_lain*.gif and downloading_custom*.gif
                 filename_lower = file_path.name.lower()
-                if "downloading_lain" in filename_lower or "downloading_custom" in filename_lower:
+                if (
+                    "downloading_lain" in filename_lower
+                    or "downloading_custom" in filename_lower
+                ):
                     continue
 
                 try:
@@ -100,7 +105,9 @@ class UIStateManager:
 
             total_removed += removed_count
             if removed_count > 0:
-                logger.info(f"Removed {removed_count} downloading*.gif files from colorized")
+                logger.info(
+                    f"Removed {removed_count} downloading*.gif files from colorized"
+                )
         else:
             logger.warning(f"Colorized directory does not exist: {colorized_dir}")
 
@@ -155,19 +162,25 @@ class UIStateManager:
 
                 total_renamed = renamed_count
                 if renamed_count > 0:
-                    logger.info(f"Renamed {renamed_count} downloading*.gif files to sequential names")
+                    logger.info(
+                        f"Renamed {renamed_count} downloading*.gif files to sequential names"
+                    )
             else:
                 logger.info("No files to rename in custom directory")
         else:
             logger.warning(f"Custom directory does not exist: {custom_dir}")
 
-        logger.info(f"Total: {total_removed} files removed, {total_renamed} files renamed")
+        logger.info(
+            f"Total: {total_removed} files removed, {total_renamed} files renamed"
+        )
         return {"removed": total_removed, "renamed": total_renamed}
 
     def _update_gifs(self):
         """Update GIFs with current accent color"""
         output_dir = get_base_path() / "gifs" / "colorized"
-        self.main_window.gif_manager.process_gif_batch(output_dir, self.main_window.accent_color)
+        self.main_window.gif_manager.process_gif_batch(
+            output_dir, self.main_window.accent_color
+        )
         self._reload_movies()
 
     def _reload_movies(self):
@@ -210,7 +223,9 @@ class UIStateManager:
 
         # Queue list
         self.queue_list_widget = QListWidget()
-        self.queue_list_widget.setToolTip("Current download queue. Select an item to move it.")
+        self.queue_list_widget.setToolTip(
+            "Current download queue. Select an item to move it."
+        )
         queue_layout.addWidget(self.queue_list_widget)
 
         # Queue buttons
@@ -221,11 +236,15 @@ class UIStateManager:
         queue_button_layout = QHBoxLayout()
 
         self.queue_move_up_button = QPushButton("Move Up")
-        self.queue_move_up_button.clicked.connect(self.main_window.job_queue.move_item_up)
+        self.queue_move_up_button.clicked.connect(
+            self.main_window.job_queue.move_item_up
+        )
         queue_button_layout.addWidget(self.queue_move_up_button)
 
         self.queue_move_down_button = QPushButton("Move Down")
-        self.queue_move_down_button.clicked.connect(self.main_window.job_queue.move_item_down)
+        self.queue_move_down_button.clicked.connect(
+            self.main_window.job_queue.move_item_down
+        )
         queue_button_layout.addWidget(self.queue_move_down_button)
 
         self.queue_remove_button = QPushButton("Remove")
@@ -238,7 +257,9 @@ class UIStateManager:
         queue_button_layout.addWidget(self.pause_button)
 
         self.cancel_button = QPushButton("Cancel")
-        self.cancel_button.clicked.connect(self.main_window.task_manager.cancel_current_job)
+        self.cancel_button.clicked.connect(
+            self.main_window.task_manager.cancel_current_job
+        )
         self.cancel_button.setVisible(False)
         queue_button_layout.addWidget(self.cancel_button)
 
@@ -246,7 +267,9 @@ class UIStateManager:
 
     def apply_style_settings(self):
         """Apply current style settings to UI"""
-        self.main_window.background_color = self.settings.value("background_color", "#000000")
+        self.main_window.background_color = self.settings.value(
+            "background_color", "#000000"
+        )
         self.main_window.accent_color = self.settings.value("accent_color", "#C06C84")
 
         # Load font family
@@ -293,7 +316,9 @@ class UIStateManager:
         """Apply background color to main content"""
         main_frame = self.main_window.central_widget.findChild(QFrame)
         if main_frame:
-            main_frame.setStyleSheet(f"background-color: {self.main_window.background_color};")
+            main_frame.setStyleSheet(
+                f"background-color: {self.main_window.background_color};"
+            )
 
     def _apply_accent_color(self):
         """Apply accent color to UI elements"""
@@ -329,11 +354,17 @@ class UIStateManager:
             if self.queue_widget:
                 self.queue_widget.setVisible(True)
             if not is_processing:
-                self.main_window.drop_text_label.setText("Queue idle. Ready for next job.")
+                self.main_window.drop_text_label.setText(
+                    "Queue idle. Ready for next job."
+                )
 
     def _show_main_gif(self):
         """Show the main GIF animation"""
-        if self.current_movie != self.main_movie and self.main_movie and self.main_movie.isValid():
+        if (
+            self.current_movie != self.main_movie
+            and self.main_movie
+            and self.main_movie.isValid()
+        ):
             self.main_window.drop_zone_gif.setMovie(self.main_movie)
             self.main_movie.start()
             self.current_movie = self.main_movie
@@ -341,7 +372,9 @@ class UIStateManager:
     def switch_to_download_gif(self):
         """Switch to a random download GIF"""
         # Update setting from current value
-        self.disable_default_gifs = self.settings.value("disable_default_gifs", False, type=bool)
+        self.disable_default_gifs = self.settings.value(
+            "disable_default_gifs", False, type=bool
+        )
 
         if self.current_movie:
             self.current_movie.stop()

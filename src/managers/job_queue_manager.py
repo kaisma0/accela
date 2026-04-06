@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 from PyQt6.QtWidgets import QMessageBox, QFileDialog
 from PyQt6.QtCore import QTimer
 
@@ -25,7 +26,9 @@ class JobQueueManager:
         if not Path(file_path).exists():
             logger.error(f"Failed to add job: file {file_path} does not exist.")
             QMessageBox.critical(
-                self.main_window, "Error", f"Could not add job: File not found at {file_path}"
+                self.main_window,
+                "Error",
+                f"Could not add job: File not found at {file_path}",
             )
             return
 
@@ -75,7 +78,9 @@ class JobQueueManager:
             if current_row < self.main_window.ui_state.queue_list_widget.count():
                 self.main_window.ui_state.queue_list_widget.setCurrentRow(current_row)
             elif self.main_window.ui_state.queue_list_widget.count() > 0:
-                self.main_window.ui_state.queue_list_widget.setCurrentRow(current_row - 1)
+                self.main_window.ui_state.queue_list_widget.setCurrentRow(
+                    current_row - 1
+                )
 
         except Exception as e:
             logger.error(f"Error removing queue item: {e}", exc_info=True)
@@ -107,13 +112,18 @@ class JobQueueManager:
 
             if was_pending:
                 from utils.settings import get_settings
+
                 settings = get_settings()
-                prompt_steam_restart = settings.value("prompt_steam_restart", True, type=bool)
+                prompt_steam_restart = settings.value(
+                    "prompt_steam_restart", True, type=bool
+                )
 
                 if prompt_steam_restart:
                     self._prompt_for_steam_restart()
                 else:
-                    logger.info("Steam restart prompt disabled by settings. Skipping prompt.")
+                    logger.info(
+                        "Steam restart prompt disabled by settings. Skipping prompt."
+                    )
             elif self.jobs_completed_count > 0:
                 QMessageBox.information(
                     self.main_window,
@@ -145,11 +155,11 @@ class JobQueueManager:
         tm = self.main_window.task_manager
 
         is_busy = (
-            tm.is_processing or
-            tm.is_awaiting_zip_task_stop or
-            tm.is_awaiting_speed_monitor_stop or
-            tm.is_awaiting_download_stop or
-            tm.achievement_task_runner is not None
+            tm.is_processing
+            or tm.is_awaiting_zip_task_stop
+            or tm.is_awaiting_speed_monitor_stop
+            or tm.is_awaiting_download_stop
+            or tm.achievement_task_runner is not None
         )
 
         if not is_busy:
@@ -168,10 +178,7 @@ class JobQueueManager:
     def _get_library_path(self, title, filter_str):
         """Helper to DRY up file dialogs for missing libraries"""
         file_path, _ = QFileDialog.getOpenFileName(
-            self.main_window,
-            title,
-            str(Path.home()),
-            filter_str
+            self.main_window, title, str(Path.home()), filter_str
         )
         return file_path
 
@@ -207,8 +214,7 @@ class JobQueueManager:
             logger.warning("SLSsteam libraries not found. Please locate them manually.")
 
             file_path_1 = self._get_library_path(
-                "Select SLSsteam.so",
-                "SLSsteam.so (SLSsteam.so libSLSsteam.so)"
+                "Select SLSsteam.so", "SLSsteam.so (SLSsteam.so libSLSsteam.so)"
             )
             if not file_path_1:
                 logger.info("User cancelled file selection for SLSsteam.so")
@@ -216,7 +222,7 @@ class JobQueueManager:
 
             file_path_2 = self._get_library_path(
                 "Select library-inject.so",
-                "library-inject.so (library-inject.so libSLS-library-inject.so)"
+                "library-inject.so (library-inject.so libSLS-library-inject.so)",
             )
             if not file_path_2:
                 logger.info("User cancelled file selection for library-inject.so")
@@ -230,22 +236,20 @@ class JobQueueManager:
                 QMessageBox.warning(
                     self.main_window,
                     "Execution Failed",
-                    "One or both of the selected library files are invalid or don't exist."
+                    "One or both of the selected library files are invalid or don't exist.",
                 )
             else:
                 QMessageBox.warning(
                     self.main_window,
                     "Execution Failed",
-                    "Could not start Steam with the selected libraries."
+                    "Could not start Steam with the selected libraries.",
                 )
         elif result == "SUCCESS":
             logger.info("Steam started successfully with cached libraries.")
         else:
             logger.warning("Failed to start Steam.")
             QMessageBox.warning(
-                self.main_window,
-                "Execution Failed",
-                "Could not start Steam."
+                self.main_window, "Execution Failed", "Could not start Steam."
             )
 
     def clear(self):

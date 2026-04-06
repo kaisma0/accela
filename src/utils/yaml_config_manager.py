@@ -461,9 +461,7 @@ def add_list_item(
         return False
 
 
-def remove_list_item(
-    config_path: Path, section_name: str, item: str
-) -> bool:
+def remove_list_item(config_path: Path, section_name: str, item: str) -> bool:
     """
     Remove *item* from the named YAML block-sequence section.
 
@@ -491,9 +489,7 @@ def remove_list_item(
             logger.debug(f"'{section_name}' is empty; '{item}' not found")
             return False
 
-        target_idx = next(
-            (i for i, x in enumerate(section) if str(x) == item), None
-        )
+        target_idx = next((i for i, x in enumerate(section) if str(x) == item), None)
         if target_idx is None:
             logger.debug(f"Item '{item}' not found in '{section_name}'")
             return False
@@ -552,7 +548,9 @@ def get_map_items(config_path: Path, section_name: str) -> dict[str, Any]:
             return {}
         return {str(k): v for k, v in section.items()}
     except Exception as e:
-        logger.error(f"Failed to read '{section_name}' from {config_path}: {e}", exc_info=True)
+        logger.error(
+            f"Failed to read '{section_name}' from {config_path}: {e}", exc_info=True
+        )
         return {}
 
 
@@ -586,7 +584,9 @@ def set_map_item(
 
         if found_key is not None:
             if str(section[found_key]) == str(value):
-                logger.debug(f"Key '{key}' in '{section_name}' already set to matching value")
+                logger.debug(
+                    f"Key '{key}' in '{section_name}' already set to matching value"
+                )
                 return False
             # Overwrite the existing matching key to preserve its loaded type
             section[found_key] = value
@@ -609,7 +609,8 @@ def set_map_item(
 
     except Exception as e:
         logger.error(
-            f"Failed to set '{key}' in '{section_name}' in {config_path}: {e}", exc_info=True
+            f"Failed to set '{key}' in '{section_name}' in {config_path}: {e}",
+            exc_info=True,
         )
         return False
 
@@ -819,7 +820,9 @@ def remove_dlc_data(config_path: Path, parent_app_id: str, dlc_id: str) -> bool:
         if not _save_yaml(yaml, data, config_path):
             return False
 
-        logger.info(f"Removed DLC '{dlc_id}' under AppID '{parent_app_id}' in {config_path}")
+        logger.info(
+            f"Removed DLC '{dlc_id}' under AppID '{parent_app_id}' in {config_path}"
+        )
         return True
 
     except Exception as e:

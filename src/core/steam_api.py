@@ -35,9 +35,7 @@ def _parse_depot_entry(depot_id, depot_data):
         manifest_id = manifest_public
         size_str = None
 
-    logger.debug(
-        f"Depot {depot_id}: manifest_id={manifest_id}, raw size={size_str!r}"
-    )
+    logger.debug(f"Depot {depot_id}: manifest_id={manifest_id}, raw size={size_str!r}")
     return {
         "name": depot_data.get("name"),
         "oslist": config.get("oslist"),
@@ -69,11 +67,7 @@ def _parse_steam_client_app_data(int_app_id, app_data):
 
     buildid = None
     try:
-        buildid = (
-            depots_raw.get("branches", {})
-            .get("public", {})
-            .get("buildid")
-        )
+        buildid = depots_raw.get("branches", {}).get("public", {}).get("buildid")
         if buildid:
             logger.info(f"Found public buildid: {buildid}")
         else:
@@ -111,9 +105,7 @@ def get_depot_info_from_api(app_id, access_token=None):
 
     if db_data and db_data.get("depots"):
         name = db_data.get("name", "")
-        is_generic = re.match(
-            r"^App[ _]?" + str(app_id) + r"$", name, re.IGNORECASE
-        )
+        is_generic = re.match(r"^App[ _]?" + str(app_id) + r"$", name, re.IGNORECASE)
         if name and not is_generic:
             logger.info(f"Loaded AppID {app_id} from database.")
             return db_data
@@ -161,7 +153,9 @@ def _fetch_with_steam_client(app_id, access_token=None):
 
         if access_token:
             try:
-                request_list = [{"appid": int_app_id, "access_token": int(access_token)}]
+                request_list = [
+                    {"appid": int_app_id, "access_token": int(access_token)}
+                ]
             except (ValueError, TypeError):
                 request_list = [{"appid": int_app_id, "access_token": access_token}]
             logger.debug(f"Using access token for AppID {app_id}.")
@@ -171,7 +165,10 @@ def _fetch_with_steam_client(app_id, access_token=None):
         result = client.get_product_info(apps=request_list, timeout=30)
 
         if logger.isEnabledFor(logging.DEBUG):
-            dump_path = Path(tempfile.gettempdir()) / f"mistwalker_steamclient_response_{int_app_id}.json"
+            dump_path = (
+                Path(tempfile.gettempdir())
+                / f"mistwalker_steamclient_response_{int_app_id}.json"
+            )
             try:
                 with dump_path.open("w", encoding="utf-8") as f:
                     json.dump(result, f, indent=4, default=str)
@@ -220,12 +217,7 @@ def _fetch_with_web_api(app_id):
 def _parse_web_api_response(app_id, data):
     app_data_wrapper = data.get(str(app_id))
     if not (app_data_wrapper and app_data_wrapper.get("success")):
-        return {
-            "depots": {},
-            "installdir": None,
-            "header_url": None,
-            "name": None
-         }
+        return {"depots": {}, "installdir": None, "header_url": None, "name": None}
 
     app_data = app_data_wrapper.get("data", {})
     depot_info = {}
@@ -268,8 +260,7 @@ def batched_get_product_info(
         access_tokens = {}
 
     batches = [
-        appid_list[i : i + batch_size]
-        for i in range(0, len(appid_list), batch_size)
+        appid_list[i : i + batch_size] for i in range(0, len(appid_list), batch_size)
     ]
     logger.info(
         f"Batched fetch: {len(appid_list)} appids → {len(batches)} batches "
@@ -310,7 +301,9 @@ def batched_get_product_info(
                     token = access_tokens.get(str(appid))
                     if token:
                         try:
-                            request_list.append({"appid": appid, "access_token": int(token)})
+                            request_list.append(
+                                {"appid": appid, "access_token": int(token)}
+                            )
                         except (ValueError, TypeError):
                             request_list.append(appid)
                     else:

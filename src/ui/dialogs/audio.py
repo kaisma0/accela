@@ -16,7 +16,14 @@ from utils.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
-def make_volume_row(name: str, slider: QSlider, value_label: QLabel, reset_button: QPushButton, current_volume: int):
+
+def make_volume_row(
+    name: str,
+    slider: QSlider,
+    value_label: QLabel,
+    reset_button: QPushButton,
+    current_volume: int,
+):
     layout = QHBoxLayout()
 
     slider.setRange(0, 100)
@@ -27,7 +34,7 @@ def make_volume_row(name: str, slider: QSlider, value_label: QLabel, reset_butto
     label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
     label.setFixedWidth(105)
 
-    value_label.setFixedWidth(30) # Percentage
+    value_label.setFixedWidth(30)  # Percentage
     reset_button.setFixedHeight(25)
 
     layout.addWidget(label)
@@ -64,8 +71,8 @@ class AudioDialog(QDialog):
         # Keep track of generated checkboxes
         self.checkboxes = {}
         checkbox_configs = [
-            ("Play \"Entering The Wired\" on start", "play_etw", True),
-            ("Play \"Let's All Love Lain\" on exit", "play_lall", True),
+            ('Play "Entering The Wired" on start', "play_etw", True),
+            ('Play "Let\'s All Love Lain" on exit', "play_lall", True),
             ("Play 50Hz hum noise loop", "play_50hz_hum", True),
         ]
 
@@ -111,14 +118,22 @@ class AudioDialog(QDialog):
             # Note: We use lambda defaults (checked=False, k=key, etc.) to correctly
             # capture the variables in the current loop iteration
             reset_button.clicked.connect(
-                lambda checked=False, k=key, d=default_val, s=slider: self.reset_volume(k, d, s)
+                lambda checked=False, k=key, d=default_val, s=slider: self.reset_volume(
+                    k, d, s
+                )
             )
 
             slider.valueChanged.connect(
-                lambda value, k=key, lbl=value_label: self.on_volume_changed(k, value, lbl)
+                lambda value, k=key, lbl=value_label: self.on_volume_changed(
+                    k, value, lbl
+                )
             )
 
-            volume_layout.addLayout(make_volume_row(label_text, slider, value_label, reset_button, current_val))
+            volume_layout.addLayout(
+                make_volume_row(
+                    label_text, slider, value_label, reset_button, current_val
+                )
+            )
             self.sliders[key] = slider
 
         self.layout.addLayout(volume_layout)

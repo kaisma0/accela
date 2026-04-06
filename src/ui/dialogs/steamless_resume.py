@@ -44,7 +44,6 @@ class SteamlessResumeDialog(QDialog):
         # Get colors from settings
         settings = get_settings()
         accent_color = settings.value("accent_color", "#C06C84")
-        bg_color = settings.value("background_color", "#1E1E1E")
 
         # Title
         title = ScaledFontLabel("Steamless Processing Complete")

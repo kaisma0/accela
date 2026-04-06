@@ -22,6 +22,7 @@ def normal_palette_colors(background_color, accent_color):
         QPalette.ColorRole.PlaceholderText: accent_color.darker(120),
     }
 
+
 def disabled_palette_colors(disabled_bg, disabled_text, background_color):
     return {
         QPalette.ColorRole.Button: disabled_bg,
@@ -30,6 +31,7 @@ def disabled_palette_colors(disabled_bg, disabled_text, background_color):
         QPalette.ColorRole.WindowText: disabled_text,
         QPalette.ColorRole.Base: background_color.darker(140),
     }
+
 
 def apply_palette(app, accent, background):
     app.setStyle("Fusion")
@@ -43,7 +45,9 @@ def apply_palette(app, accent, background):
 
     for role, color in normal_palette_colors(background_color, accent_color).items():
         dark_palette.setColor(role, color)
-    for role, color in disabled_palette_colors(disabled_bg, disabled_text, background_color).items():
+    for role, color in disabled_palette_colors(
+        disabled_bg, disabled_text, background_color
+    ).items():
         dark_palette.setColor(QPalette.ColorGroup.Disabled, role, color)
 
     app.setPalette(dark_palette)
@@ -216,6 +220,7 @@ def apply_palette(app, accent, background):
         }}
     """)
 
+
 def apply_font(app, font, font_file):
     """
     Applies the font to the application.
@@ -243,7 +248,9 @@ def apply_font(app, font, font_file):
             return True, font_family
         else:
             # Font family not found, try to load default
-            logger.debug(f"Font family '{font_family}' not found in system, using default")
+            logger.debug(
+                f"Font family '{font_family}' not found in system, using default"
+            )
             font_resource = default_font_file
     else:
         font_resource = default_font_file
@@ -284,7 +291,10 @@ def apply_font(app, font, font_file):
     # Prefer returning the registered family name
     return True, font_name
 
-def update_appearance(app, accent="#C06C84", background="#000000", font=None, font_file=None):
+
+def update_appearance(
+    app, accent="#C06C84", background="#000000", font=None, font_file=None
+):
     """Apply a dynamic palette and custom font to the application
 
     font_file: relative resource path to load instead of the default embedded font.

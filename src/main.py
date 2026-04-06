@@ -14,12 +14,12 @@ QApplication.setHighDpiScaleFactorRoundingPolicy(
 )
 # Required for Qt WebEngine when imported after QApplication is created.
 QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
-from ui.main_window import MainWindow
-from ui.theme import update_appearance
+from ui.main_window import MainWindow  # noqa: E402
+from ui.theme import update_appearance  # noqa: E402
 
-from utils.logger import setup_logging
-from utils.settings import get_settings
-from utils.yaml_config_manager import (
+from utils.logger import setup_logging  # noqa: E402
+from utils.settings import get_settings  # noqa: E402
+from utils.yaml_config_manager import (  # noqa: E402
     backup_config_on_startup,
     ensure_slssteam_api_enabled,
     get_user_config_path,
@@ -29,13 +29,14 @@ project_root = str(Path(__file__).resolve().parent)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+
 def parse_args(args, logger):
     """
     Parses command-line arguments and custom URI schemas (accela://...).
     Returns (command_line_appid, command_line_zips).
     """
     parser = argparse.ArgumentParser(description="ACCELA", add_help=False)
-    parser.add_argument('--appid', type=str, help='AppID for the game')
+    parser.add_argument("--appid", type=str, help="AppID for the game")
 
     # Use parse_known_args to allow unrecognized arguments (like PyQt flags or URLs/ZIPs)
     parsed, unknown = parser.parse_known_args(args)
@@ -50,21 +51,21 @@ def parse_args(args, logger):
             logger.error(f"Invalid AppID: {parsed.appid} (must be a number)")
 
     for arg in unknown:
-        if arg.startswith('accela://'):
+        if arg.startswith("accela://"):
             # Handle custom URL scheme
             try:
                 url_content = arg[9:]
-                if '/' in url_content:
-                    action, param = url_content.split('/', 1)
+                if "/" in url_content:
+                    action, param = url_content.split("/", 1)
                     param = unquote(param)
                 else:
                     action = url_content
                     param = None
 
-                if action == 'download' and param and param.isdigit():
+                if action == "download" and param and param.isdigit():
                     command_line_appid = int(param)
                     logger.info(f"Found accela://download URL for AppID: {param}")
-                elif action == 'zip' and param:
+                elif action == "zip" and param:
                     if Path(param).exists():
                         command_line_zips.append(param)
                         logger.info(f"Found ZIP file from URL: {param}")
@@ -75,7 +76,7 @@ def parse_args(args, logger):
             except Exception as e:
                 logger.error(f"Failed to parse URL {arg}: {e}")
 
-        elif arg.lower().endswith('.zip'):
+        elif arg.lower().endswith(".zip"):
             zip_path = Path(arg).resolve()
             if zip_path.exists():
                 command_line_zips.append(str(zip_path))
@@ -103,6 +104,7 @@ def setup_config(logger):
         if ensure_slssteam_api_enabled(config_path):
             logger.info("SLSsteam API enabled in config")
 
+
 def apply_theme(app, logger):
     """Applies theme variables and custom fonts"""
     settings = get_settings()
@@ -126,12 +128,15 @@ def apply_theme(app, logger):
 
     # Apply palette + font
     font_file = settings.value("font-file", "", type=str) or None
-    font_ok, font_info = update_appearance(app, accent_color, bg_color, font=initial_font, font_file=font_file)
+    font_ok, font_info = update_appearance(
+        app, accent_color, bg_color, font=initial_font, font_file=font_file
+    )
 
     if font_ok:
         logger.info(f"Successfully loaded and applied custom font: '{str(font_info)}'")
     else:
         logger.warning(f"Failed to load custom font from: '{str(font_info)}'")
+
 
 def launch_app(app, logger, app_version, command_line_appid, command_line_zips):
     """Launches the main window and processes standard jobs"""
@@ -145,12 +150,15 @@ def launch_app(app, logger, app_version, command_line_appid, command_line_zips):
 
         # Process command-line ZIP files after window is fully initialized
         if command_line_zips or command_line_appid:
+
             def process_command_line_args():
                 """Add command-line ZIP files/AppID to queue after window initialization completes"""
                 from core.morrenus_api import download_manifest
 
                 if command_line_appid:
-                    logger.info(f"Downloading manifest for AppID {command_line_appid} from Morrenus API")
+                    logger.info(
+                        f"Downloading manifest for AppID {command_line_appid} from Morrenus API"
+                    )
                     zip_path, error = download_manifest(command_line_appid)
                     if error:
                         logger.error(f"Failed to download manifest: {error}")
@@ -158,7 +166,9 @@ def launch_app(app, logger, app_version, command_line_appid, command_line_zips):
                     logger.info(f"Adding to queue: AppID {command_line_appid}")
                     main_win.job_queue.add_job(zip_path)
                 else:
-                    logger.info(f"Adding {len(command_line_zips)} ZIP file(s) from command line to queue")
+                    logger.info(
+                        f"Adding {len(command_line_zips)} ZIP file(s) from command line to queue"
+                    )
                     for zip_path in command_line_zips:
                         logger.info(f"Adding to queue: {Path(zip_path).name}")
                         main_win.job_queue.add_job(zip_path)
@@ -173,6 +183,7 @@ def launch_app(app, logger, app_version, command_line_appid, command_line_zips):
             exc_info=True,
         )
         sys.exit(1)
+
 
 def main():
     logger = setup_logging()

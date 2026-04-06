@@ -7,7 +7,11 @@ from pathlib import Path
 
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
-from core.steam_helpers import get_steam_libraries, get_library_index, find_steam_install
+from core.steam_helpers import (
+    get_steam_libraries,
+    get_library_index,
+    find_steam_install,
+)
 from core.tasks.manifest_check_task import ManifestCheckTask
 from utils.helpers import get_base_path
 from utils.task_runner import TaskRunner
@@ -18,7 +22,7 @@ from utils.yaml_config_manager import (
     get_map_items,
     set_map_item,
     is_slssteam_mode_enabled,
-    is_slssteam_config_management_enabled
+    is_slssteam_config_management_enabled,
 )
 
 logger = logging.getLogger(__name__)
@@ -73,7 +77,7 @@ class GameManager(QObject):
 
     def _get_sorted_games(self, games_list):
         """Helper method to sort games by name (case-insensitive)"""
-        return sorted(games_list, key=lambda x: x.get('game_name', '').lower())
+        return sorted(games_list, key=lambda x: x.get("game_name", "").lower())
 
     def add_game(self, game_data):
         """Add a game to the library"""
@@ -167,7 +171,10 @@ class GameManager(QObject):
         Games appear with 'checking' status initially, then update individually.
         """
         # Cancel any existing task by stopping it and waiting for cleanup
-        if self.manifest_check_task is not None or self.manifest_check_runner is not None:
+        if (
+            self.manifest_check_task is not None
+            or self.manifest_check_runner is not None
+        ):
             logger.info("Cancelling previous manifest check task")
             self.cancel_update_checks()
 
@@ -246,7 +253,9 @@ class GameManager(QObject):
         Start an async scan of Steam library directories for games installed by ACCELA.
         The UI will update automatically when the scan completes via signals.
         """
-        logger.info("Starting async scan of Steam libraries for ACCELA-installed games...")
+        logger.info(
+            "Starting async scan of Steam libraries for ACCELA-installed games..."
+        )
 
         # Reset cancel flag
         self._scan_cancelled = False
@@ -330,14 +339,21 @@ class GameManager(QObject):
                                 if self._has_game_content(game_path):
                                     # Found a game installed by ACCELA
                                     game_data = self._collect_game_data(
-                                        game_path, game_name, library_path, steam_install_path
+                                        game_path,
+                                        game_name,
+                                        library_path,
+                                        steam_install_path,
                                     )
                                     if game_data:
                                         self.games.append(game_data)
                                         games_found += 1
-                                        logger.debug(f"  Found ACCELA game: {game_name}")
+                                        logger.debug(
+                                            f"  Found ACCELA game: {game_name}"
+                                        )
                                 else:
-                                    logger.debug(f"  Skipped empty game folder: {game_name}")
+                                    logger.debug(
+                                        f"  Skipped empty game folder: {game_name}"
+                                    )
                         except (OSError, FileNotFoundError, PermissionError):
                             # Skip entries that can't be accessed
                             continue
@@ -390,7 +406,7 @@ class GameManager(QObject):
 
                         # Skip the .DepotDownloader folder (case-insensitive)
                         # Skip typical OS metadata files and any hidden file (starts with '.')
-                        if lname in ignore_names or name.startswith('.'):
+                        if lname in ignore_names or name.startswith("."):
                             continue
 
                         # If we find any file or directory that is not ignored, treat it as content
@@ -455,7 +471,9 @@ class GameManager(QObject):
             return
 
         # Get existing tokens from config
-        existing_tokens = {str(k): str(v) for k, v in get_map_items(config_path, "AppTokens").items()}
+        existing_tokens = {
+            str(k): str(v) for k, v in get_map_items(config_path, "AppTokens").items()
+        }
         logger.debug(f"Found {len(existing_tokens)} existing AppTokens in config")
 
         # Pattern to extract app_id from filename: accela_fetch_{app_id}.zip
@@ -480,7 +498,9 @@ class GameManager(QObject):
                 # Extract token from ZIP
                 try:
                     with zipfile.ZipFile(zip_file, "r") as zip_ref:
-                        lua_files = [f for f in zip_ref.namelist() if f.endswith(".lua")]
+                        lua_files = [
+                            f for f in zip_ref.namelist() if f.endswith(".lua")
+                        ]
                         if not lua_files:
                             continue
 
@@ -488,7 +508,9 @@ class GameManager(QObject):
 
                         # Extract token using the same pattern as ProcessZipTask
                         token_pattern = r'addtoken\s*\(\s*\d+\s*,\s*"([^"]+)"\s*\)'
-                        token_match = re.search(token_pattern, lua_content, re.IGNORECASE)
+                        token_match = re.search(
+                            token_pattern, lua_content, re.IGNORECASE
+                        )
 
                         if not token_match:
                             continue
@@ -498,7 +520,9 @@ class GameManager(QObject):
                         # Add token to config
                         if set_map_item(config_path, "AppTokens", app_id, app_token):
                             tokens_added += 1
-                            logger.info(f"Added missing AppToken for AppID {app_id} from {zip_file.name}")
+                            logger.info(
+                                f"Added missing AppToken for AppID {app_id} from {zip_file.name}"
+                            )
                         else:
                             tokens_skipped += 1
 
@@ -507,11 +531,15 @@ class GameManager(QObject):
                     continue
 
         except Exception as e:
-            logger.error(f"Error scanning morrenus_manifests for tokens: {e}", exc_info=True)
+            logger.error(
+                f"Error scanning morrenus_manifests for tokens: {e}", exc_info=True
+            )
             return
 
         if tokens_added > 0:
-            logger.info(f"Synced {tokens_added} missing AppToken(s) from morrenus_manifests")
+            logger.info(
+                f"Synced {tokens_added} missing AppToken(s) from morrenus_manifests"
+            )
         if tokens_skipped > 0:
             logger.debug(f"Skipped {tokens_skipped} AppToken(s) that already exist")
 
@@ -537,16 +565,23 @@ class GameManager(QObject):
                             if self._scan_cancelled:
                                 return None
                             try:
-                                if not (entry.name.startswith("appmanifest_") and entry.name.endswith(".acf")):
+                                if not (
+                                    entry.name.startswith("appmanifest_")
+                                    and entry.name.endswith(".acf")
+                                ):
                                     continue
                                 test_manifest_path = entry.path
 
                                 # Parse ACF to check if this is the right game
                                 try:
-                                    with open(test_manifest_path, "r", encoding="utf-8") as f:
+                                    with open(
+                                        test_manifest_path, "r", encoding="utf-8"
+                                    ) as f:
                                         content = f.read()
                                         # Extract installdir using regex
-                                        match = re.search(r'"installdir"\s+"([^"]+)"', content)
+                                        match = re.search(
+                                            r'"installdir"\s+"([^"]+)"', content
+                                        )
                                         if match:
                                             installdir = match.group(1)
                                             logger.debug(
@@ -560,13 +595,17 @@ class GameManager(QObject):
                                                 appid = entry.name.replace(
                                                     "appmanifest_", ""
                                                 ).replace(".acf", "")
-                                                logger.debug(f"  ✓ Match found! AppID: {appid}")
+                                                logger.debug(
+                                                    f"  ✓ Match found! AppID: {appid}"
+                                                )
                                                 logger.debug(
                                                     f"Successfully determined AppID for '{game_name}': {appid}"
                                                 )
                                                 break  # Found the right manifest, stop looking
                                 except (OSError, IOError, PermissionError):
-                                    logger.debug(f"  Error reading {entry.name}: file may be in use or inaccessible")
+                                    logger.debug(
+                                        f"  Error reading {entry.name}: file may be in use or inaccessible"
+                                    )
                                     continue
                             except (OSError, FileNotFoundError, PermissionError):
                                 continue
@@ -744,7 +783,15 @@ class GameManager(QObject):
         self.manifest_check_runner = None
         self._games_to_check = []
 
-    def get_uninstall_confirmation_message(self, game_data, remove_game_data=True, remove_compatdata=False, remove_saves=False, remove_from_library=False, remove_shortcuts=False):
+    def get_uninstall_confirmation_message(
+        self,
+        game_data,
+        remove_game_data=True,
+        remove_compatdata=False,
+        remove_saves=False,
+        remove_from_library=False,
+        remove_shortcuts=False,
+    ):
         """
         Build a confirmation message for uninstalling a game.
         Returns a string with the confirmation message.
@@ -753,7 +800,13 @@ class GameManager(QObject):
         install_path = game_data.get("install_path")
         appid = game_data.get("appid", "0")
 
-        if not (remove_game_data or remove_compatdata or remove_saves or remove_from_library or remove_shortcuts):
+        if not (
+            remove_game_data
+            or remove_compatdata
+            or remove_saves
+            or remove_from_library
+            or remove_shortcuts
+        ):
             return f"Are you sure you want to run cleanup for '{game_name}'?\n\nNothing selected to remove."
 
         confirm_msg = f"Are you sure you want to uninstall/cleanup '{game_name}'?\n\n"
@@ -761,7 +814,12 @@ class GameManager(QObject):
         # Warn if appid is unknown
         if not self._is_valid_appid(appid):
             confirm_msg += "⚠️ WARNING: AppID is unknown for this game.\n"
-            if remove_compatdata or remove_saves or remove_shortcuts or remove_from_library:
+            if (
+                remove_compatdata
+                or remove_saves
+                or remove_shortcuts
+                or remove_from_library
+            ):
                 confirm_msg += "Checkboxes requiring AppID will be ignored.\n"
             confirm_msg += "\n"
 
@@ -780,7 +838,9 @@ class GameManager(QObject):
             steam_libraries = get_steam_libraries()
             if steam_libraries:
                 steam_dir = steam_libraries[0]
-                compatdata_path = Path(steam_dir) / "steamapps" / "compatdata" / str(appid)
+                compatdata_path = (
+                    Path(steam_dir) / "steamapps" / "compatdata" / str(appid)
+                )
                 userdata_path = Path(steam_dir) / "userdata"
 
                 # Check if compatdata exists
@@ -808,7 +868,10 @@ class GameManager(QObject):
 
             if remove_from_library:
                 confirm_msg += "• Accela tracking data (.DepotDownloader folder)\n"
-                if is_slssteam_mode_enabled() and is_slssteam_config_management_enabled():
+                if (
+                    is_slssteam_mode_enabled()
+                    and is_slssteam_config_management_enabled()
+                ):
                     confirm_msg += "• Library entry from SLSsteam config.yaml\n"
                     confirm_msg += "• Depot data from SLSsteam config.yaml\n"
 
@@ -818,7 +881,15 @@ class GameManager(QObject):
         confirm_msg += "\nThis action cannot be undone!"
         return confirm_msg
 
-    def uninstall_game(self, game_data, remove_game_data=True, remove_compatdata=False, remove_saves=False, remove_from_library=False, remove_shortcuts=False):
+    def uninstall_game(
+        self,
+        game_data,
+        remove_game_data=True,
+        remove_compatdata=False,
+        remove_saves=False,
+        remove_from_library=False,
+        remove_shortcuts=False,
+    ):
         """
         Uninstall a game by removing its folder, ACF file, and optionally compatdata/saves.
         Returns (success: bool, error_message: str)
@@ -837,7 +908,9 @@ class GameManager(QObject):
 
                 # Remove ACF file
                 if library_path and appid != "N/A":
-                    acf_path = Path(library_path) / "steamapps" / f"appmanifest_{appid}.acf"
+                    acf_path = (
+                        Path(library_path) / "steamapps" / f"appmanifest_{appid}.acf"
+                    )
                     if acf_path.exists():
                         acf_path.unlink()
                         logger.info(f"Removed ACF file: {acf_path}")
@@ -863,16 +936,26 @@ class GameManager(QObject):
 
             # Remove from tracking
             if remove_from_library:
-                if is_slssteam_mode_enabled() and is_slssteam_config_management_enabled() and self._is_valid_appid(appid):
+                if (
+                    is_slssteam_mode_enabled()
+                    and is_slssteam_config_management_enabled()
+                    and self._is_valid_appid(appid)
+                ):
                     config_path = get_user_config_path()
                     if config_path.exists():
                         remove_list_item(config_path, "AdditionalApps", str(appid))
 
-                if not remove_game_data and install_path and Path(install_path).exists():
+                if (
+                    not remove_game_data
+                    and install_path
+                    and Path(install_path).exists()
+                ):
                     dd_path = Path(install_path) / ".DepotDownloader"
                     if dd_path.exists():
                         shutil.rmtree(dd_path)
-                        logger.info(f"Removed .DepotDownloader tracking folder: {dd_path}")
+                        logger.info(
+                            f"Removed .DepotDownloader tracking folder: {dd_path}"
+                        )
 
             # Remove from internal list if we uninstalled or untracked
             if remove_game_data or remove_from_library:

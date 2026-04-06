@@ -139,9 +139,7 @@ class SteamlessIntegration(QObject):
                     for root, dirs, files in os.walk(game_directory):
                         for file in files:
                             if file.lower().endswith(".exe"):
-                                logger.debug(
-                                    f"Filtered EXE: {Path(root) / file}"
-                                )
+                                logger.debug(f"Filtered EXE: {Path(root) / file}")
                 except Exception as e:
                     logger.debug(f"Failed while listing filtered EXEs: {e}")
 
@@ -575,11 +573,13 @@ class SteamlessTask(QThread):
             logger.error(".NET 10 runtime was not found.")
 
             # Emit error but let the task fail gracefully
-            self.error.emit((
-                "Runtime Error",
-                msg,
-                "The required .NET 10 runtime could not be located or installed automatically."
-            ))
+            self.error.emit(
+                (
+                    "Runtime Error",
+                    msg,
+                    "The required .NET 10 runtime could not be located or installed automatically.",
+                )
+            )
             return False
 
         self.progress.emit(".NET 10 runtime is available")
@@ -779,7 +779,6 @@ class SteamlessTask(QThread):
             self.steamless_integration = None
         finally:
             self._integration_mutex.unlock()
-
 
     def is_dotnet_available(self):
         """Check if .NET 10 is available for Steamless execution"""

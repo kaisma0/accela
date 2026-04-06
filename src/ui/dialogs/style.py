@@ -46,7 +46,9 @@ class StyleDialog(QDialog):
 
         self.accent_color_button = QPushButton()
         accent_color_value = self.settings.value("accent_color", "#C06C84")
-        self.accent_color_button.setStyleSheet(f"background-color: {accent_color_value};")
+        self.accent_color_button.setStyleSheet(
+            f"background-color: {accent_color_value};"
+        )
         self.accent_color_button.clicked.connect(self.choose_accent_color)
 
         # Reset Button
@@ -78,10 +80,14 @@ class StyleDialog(QDialog):
         color_group.addLayout(bg_color_layout)
         self.main_layout.addLayout(color_group)
 
-        ignore_color_warnings = self.settings.value("ignore_color_warnings", False, type=bool)
+        ignore_color_warnings = self.settings.value(
+            "ignore_color_warnings", False, type=bool
+        )
         self.ignore_color_warnings_checkbox = QCheckBox("Ignore color warnings")
         self.ignore_color_warnings_checkbox.setChecked(ignore_color_warnings)
-        self.ignore_color_warnings_checkbox.setToolTip("Lets you ignore the color warnings and set any color.")
+        self.ignore_color_warnings_checkbox.setToolTip(
+            "Lets you ignore the color warnings and set any color."
+        )
         self.main_layout.addWidget(self.ignore_color_warnings_checkbox)
 
         # Font Settings
@@ -129,22 +135,34 @@ class StyleDialog(QDialog):
 
         # Titlebar position setting
         self.titlebar_position_checkbox = QCheckBox("Move Titlebar to Bottom")
-        titlebar_top = self.settings.value("titlebar_position", "top", type=str) == "top"
+        titlebar_top = (
+            self.settings.value("titlebar_position", "top", type=str) == "top"
+        )
         self.titlebar_position_checkbox.setChecked(not titlebar_top)
-        self.titlebar_position_checkbox.setToolTip("Move the titlebar from the top to the bottom of the window.")
-        self.titlebar_position_checkbox.stateChanged.connect(self.on_titlebar_position_changed)
+        self.titlebar_position_checkbox.setToolTip(
+            "Move the titlebar from the top to the bottom of the window."
+        )
+        self.titlebar_position_checkbox.stateChanged.connect(
+            self.on_titlebar_position_changed
+        )
         self.main_layout.addWidget(self.titlebar_position_checkbox)
 
         # GIF display setting
         self.gif_display_checkbox = QCheckBox("Show GIF Display")
-        gif_display_enabled = self.settings.value("gif_display_enabled", True, type=bool)
+        gif_display_enabled = self.settings.value(
+            "gif_display_enabled", True, type=bool
+        )
         self.gif_display_checkbox.setChecked(gif_display_enabled)
-        self.gif_display_checkbox.setToolTip("Show or hide the animated GIF display in the main window.")
+        self.gif_display_checkbox.setToolTip(
+            "Show or hide the animated GIF display in the main window."
+        )
         self.gif_display_checkbox.stateChanged.connect(self.on_gif_display_changed)
         self.main_layout.addWidget(self.gif_display_checkbox)
 
         # Dialog buttons
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         self.main_layout.addWidget(buttons)
@@ -155,7 +173,7 @@ class StyleDialog(QDialog):
         self.settings.setValue("gif_display_enabled", gif_display_enabled)
 
         # Apply change immediately if main window exists
-        if self.main_window and hasattr(self.main_window, 'update_gif_display'):
+        if self.main_window and hasattr(self.main_window, "update_gif_display"):
             self.main_window.update_gif_display(gif_display_enabled)
             logger.info(f"GIF display set to: {gif_display_enabled}")
 
@@ -166,7 +184,7 @@ class StyleDialog(QDialog):
         CustomTitleBar.reposition_dialog_titlebar(self, position)
 
         # Apply change immediately if main window exists
-        if self.main_window and hasattr(self.main_window, 'reposition_titlebar'):
+        if self.main_window and hasattr(self.main_window, "reposition_titlebar"):
             self.main_window.reposition_titlebar(position)
             logger.info(f"Titlebar position set to: {position}")
 
@@ -209,10 +227,12 @@ class StyleDialog(QDialog):
 
     def is_too_dark(self, color: QColor) -> bool:
         # Calculate perceived brightness (0–255 range)
-        brightness = (color.red() * 0.299 + color.green() * 0.587 + color.blue() * 0.114)
+        brightness = color.red() * 0.299 + color.green() * 0.587 + color.blue() * 0.114
         return brightness < 15  # Darker than ~15%, tweak if needed
 
-    def is_too_close_to_accent_color(self, accent_color: QColor, background_color: QColor, threshold: int = 100) -> bool:
+    def is_too_close_to_accent_color(
+        self, accent_color: QColor, background_color: QColor, threshold: int = 100
+    ) -> bool:
         """Return True if background color is too close to accent color"""
 
         # Calculate color distance using Euclidean distance in RGB space
@@ -220,7 +240,7 @@ class StyleDialog(QDialog):
         g_diff = background_color.green() - accent_color.green()
         b_diff = background_color.blue() - accent_color.blue()
 
-        distance = (r_diff ** 2 + g_diff ** 2 + b_diff ** 2) ** 0.5
+        distance = (r_diff**2 + g_diff**2 + b_diff**2) ** 0.5
 
         return distance < threshold
 
@@ -235,7 +255,7 @@ class StyleDialog(QDialog):
                 QMessageBox.warning(
                     self,
                     "Invalid Color",
-                    "This color is too dark and would make the UI unusable."
+                    "This color is too dark and would make the UI unusable.",
                 )
                 return
 
@@ -275,19 +295,29 @@ class StyleDialog(QDialog):
 
     def accept(self):
         # Save settings
-        accent_color = (self.accent_color_button.styleSheet().split("background-color: ")[1].split(";")[0])
-        bg_color = (self.bg_color_button.styleSheet().split("background-color: ")[1].split(";")[0])
+        accent_color = (
+            self.accent_color_button.styleSheet()
+            .split("background-color: ")[1]
+            .split(";")[0]
+        )
+        bg_color = (
+            self.bg_color_button.styleSheet()
+            .split("background-color: ")[1]
+            .split(";")[0]
+        )
 
         ignore_color_warnings = self.ignore_color_warnings_checkbox.isChecked()
         self.settings.setValue("ignore_color_warnings", ignore_color_warnings)
 
         # Check if background color is too close to accent color
         if not ignore_color_warnings:
-            if self.is_too_close_to_accent_color(QColor(accent_color), QColor(bg_color)):
+            if self.is_too_close_to_accent_color(
+                QColor(accent_color), QColor(bg_color)
+            ):
                 QMessageBox.warning(
                     self,
                     "Invalid Color",
-                    "The background color is too similar to the accent color and would reduce contrast."
+                    "The background color is too similar to the accent color and would reduce contrast.",
                 )
                 return
 

@@ -75,7 +75,9 @@ def _handle_request_exception(e, action="API request"):
         return f"Request Failed: {e}"
 
     else:
-        logger.error(f"An unexpected error occurred during {action.lower()}: {e}", exc_info=True)
+        logger.error(
+            f"An unexpected error occurred during {action.lower()}: {e}", exc_info=True
+        )
         return f"An unexpected error occurred: {e}"
 
 
@@ -204,5 +206,9 @@ def check_health():
         return response.json()
     except Exception as e:
         error_msg = _handle_request_exception(e, "API health check")
-        status = "unhealthy" if isinstance(e, requests.exceptions.RequestException) else "unknown"
+        status = (
+            "unhealthy"
+            if isinstance(e, requests.exceptions.RequestException)
+            else "unknown"
+        )
         return {"status": status, "error": error_msg}

@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 # 14 Days in seconds (14 * 24 * 60 * 60)
 EXPIRATION_SECONDS = 1_209_600
 
+
 class DatabaseManager:
     _instance = None
     _lock = threading.Lock()
@@ -58,7 +59,9 @@ class DatabaseManager:
                     logger.error(f"Failed to copy seed database: {e}")
                     self._create_empty_db(writable_path)
             else:
-                logger.warning(f"Seed database not found at {seed_path}. Creating empty DB.")
+                logger.warning(
+                    f"Seed database not found at {seed_path}. Creating empty DB."
+                )
                 self._create_empty_db(writable_path)
 
         return writable_path
@@ -116,18 +119,18 @@ class DatabaseManager:
                 cur = self.conn.cursor()
                 cur.execute(
                     "SELECT header_path, last_updated FROM apps WHERE appid = ?",
-                    (appid,)
+                    (appid,),
                 )
                 row = cur.fetchone()
 
-            if not row or not row['header_path']:
+            if not row or not row["header_path"]:
                 return None
 
-            if self._is_expired(row['last_updated']):
+            if self._is_expired(row["last_updated"]):
                 logger.debug(f"Header URL for AppID {appid} is stale. Will refresh.")
                 return None
 
-            return self._construct_full_url(row['header_path'], appid)
+            return self._construct_full_url(row["header_path"], appid)
 
         except Exception as e:
             logger.error(f"DB Read Error for header_url {appid}: {e}")
@@ -146,22 +149,24 @@ class DatabaseManager:
                 cur = self.conn.cursor()
                 cur.execute(
                     "SELECT name, header_path, installdir, depots_json, last_updated FROM apps WHERE appid = ?",
-                    (appid,)
+                    (appid,),
                 )
                 row = cur.fetchone()
 
             if not row:
                 return None  # Complete Miss
 
-            if self._is_expired(row['last_updated']):
-                logger.info(f"AppID {appid} data is stale. Treating as miss to force refresh.")
+            if self._is_expired(row["last_updated"]):
+                logger.info(
+                    f"AppID {appid} data is stale. Treating as miss to force refresh."
+                )
                 return None
 
             # Decompress Depots
             depots_data = {}
-            if row['depots_json']:
+            if row["depots_json"]:
                 try:
-                    decompressed = self.dctx.decompress(row['depots_json'])
+                    decompressed = self.dctx.decompress(row["depots_json"])
                     depots_data = json.loads(decompressed)
                 except Exception as e:
                     logger.error(f"Decompression error for {appid}: {e}")
@@ -173,16 +178,16 @@ class DatabaseManager:
                 # Clean up dictionary
                 del depots_data["branches"]
 
-            full_header_url = self._construct_full_url(row['header_path'], appid)
+            full_header_url = self._construct_full_url(row["header_path"], appid)
 
             return {
                 "appid": appid,
-                "name": row['name'],
-                "installdir": row['installdir'],
+                "name": row["name"],
+                "installdir": row["installdir"],
                 "header_url": full_header_url,
                 "depots": depots_data,
                 "buildid": buildid,
-                "source": "database"
+                "source": "database",
             }
 
         except Exception as e:
@@ -201,7 +206,9 @@ class DatabaseManager:
         try:
             # Normalize URL to relative path (to match builder format)
             header_raw = data.get("header_url")
-            header_path = self._normalize_header_path(appid, header_raw) if header_raw else None
+            header_path = (
+                self._normalize_header_path(appid, header_raw) if header_raw else None
+            )
             now = int(time.time())
 
             with self._conn_lock:
@@ -211,11 +218,16 @@ class DatabaseManager:
                 if header_path and len(data) == 1 and "header_url" in data:
                     cur.execute("SELECT appid FROM apps WHERE appid = ?", (appid,))
                     if cur.fetchone():
-                        cur.execute("""
+                        cur.execute(
+                            """
                             UPDATE apps SET header_path = ?, last_updated = ? WHERE appid = ?
-                        """, (header_path, now, appid))
+                        """,
+                            (header_path, now, appid),
+                        )
                         self.conn.commit()
-                        logger.info(f"Database healed: Updated header for AppID {appid}")
+                        logger.info(
+                            f"Database healed: Updated header for AppID {appid}"
+                        )
                         return
                     # Fall through to full insert if entry doesn't exist
 
@@ -226,17 +238,22 @@ class DatabaseManager:
                 # Handle BuildID packing for storage safely to avoid overwriting existing branches
                 depots_to_save = data.get("depots", {}).copy()
                 if data.get("buildid"):
-                    depots_to_save.setdefault("branches", {})["public"] = {"buildid": data["buildid"]}
+                    depots_to_save.setdefault("branches", {})["public"] = {
+                        "buildid": data["buildid"]
+                    }
 
                 # Compress
                 depots_json_str = json.dumps(depots_to_save)
-                depots_compressed = self.cctx.compress(depots_json_str.encode('utf-8'))
+                depots_compressed = self.cctx.compress(depots_json_str.encode("utf-8"))
 
-                cur.execute("""
+                cur.execute(
+                    """
                     INSERT OR REPLACE INTO apps
                     (appid, name, header_path, installdir, depots_json, last_updated)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (appid, name, header_path, installdir, depots_compressed, now))
+                """,
+                    (appid, name, header_path, installdir, depots_compressed, now),
+                )
 
                 self.conn.commit()
             logger.info(f"Database healed: Added/Updated AppID {appid}")
@@ -246,7 +263,8 @@ class DatabaseManager:
 
     def _normalize_header_path(self, appid, url):
         """Converts full URL -> relative storage path"""
-        if not url or not isinstance(url, str): return None
+        if not url or not isinstance(url, str):
+            return None
         url = url.split("?", 1)[0]
         if "/apps/" in url:
             return url.split("/apps/", 1)[1]
@@ -254,8 +272,10 @@ class DatabaseManager:
 
     def _construct_full_url(self, header_path, appid):
         """Converts relative storage path -> full URL"""
-        if not header_path: return None
-        if header_path.startswith("http"): return header_path
+        if not header_path:
+            return None
+        if header_path.startswith("http"):
+            return header_path
         return f"https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{header_path}"
 
     def close(self):

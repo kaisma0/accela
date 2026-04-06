@@ -42,8 +42,7 @@ _BLACKLIST_KEYWORDS = [
     "3d print model",
 ]
 _BLACKLIST_PATTERN = re.compile(
-    rf"\b(?:{'|'.join(re.escape(k) for k in _BLACKLIST_KEYWORDS)})\b",
-    re.IGNORECASE
+    rf"\b(?:{'|'.join(re.escape(k) for k in _BLACKLIST_KEYWORDS)})\b", re.IGNORECASE
 )
 
 
@@ -315,7 +314,7 @@ class FetchManifestDialog(QDialog):
             self.status_label.setText("Download complete! Adding to queue")
 
             parent_widget = self.parent()
-            if parent_widget and hasattr(parent_widget, 'job_queue'):
+            if parent_widget and hasattr(parent_widget, "job_queue"):
                 parent_widget.job_queue.add_job(temp_zip_path)
             self.accept()
 
@@ -354,7 +353,5 @@ class FetchManifestDialog(QDialog):
             try:
                 fetcher.stop()
             except RuntimeError:
-                logger.debug(
-                    "Image fetcher was already deleted, skipping cleanup."
-                )
+                logger.debug("Image fetcher was already deleted, skipping cleanup.")
         self._active_image_fetchers.clear()

@@ -1,6 +1,5 @@
 import logging
 import time
-from pathlib import Path
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtMultimedia import QMediaDevices
 import pygame
@@ -26,7 +25,9 @@ class AudioManager:
 
         # Store current preview values
         self.preview_master_volume = self.settings.value("master_volume", 80, type=int)
-        self.preview_effects_volume = self.settings.value("effects_volume", 50, type=int)
+        self.preview_effects_volume = self.settings.value(
+            "effects_volume", 50, type=int
+        )
         self.preview_hum_volume = self.settings.value("hum_volume", 20, type=int)
 
         # Initialize pygame mixer
@@ -103,7 +104,11 @@ class AudioManager:
             if open_sound_path.exists():
                 logger.debug(f"Loading open sound: {str(open_sound_path)}")
                 self.open_sound = pygame.mixer.Sound(str(open_sound_path))
-                if play_open_sound and self.settings.value("play_etw", True, type=bool) and not self.effects_channel.get_busy():
+                if (
+                    play_open_sound
+                    and self.settings.value("play_etw", True, type=bool)
+                    and not self.effects_channel.get_busy()
+                ):
                     logger.debug("Playing open sound (ETW)")
                     self.effects_channel.play(self.open_sound)
             else:
@@ -138,7 +143,10 @@ class AudioManager:
                 self.loop_sound = pygame.mixer.Sound(str(loop_sound_path))
 
                 # Only play if enabled in settings
-                if self.settings.value("play_50hz_hum", True, type=bool) and not self.hum_channel.get_busy():
+                if (
+                    self.settings.value("play_50hz_hum", True, type=bool)
+                    and not self.hum_channel.get_busy()
+                ):
                     logger.debug("Starting loop sound playback")
                     self.hum_channel.set_volume(0.0)
                     self.hum_channel.play(self.loop_sound, loops=-1)
@@ -168,11 +176,17 @@ class AudioManager:
         logger.debug("Applying audio settings...")
 
         # Get slider values from settings
-        master_volume = self.applyVolume(self.settings.value("master_volume", 80, type=int))
-        effects_volume = self.applyVolume(self.settings.value("effects_volume", 50, type=int))
+        master_volume = self.applyVolume(
+            self.settings.value("master_volume", 80, type=int)
+        )
+        effects_volume = self.applyVolume(
+            self.settings.value("effects_volume", 50, type=int)
+        )
         hum_volume = self.applyVolume(self.settings.value("hum_volume", 20, type=int))
 
-        logger.debug(f"Volume levels - Master: {master_volume:.3f}, Effects: {effects_volume:.3f}, Hum: {hum_volume:.3f}")
+        logger.debug(
+            f"Volume levels - Master: {master_volume:.3f}, Effects: {effects_volume:.3f}, Hum: {hum_volume:.3f}"
+        )
 
         # Apply volumes to channels
         self.effects_channel.set_volume(master_volume * effects_volume)
@@ -193,9 +207,13 @@ class AudioManager:
     def sync_preview_values_from_settings(self):
         """Sync preview values with current settings - call before starting preview interactions"""
         self.preview_master_volume = self.settings.value("master_volume", 80, type=int)
-        self.preview_effects_volume = self.settings.value("effects_volume", 50, type=int)
+        self.preview_effects_volume = self.settings.value(
+            "effects_volume", 50, type=int
+        )
         self.preview_hum_volume = self.settings.value("hum_volume", 20, type=int)
-        logger.debug(f"Synced preview values from settings - Master: {self.preview_master_volume}, Effects: {self.preview_effects_volume}, Hum: {self.preview_hum_volume}")
+        logger.debug(
+            f"Synced preview values from settings - Master: {self.preview_master_volume}, Effects: {self.preview_effects_volume}, Hum: {self.preview_hum_volume}"
+        )
 
     def apply_preview_volumes(self, master=None, effects=None, hum=None):
         """Apply preview volumes using current slider values"""
@@ -212,7 +230,9 @@ class AudioManager:
         effects_volume = self.applyVolume(self.preview_effects_volume)
         hum_volume = self.applyVolume(self.preview_hum_volume)
 
-        logger.debug(f"Preview volumes - Master: {self.preview_master_volume}, Effects: {self.preview_effects_volume}, Hum: {self.preview_hum_volume}")
+        logger.debug(
+            f"Preview volumes - Master: {self.preview_master_volume}, Effects: {self.preview_effects_volume}, Hum: {self.preview_hum_volume}"
+        )
 
         # Apply to channels
         self.effects_channel.set_volume(master_volume * effects_volume)
@@ -253,7 +273,7 @@ class AudioManager:
 
     def play_close_sound_and_wait(self):
         """Play the close sound and wait with timeout protection"""
-        if (self.close_sound and self.settings.value("play_lall", True, type=bool)):
+        if self.close_sound and self.settings.value("play_lall", True, type=bool):
             logger.debug("Starting close sound playback with blocking wait")
 
             # Play the sound
@@ -319,7 +339,7 @@ class AudioManager:
         channels = [
             ("Effects", self.effects_channel),
             ("Music", self.music_channel),
-            ("Hum", self.hum_channel)
+            ("Hum", self.hum_channel),
         ]
 
         for name, channel in channels:
@@ -334,7 +354,7 @@ class AudioManager:
         sounds = [
             ("Open", self.open_sound),
             ("Close", self.close_sound),
-            ("Loop", self.loop_sound)
+            ("Loop", self.loop_sound),
         ]
 
         for name, sound in sounds:

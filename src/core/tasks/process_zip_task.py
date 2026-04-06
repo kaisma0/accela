@@ -32,9 +32,7 @@ class ProcessZipTask:
             comment_part = first_app_match.group(2)
             game_name_match = re.search(r"--\s*(.*)", comment_part)
             game_data["game_name"] = (
-                game_name_match.group(1).strip()
-                if game_name_match
-                else None
+                game_name_match.group(1).strip() if game_name_match else None
             )
 
             game_data["depots"] = {}
@@ -103,7 +101,9 @@ class ProcessZipTask:
                     logger.warning(f"SLSsteam config not found at {config_path}")
                 success = set_map_item(config_path, "AppTokens", app_id, app_token)
                 if success:
-                    logger.info(f"Successfully added token for AppID {app_id} to SLSsteam config")
+                    logger.info(
+                        f"Successfully added token for AppID {app_id} to SLSsteam config"
+                    )
 
                 return app_token
 
@@ -187,7 +187,9 @@ class ProcessZipTask:
 
                         if not game_data.get("game_name") and api_data.get("name"):
                             game_data["game_name"] = api_data["name"]
-                            logger.info(f"Resolved game name from Steam API: {game_data['game_name']}")
+                            logger.info(
+                                f"Resolved game name from Steam API: {game_data['game_name']}"
+                            )
 
                         api_details = api_data.get("depots", {})
                         logger.debug(
@@ -215,7 +217,9 @@ class ProcessZipTask:
                             if details.get("steamdeck"):
                                 tags.append("[DECK]")
                             if details.get("language"):
-                                base_description += f" ({details['language'].capitalize()})"
+                                base_description += (
+                                    f" ({details['language'].capitalize()})"
+                                )
 
                             final_description = (
                                 f"{' '.join(tags)} {base_description}".strip()
@@ -244,9 +248,13 @@ class ProcessZipTask:
                             if final_size:
                                 final_depot_data["size"] = final_size
                                 source = "API" if api_size else "LUA fallback"
-                                logger.debug(f"Using {source} size for depot {depot_id}: {final_size}")
+                                logger.debug(
+                                    f"Using {source} size for depot {depot_id}: {final_size}"
+                                )
                             else:
-                                logger.debug(f"No size found for depot {depot_id} in API or LUA.")
+                                logger.debug(
+                                    f"No size found for depot {depot_id} in API or LUA."
+                                )
 
                             final_depot_data["desc"] = final_description
                             enriched_depots[depot_id] = final_depot_data
@@ -255,7 +263,9 @@ class ProcessZipTask:
 
                 if not game_data.get("game_name"):
                     game_data["game_name"] = f"App_{app_id}"
-                    logger.warning(f"Could not determine game name from Lua or API. Fallback to {game_data['game_name']}")
+                    logger.warning(
+                        f"Could not determine game name from Lua or API. Fallback to {game_data['game_name']}"
+                    )
 
                 manifest_dir = Path(tempfile.gettempdir()) / "mistwalker_manifests"
                 manifest_dir.mkdir(parents=True, exist_ok=True)

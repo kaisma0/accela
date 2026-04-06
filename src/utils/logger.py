@@ -24,6 +24,7 @@ class QtLogHandler(QObject, logging.Handler):
     def emit(self, record):
         try:
             from utils.settings import get_settings
+
             settings = get_settings()
             debug_mode = settings.value("ui_debug_mode", False, type=bool)
 
@@ -64,7 +65,9 @@ def setup_logging():
     # Clean up old logs in the correctly resolved directory
     cleanup_old_logs()
 
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
 
     handlers = []
 
@@ -74,7 +77,7 @@ def setup_logging():
             log_path,
             mode="w",  # Create new file for each session
             encoding="utf-8",
-            delay=False
+            delay=False,
         )
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(formatter)
@@ -86,9 +89,11 @@ def setup_logging():
         # Try TEMP directory as fallback
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            temp_dir = Path(os.environ.get('TEMP', str(Path.cwd())))
+            temp_dir = Path(os.environ.get("TEMP", str(Path.cwd())))
             fallback_path = temp_dir / f"{app_name_lower}_{timestamp}.log"
-            file_handler = logging.FileHandler(fallback_path, mode="w", encoding="utf-8")
+            file_handler = logging.FileHandler(
+                fallback_path, mode="w", encoding="utf-8"
+            )
             file_handler.setLevel(logging.DEBUG)
             file_handler.setFormatter(formatter)
             handlers.append(file_handler)
@@ -158,7 +163,9 @@ def get_log_path():
         log_dir.mkdir(parents=True, exist_ok=True)
     except OSError:
         # Fallback to temp directory
-        temp_dir = Path(os.environ.get('TEMP', str(Path.cwd()))) / "logs" / app_name_lower
+        temp_dir = (
+            Path(os.environ.get("TEMP", str(Path.cwd()))) / "logs" / app_name_lower
+        )
         temp_dir.mkdir(parents=True, exist_ok=True)
         log_dir = temp_dir
 

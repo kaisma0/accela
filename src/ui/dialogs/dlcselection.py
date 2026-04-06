@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 
 logger = logging.getLogger(__name__)
 
+
 class DlcSelectionDialog(QDialog):
     def __init__(self, dlcs, parent=None):
         super().__init__(parent)
