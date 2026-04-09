@@ -417,9 +417,9 @@ set -eu
         cd $SCRIPT_DIR/
         local release_json
         release_json=$(curl -s "https://api.github.com/repos/AceSLS/SLSsteam/releases/latest")
-        SLS_VERSION=$(printf '%s' "$release_json" | grep '"tag_name"' | head -1 | cut -d '"' -f 4)
+        SLS_VERSION=$(printf '%s' "$release_json" | tr ',' '\n' | grep '"tag_name"' | head -1 | cut -d '"' -f 4)
         local download_url
-        download_url=$(printf '%s' "$release_json" | grep 'browser_download_url' | grep 'SLSsteam-Any.7z' | cut -d '"' -f 4)
+        download_url=$(printf '%s' "$release_json" | tr ',' '\n' | grep 'browser_download_url' | grep 'SLSsteam-Any.7z' | cut -d '"' -f 4)
         wget -O SLSsteam-Any.7z "$download_url" &> /dev/null
     }
 
@@ -436,10 +436,10 @@ set -eu
     export_sls(){
         if [ -d "$FlatpakSteamInstallDir" ]; then
                 copySLSsteam
-                LD_AUDIT=$HOME/.var/app/com.valvesoftware.Steam/.local/share/SLSsteam/library-inject.so:$HOME/.var/app/com.valvesoftware.Steam/.local/share/SLSsteam/SLSsteam.so "$@"
+            LD_AUDIT=$HOME/.var/app/com.valvesoftware.Steam/.local/share/SLSsteam/library-inject.so:$HOME/.var/app/com.valvesoftware.Steam/.local/share/SLSsteam/SLSsteam.so "$@" || true
         else
                 copySLSsteam
-                LD_AUDIT=$HOME/.local/share/SLSsteam/library-inject.so:$HOME/.local/share/SLSsteam/SLSsteam.so "$@"
+            LD_AUDIT=$HOME/.local/share/SLSsteam/library-inject.so:$HOME/.local/share/SLSsteam/SLSsteam.so "$@" || true
         fi
                 echo "" &> /dev/null
                 }
@@ -458,13 +458,13 @@ set -eu
     copySLSsteam(){
         extractSLSsteam
         wheresteamdir
+        saveVersion
         rm -rf $InstallDir
         }
 
     InstallSLSsteam(){
         echo "Installing SLSsteam..."
         copySLSsteam
-        saveVersion
         backupconfig
         }
 
