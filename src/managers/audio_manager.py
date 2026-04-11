@@ -1,8 +1,13 @@
 import logging
-import time
+import shutil
+import subprocess
+
+from PyQt6.QtCore import QUrl
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtMultimedia import QMediaDevices
-import pygame
+from PyQt6.QtMultimedia import (
+    QMediaDevices,
+    QSoundEffect,
+)
 
 from utils.paths import Paths
 from utils.settings import get_settings
@@ -12,9 +17,7 @@ logger = logging.getLogger(__name__)
 # Sound file constants
 SOUND_OPEN_FILE = "etw.wav"
 SOUND_CLOSE_FILE = "lall.wav"
-SOUND_LOOP_FILE_WAV = "50hz.wav"
-SOUND_LOOP_FILE_MP3 = "50hz.mp3"
-SOUND_LOOP_PREFIX = "50hz"
+SOUND_LOOP_FILE = "50hz.wav"
 
 
 class AudioManager:
@@ -22,21 +25,23 @@ class AudioManager:
         self.main_window = main_window
         self.settings = get_settings()
         self.exit_sound_played = False
+        self._quit_handler_connected = False
 
-        # Store current preview values
-        self.preview_master_volume = self.settings.value("master_volume", 80, type=int)
-        self.preview_effects_volume = self.settings.value(
+        # Store current preview values (percent from sliders/settings).
+        self.preview_master_volume_pct = self.settings.value(
+            "master_volume", 80, type=int
+        )
+        self.preview_effects_volume_pct = self.settings.value(
             "effects_volume", 50, type=int
         )
-        self.preview_hum_volume = self.settings.value("hum_volume", 20, type=int)
+        self.preview_hum_volume_pct = self.settings.value(
+            "hum_volume", 20, type=int
+        )
 
-        # Initialize pygame mixer
-        pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
-
-        # Audio channels
-        self.effects_channel = pygame.mixer.Channel(0)
-        self.music_channel = pygame.mixer.Channel(1)
-        self.hum_channel = pygame.mixer.Channel(2)
+        # QtMultimedia players
+        self.open_sound = None
+        self.close_sound = None
+        self.loop_sound = None
 
         self.setup_sounds()
 
@@ -44,58 +49,20 @@ class AudioManager:
         """Check available audio output devices using PyQt6"""
         return len(QMediaDevices.audioOutputs()) > 0
 
-    def validate_audio_files(self):
-        """Validate that audio files exist and are accessible"""
-        logger.debug("Validating audio files...")
-        # Prefer WAV files but accept MP3 for the loop hum if present
-        audio_files = [
-            self._resolve_sound_path(SOUND_OPEN_FILE),
-            self._resolve_sound_path(SOUND_CLOSE_FILE),
-        ]
-
-        # Check for 50hz with multiple extensions
-        hz_wav = self._resolve_sound_path(SOUND_LOOP_FILE_WAV)
-        hz_mp3 = self._resolve_sound_path(SOUND_LOOP_FILE_MP3)
-        if hz_wav.exists():
-            audio_files.append(hz_wav)
-        elif hz_mp3.exists():
-            audio_files.append(hz_mp3)
-        else:
-            # include the expected path for clearer logging even if missing
-            audio_files.append(hz_wav)
-
-        all_files_valid = True
-        for file_path in audio_files:
-            if not file_path.exists():
-                logger.error(f"Audio file not found: {file_path}")
-                all_files_valid = False
-            elif file_path.stat().st_size == 0:
-                logger.error(f"Audio file is empty: {file_path}")
-                all_files_valid = False
-            else:
-                logger.debug(f"Audio file OK: {file_path}")
-
-        return all_files_valid
-
-    def applyVolume(self, volumeSliderValue):
+    def apply_volume(self, volumeSliderValue):
         """Convert slider value to linear volume"""
-        linear_volume = volumeSliderValue / 100.0
-        logger.debug(f"Converting volume: {volumeSliderValue} -> {linear_volume:.3f}")
-        return linear_volume
+        return volumeSliderValue / 100.0
 
     def setup_sounds(self, play_open_sound: bool = True):
-        """Setup all audio effects with volume control using PyGame"""
+        """Setup all audio effects with volume control using QtMultimedia"""
         logger.debug("Setting up audio sounds...")
 
         # Check for audio devices first
         if not self.check_audio_devices():
             logger.warning("Audio setup aborted - no audio devices available")
-            self.open_sound = self.close_sound = self.loop_sound = None
+            self.open_sound = self.close_sound = None
+            self.loop_sound = None
             return
-
-        # Validate audio files
-        if not self.validate_audio_files():
-            logger.warning("Some audio files are missing or invalid")
 
         try:
             # Open sound ("Entering The Wired")
@@ -103,14 +70,15 @@ class AudioManager:
             open_sound_path = self._resolve_sound_path(SOUND_OPEN_FILE)
             if open_sound_path.exists():
                 logger.debug(f"Loading open sound: {str(open_sound_path)}")
-                self.open_sound = pygame.mixer.Sound(str(open_sound_path))
+                self.open_sound = QSoundEffect(self.main_window)
+                self.open_sound.setSource(QUrl.fromLocalFile(str(open_sound_path)))
                 if (
                     play_open_sound
                     and self.settings.value("play_etw", True, type=bool)
-                    and not self.effects_channel.get_busy()
+                    and not self.open_sound.isPlaying()
                 ):
                     logger.debug("Playing open sound (ETW)")
-                    self.effects_channel.play(self.open_sound)
+                    self.open_sound.play()
             else:
                 logger.warning(f"Could not find open sound: {str(open_sound_path)}")
                 self.open_sound = None
@@ -120,36 +88,31 @@ class AudioManager:
             close_sound_path = self._resolve_sound_path(SOUND_CLOSE_FILE)
             if close_sound_path.exists():
                 logger.debug(f"Loading close sound: {str(close_sound_path)}")
-                self.close_sound = pygame.mixer.Sound(str(close_sound_path))
                 app = QApplication.instance()
-                if app is not None:
+                close_parent = app if app is not None else self.main_window
+                self.close_sound = QSoundEffect(close_parent)
+                self.close_sound.setSource(QUrl.fromLocalFile(str(close_sound_path)))
+                if app is not None and not self._quit_handler_connected:
                     app.aboutToQuit.connect(self.on_app_about_to_quit)
+                    self._quit_handler_connected = True
             else:
                 logger.warning(f"Could not find close sound: {str(close_sound_path)}")
                 self.close_sound = None
 
             # Loop sound (50Hz hum)
             logger.debug("Setting up loop sound...")
-            # Try WAV first, then MP3 for the 50Hz hum
-            loop_sound_path = None
-            for ext in ("wav", "mp3"):
-                candidate = self._resolve_sound_path(f"{SOUND_LOOP_PREFIX}.{ext}")
-                if candidate.exists():
-                    loop_sound_path = candidate
-                    break
-
-            if loop_sound_path and loop_sound_path.exists():
+            loop_sound_path = self._resolve_sound_path(SOUND_LOOP_FILE)
+            if loop_sound_path.exists():
                 logger.debug(f"Loading loop sound: {str(loop_sound_path)}")
-                self.loop_sound = pygame.mixer.Sound(str(loop_sound_path))
+                self.loop_sound = QSoundEffect(self.main_window)
+                self.loop_sound.setSource(QUrl.fromLocalFile(str(loop_sound_path)))
+                self.loop_sound.setLoopCount(QSoundEffect.Infinite)
 
                 # Only play if enabled in settings
-                if (
-                    self.settings.value("play_50hz_hum", True, type=bool)
-                    and not self.hum_channel.get_busy()
-                ):
+                if self.settings.value("play_50hz_hum", True, type=bool):
                     logger.debug("Starting loop sound playback")
-                    self.hum_channel.set_volume(0.0)
-                    self.hum_channel.play(self.loop_sound, loops=-1)
+                    self.loop_sound.setVolume(0.0)
+                    self.loop_sound.play()
             else:
                 logger.warning(f"Could not find loop sound: {str(loop_sound_path)}")
                 self.loop_sound = None
@@ -161,7 +124,8 @@ class AudioManager:
 
         except Exception as e:
             logger.error(f"Error during audio setup: {e}")
-            self.open_sound = self.close_sound = self.loop_sound = None
+            self.open_sound = self.close_sound = None
+            self.loop_sound = None
 
     def _resolve_sound_path(self, filename: str):
         """Resolve sound path from the resources folder."""
@@ -176,67 +140,86 @@ class AudioManager:
         logger.debug("Applying audio settings...")
 
         # Get slider values from settings
-        master_volume = self.applyVolume(
+        master_volume = self.apply_volume(
             self.settings.value("master_volume", 80, type=int)
         )
-        effects_volume = self.applyVolume(
+        effects_volume = self.apply_volume(
             self.settings.value("effects_volume", 50, type=int)
         )
-        hum_volume = self.applyVolume(self.settings.value("hum_volume", 20, type=int))
+        hum_volume = self.apply_volume(
+            self.settings.value("hum_volume", 20, type=int)
+        )
 
         logger.debug(
             f"Volume levels - Master: {master_volume:.3f}, Effects: {effects_volume:.3f}, Hum: {hum_volume:.3f}"
         )
 
-        # Apply volumes to channels
-        self.effects_channel.set_volume(master_volume * effects_volume)
-        logger.debug(f"Effects volume: {master_volume * effects_volume:.3f}")
+        # Apply volumes
+        effects_final = master_volume * effects_volume
+        hum_final = master_volume * hum_volume
 
-        self.hum_channel.set_volume(master_volume * hum_volume)
-        logger.debug(f"Hum volume: {master_volume * hum_volume:.3f}")
+        if self.open_sound:
+            self.open_sound.setVolume(effects_final)
+        if self.close_sound:
+            self.close_sound.setVolume(effects_final)
+        logger.debug(f"Effects volume: {effects_final:.3f}")
+
+        if self.loop_sound:
+            self.loop_sound.setVolume(hum_final)
+        logger.debug(f"Hum volume: {hum_final:.3f}")
 
         # Handle loop sound playback state
         play_loop = self.settings.value("play_50hz_hum", True, type=bool)
-        if play_loop and not self.hum_channel.get_busy() and self.loop_sound:
+        if play_loop and self.loop_sound and not self.loop_sound.isPlaying():
             logger.debug("Starting loop sound playback")
-            self.hum_channel.play(self.loop_sound, loops=-1)
-        elif not play_loop and self.hum_channel.get_busy():
+            self.loop_sound.play()
+        elif not play_loop and self.loop_sound and self.loop_sound.isPlaying():
             logger.debug("Stopping loop sound playback")
-            self.hum_channel.stop()
+            self.loop_sound.stop()
 
     def sync_preview_values_from_settings(self):
         """Sync preview values with current settings - call before starting preview interactions"""
-        self.preview_master_volume = self.settings.value("master_volume", 80, type=int)
-        self.preview_effects_volume = self.settings.value(
+        self.preview_master_volume_pct = self.settings.value(
+            "master_volume", 80, type=int
+        )
+        self.preview_effects_volume_pct = self.settings.value(
             "effects_volume", 50, type=int
         )
-        self.preview_hum_volume = self.settings.value("hum_volume", 20, type=int)
+        self.preview_hum_volume_pct = self.settings.value(
+            "hum_volume", 20, type=int
+        )
         logger.debug(
-            f"Synced preview values from settings - Master: {self.preview_master_volume}, Effects: {self.preview_effects_volume}, Hum: {self.preview_hum_volume}"
+            f"Synced preview values from settings - Master: {self.preview_master_volume_pct}, Effects: {self.preview_effects_volume_pct}, Hum: {self.preview_hum_volume_pct}"
         )
 
     def apply_preview_volumes(self, master=None, effects=None, hum=None):
         """Apply preview volumes using current slider values"""
         # Update preview values if provided
         if master is not None:
-            self.preview_master_volume = master
+            self.preview_master_volume_pct = master
         if effects is not None:
-            self.preview_effects_volume = effects
+            self.preview_effects_volume_pct = effects
         if hum is not None:
-            self.preview_hum_volume = hum
+            self.preview_hum_volume_pct = hum
 
         # Calculate volumes using current preview values
-        master_volume = self.applyVolume(self.preview_master_volume)
-        effects_volume = self.applyVolume(self.preview_effects_volume)
-        hum_volume = self.applyVolume(self.preview_hum_volume)
+        master_volume = self.apply_volume(self.preview_master_volume_pct)
+        effects_volume = self.apply_volume(self.preview_effects_volume_pct)
+        hum_volume = self.apply_volume(self.preview_hum_volume_pct)
 
         logger.debug(
-            f"Preview volumes - Master: {self.preview_master_volume}, Effects: {self.preview_effects_volume}, Hum: {self.preview_hum_volume}"
+            f"Preview volumes - Master: {self.preview_master_volume_pct}, Effects: {self.preview_effects_volume_pct}, Hum: {self.preview_hum_volume_pct}"
         )
 
-        # Apply to channels
-        self.effects_channel.set_volume(master_volume * effects_volume)
-        self.hum_channel.set_volume(master_volume * hum_volume)
+        effects_final = master_volume * effects_volume
+        hum_final = master_volume * hum_volume
+
+        if self.open_sound:
+            self.open_sound.setVolume(effects_final)
+        if self.close_sound:
+            self.close_sound.setVolume(effects_final)
+        if self.loop_sound:
+            self.loop_sound.setVolume(hum_final)
 
     def apply_master_volume_preview(self, value):
         """Apply master volume changes for preview only"""
@@ -255,59 +238,85 @@ class AudioManager:
 
     def on_app_about_to_quit(self):
         """Handle application about to quit event - wait for sound to finish"""
-        # Prevent double execution
-        if self.exit_sound_played:
-            logger.debug("Exit sound already played, skipping")
-            return
+        try:
+            # Prevent double execution
+            if self.exit_sound_played:
+                logger.debug("Exit sound already played, skipping")
+                return
 
-        self.exit_sound_played = True
-        logger.debug("Playing exit sound")
+            self.exit_sound_played = True
+            logger.debug("Playing exit sound")
 
-        # Stop the loop sound immediately
-        if self.hum_channel.get_busy():
-            logger.debug("Stopping loop sound")
-            self.hum_channel.stop()
+            # Stop the loop sound immediately
+            try:
+                if self.loop_sound and self.loop_sound.isPlaying():
+                    logger.debug("Stopping loop sound")
+                    self.loop_sound.stop()
+            except RuntimeError:
+                # Under teardown, Qt may already have deleted multimedia objects.
+                pass
 
-        # Play close sound and BLOCK until it finishes
-        self.play_close_sound_and_wait()
+            # Play close sound without blocking shutdown.
+            self.play_close_sound_on_shutdown()
+        except Exception:
+            # Never allow exceptions to escape Qt signal handlers.
+            logger.exception("Audio shutdown handler failed")
 
-    def play_close_sound_and_wait(self):
-        """Play the close sound and wait with timeout protection"""
-        if self.close_sound and self.settings.value("play_lall", True, type=bool):
-            logger.debug("Starting close sound playback with blocking wait")
+    def play_close_sound_on_shutdown(self):
+        """Play the close sound via detached external player only."""
+        try:
+            if self.settings.value("play_lall", True, type=bool):
+                logger.debug("Starting close sound playback")
+                close_sound_path = self._resolve_sound_path(SOUND_CLOSE_FILE)
+                if not close_sound_path.exists():
+                    logger.debug("Close sound file not found: %s", close_sound_path)
+                    return
+                self._play_close_sound_detached(close_sound_path)
+            else:
+                logger.debug("Close sound disabled by settings")
+        except RuntimeError:
+            # Qt object may already be deleted during app teardown.
+            logger.debug("Close sound object no longer available during shutdown")
 
-            # Play the sound
-            self.effects_channel.play(self.close_sound)
+    def _play_close_sound_detached(self, close_sound_path) -> bool:
+        """Spawn a detached system player so shutdown sound survives process exit."""
+        sound_path = str(close_sound_path)
+        candidates = [
+            ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", sound_path],
+            ["mpv", "--no-video", "--really-quiet", "--force-window=no", sound_path],
+            ["paplay", sound_path],
+            ["pw-play", sound_path],
+            ["aplay", sound_path],
+        ]
 
-            # Get sound length for timeout calculation
-            sound_length = self.close_sound.get_length()
-            max_wait_time = sound_length + 2.0  # Add 2 second buffer
-            start_time = time.time()
+        for cmd in candidates:
+            if shutil.which(cmd[0]) is None:
+                continue
+            try:
+                subprocess.Popen(
+                    cmd,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+                logger.debug("Started detached close sound player: %s", cmd[0])
+                return True
+            except Exception as exc:
+                logger.debug("Detached close sound player failed (%s): %s", cmd[0], exc)
 
-            # Wait with timeout protection
-            while self.effects_channel.get_busy():
-                # Check for timeout (in case sound gets stuck)
-                if time.time() - start_time > max_wait_time:
-                    logger.warning("Sound playback timeout, continuing anyway")
-                    break
-
-                # Process Qt events to keep app responsive, with a small sleep to prevent 100% CPU usage
-                QApplication.processEvents()
-                time.sleep(0.01)
-
-            logger.debug("Close sound finished, continuing shutdown")
-        else:
-            logger.debug("Close sound disabled or player not available")
+        logger.debug("No detached audio player found for close sound")
+        return False
 
     def test_etw_sound(self):
         """Test play the ETW sound"""
         logger.debug("Testing ETW sound")
         if self.open_sound:
             # If already playing, stop and restart from beginning
-            if self.effects_channel.get_busy():
+            if self.open_sound.isPlaying():
                 logger.debug("ETW sound already playing, restarting")
-                self.effects_channel.stop()
-            self.effects_channel.play(self.open_sound)
+                self.open_sound.stop()
+            self.open_sound.play()
         else:
             logger.warning("ETW sound not available for testing")
 
@@ -316,10 +325,10 @@ class AudioManager:
         logger.debug("Testing LALL sound")
         if self.close_sound:
             # If already playing, stop and restart from beginning
-            if self.effects_channel.get_busy():
+            if self.close_sound.isPlaying():
                 logger.debug("LALL sound already playing, restarting")
-                self.effects_channel.stop()
-            self.effects_channel.play(self.close_sound)
+                self.close_sound.stop()
+            self.close_sound.play()
         else:
             logger.warning("LALL sound not available for testing")
 
@@ -327,30 +336,14 @@ class AudioManager:
         """Run audio system diagnostics"""
         logger.debug("=== Audio Diagnostics ===")
 
-        if pygame.mixer.get_init():
-            logger.debug("Pygame mixer initialized")
-            logger.debug(f"Frequency: {pygame.mixer.get_init()[0]}")
-            logger.debug(f"Format: {pygame.mixer.get_init()[1]}")
-            logger.debug(f"Channels: {pygame.mixer.get_init()[2]}")
-        else:
-            logger.debug("Pygame mixer not initialized")
+        logger.debug(
+            f"Audio outputs available: {len(QMediaDevices.audioOutputs()) > 0}"
+        )
+        loop_state = "Playing" if self.loop_sound and self.loop_sound.isPlaying() else "Stopped"
+        loop_volume = self.loop_sound.volume() if self.loop_sound else 0.0
+        logger.debug(f"Loop player state: {loop_state}")
+        logger.debug(f"Loop output volume: {loop_volume:.3f}")
 
-        # Check channels
-        channels = [
-            ("Effects", self.effects_channel),
-            ("Music", self.music_channel),
-            ("Hum", self.hum_channel),
-        ]
-
-        for name, channel in channels:
-            if channel:
-                busy = channel.get_busy()
-                volume = channel.get_volume()
-                logger.debug(f"{name} Channel - Busy: {busy}, Volume: {volume:.3f}")
-            else:
-                logger.debug(f"{name} Channel - Not available")
-
-        # Check sounds
         sounds = [
             ("Open", self.open_sound),
             ("Close", self.close_sound),
@@ -358,7 +351,4 @@ class AudioManager:
         ]
 
         for name, sound in sounds:
-            if sound:
-                logger.debug(f"{name} Sound - Loaded: Yes")
-            else:
-                logger.debug(f"{name} Sound - Loaded: No")
+            logger.debug(f"{name} Sound - Loaded: {'Yes' if sound else 'No'}")

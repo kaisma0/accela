@@ -641,6 +641,8 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         """Handle application shutdown"""
         try:
+            if hasattr(self, "audio_manager") and self.audio_manager:
+                self.audio_manager.on_app_about_to_quit()
             self._cleanup_logging()
             self.task_manager.cleanup()
             self.job_queue.clear()

@@ -3,7 +3,6 @@ gevent
 numpy
 pillow
 psutil
-pygame-ce
 PyQt6
 PyQt6-WebEngine
 PyYAML
