@@ -4,7 +4,6 @@ import logging
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
     QDialog,
-    QDialogButtonBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -16,6 +15,7 @@ from PyQt6.QtWidgets import (
 )
 
 from utils.settings import get_settings
+from ui.dialogs.dialog_buttons import create_standard_dialog_buttons
 
 logger = logging.getLogger(__name__)
 
@@ -160,11 +160,7 @@ class StyleDialog(QDialog):
         self.main_layout.addWidget(self.gif_display_checkbox)
 
         # Dialog buttons
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
+        buttons = create_standard_dialog_buttons(self)
         self.main_layout.addWidget(buttons)
 
     def on_gif_display_changed(self, state):

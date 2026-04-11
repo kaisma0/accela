@@ -4,7 +4,6 @@ from pathlib import Path
 import shutil
 from PyQt6.QtWidgets import (
     QDialog,
-    QDialogButtonBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -18,6 +17,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
 
+from ui.dialogs.dialog_buttons import create_standard_dialog_buttons
 from utils.settings import get_settings
 from utils.helpers import get_base_path, create_checkbox_setting
 
@@ -264,13 +264,12 @@ class CustomGifItem(QWidget):
         info_label = QLabel(info_text)
         info_label.setWordWrap(True)
 
-        # OK button
-        ok_button = QPushButton("OK")
-        ok_button.clicked.connect(view_dialog.accept)
-
         layout.addWidget(image_label)
         layout.addWidget(info_label)
-        layout.addWidget(ok_button, alignment=Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(
+            create_standard_dialog_buttons(view_dialog, buttons=("ok",)),
+            alignment=Qt.AlignmentFlag.AlignCenter,
+        )
 
         view_dialog.exec()
 
@@ -385,11 +384,7 @@ class CustomGifsDialog(QDialog):
         layout.addWidget(scroll)
 
         # Dialog buttons
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
+        buttons = create_standard_dialog_buttons(self)
         layout.addWidget(buttons)
 
     def create_gif_items(self):

@@ -4,12 +4,12 @@ import logging
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog,
-    QDialogButtonBox,
     QLabel,
     QVBoxLayout,
 )
 
 from components.custom_widgets import ScaledFontLabel, ScaledLabel
+from ui.dialogs.dialog_buttons import create_standard_dialog_buttons
 from utils.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -95,7 +95,9 @@ class ChmodResumeDialog(QDialog):
         layout.addSpacing(10)
 
         # OK button
-        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
-        button_box.accepted.connect(self.accept)
-        button_box.setCenterButtons(True)
+        button_box = create_standard_dialog_buttons(
+            self,
+            buttons=("ok",),
+            center_buttons=True,
+        )
         layout.addWidget(button_box)

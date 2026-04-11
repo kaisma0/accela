@@ -7,7 +7,6 @@ from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
-    QDialogButtonBox,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -16,6 +15,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from ui.dialogs.dialog_buttons import create_standard_dialog_buttons
 from utils.image_fetcher import ImageFetcher
 
 logger = logging.getLogger(__name__)
@@ -188,11 +188,7 @@ class DepotSelectionDialog(QDialog):
         button_layout.addWidget(deselect_all_button)
         content_widget.addLayout(button_layout)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
+        buttons = create_standard_dialog_buttons(self)
         content_widget.addWidget(buttons)
 
         layout.addLayout(content_widget)

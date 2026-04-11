@@ -4,7 +4,6 @@ import logging
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog,
-    QDialogButtonBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -13,6 +12,7 @@ from PyQt6.QtWidgets import (
 )
 
 from components.custom_widgets import ScaledFontLabel, ScaledLabel
+from ui.dialogs.dialog_buttons import create_standard_dialog_buttons
 from utils.logger import open_log_directory
 from utils.settings import get_settings
 
@@ -136,8 +136,7 @@ class StatusDialog(QDialog):
         button_layout.addStretch()
 
         # Dialog buttons
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
-        buttons.accepted.connect(self.accept)
+        buttons = create_standard_dialog_buttons(self, buttons=("ok",))
         button_layout.addWidget(buttons)
 
         layout.addLayout(button_layout)

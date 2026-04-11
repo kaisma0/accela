@@ -12,7 +12,6 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QColorDialog,
     QDialog,
-    QDialogButtonBox,
     QFileDialog,
     QFontDialog,
     QFormLayout,
@@ -32,6 +31,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.custom_titlebar import CustomTitleBar
+from ui.dialogs.dialog_buttons import create_standard_dialog_buttons
 from core import morrenus_api
 from ui.dialogs.custom_gifs import CustomGifsDialog
 from utils.helpers import (
@@ -285,11 +285,7 @@ class SettingsDialog(QDialog):
             self.main_window.audio_manager.sync_preview_values_from_settings()
 
         # Dialog buttons
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
+        buttons = create_standard_dialog_buttons(self)
         self.main_layout.addWidget(buttons)
 
     def _create_api_key_setting(

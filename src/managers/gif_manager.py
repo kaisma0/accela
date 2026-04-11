@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer
 
 from ui.custom_titlebar import CustomTitleBar
+from ui.dialogs.dialog_buttons import create_standard_dialog_buttons
 from utils.helpers import get_base_path
 from utils.paths import Paths
 
@@ -56,8 +57,10 @@ class ProgressDialog(QDialog):
         self.details_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.details_label)
 
-        self.cancel_button = QPushButton("Cancel")
-        self.cancel_button.clicked.connect(self.reject)
+        self.cancel_button = create_standard_dialog_buttons(
+            self,
+            buttons=("cancel",),
+        )
         layout.addWidget(self.cancel_button)
 
     def update_progress(self, current, total, status=""):

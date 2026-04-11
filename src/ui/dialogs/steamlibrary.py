@@ -3,13 +3,14 @@ from ui.custom_titlebar import CustomTitleBar
 import logging
 from PyQt6.QtWidgets import (
     QDialog,
-    QDialogButtonBox,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
     QVBoxLayout,
     QApplication,
 )
+
+from ui.dialogs.dialog_buttons import create_standard_dialog_buttons
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +43,7 @@ class SteamLibraryDialog(QDialog):
         if self.list_widget.count() > 0:
             self.list_widget.setCurrentRow(0)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
+        buttons = create_standard_dialog_buttons(self)
         layout.addWidget(buttons)
 
     def accept(self):

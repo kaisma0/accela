@@ -3,7 +3,6 @@ import logging
 
 from PyQt6.QtWidgets import (
     QDialog,
-    QPushButton,
     QVBoxLayout,
     QGroupBox,
     QLabel,
@@ -11,6 +10,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
+from ui.dialogs.dialog_buttons import create_standard_dialog_buttons
 from utils.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -45,9 +45,9 @@ class CreditsDialog(QDialog):
         self._create_credits_content()
 
         # Dialog buttons
-        close_button = QPushButton("Close")
-        close_button.clicked.connect(self.reject)
-        self.main_layout.addWidget(close_button)
+        self.main_layout.addWidget(
+            create_standard_dialog_buttons(self, buttons=("close",))
+        )
 
     def _create_credits_content(self):
         """Create the credits content"""

@@ -2,7 +2,6 @@ from ui.custom_titlebar import CustomTitleBar
 import logging
 from PyQt6.QtWidgets import (
     QDialog,
-    QDialogButtonBox,
     QVBoxLayout,
     QCheckBox,
     QLabel,
@@ -13,6 +12,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 from utils.settings import get_settings
+from ui.dialogs.dialog_buttons import create_standard_dialog_buttons
 
 logger = logging.getLogger(__name__)
 
@@ -149,11 +149,7 @@ class AudioDialog(QDialog):
         self.layout.addLayout(test_layout)
 
         # Dialog buttons
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
+        buttons = create_standard_dialog_buttons(self)
         self.layout.addWidget(buttons)
 
         # Sync audio preview values with current settings before any slider interaction

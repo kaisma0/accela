@@ -5,13 +5,14 @@ from PyQt6.QtGui import QCursor
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
-    QDialogButtonBox,
     QHBoxLayout,
     QListWidget,
     QListWidgetItem,
     QPushButton,
     QVBoxLayout,
 )
+
+from ui.dialogs.dialog_buttons import create_standard_dialog_buttons
 
 logger = logging.getLogger(__name__)
 
@@ -59,11 +60,7 @@ class DlcSelectionDialog(QDialog):
         button_layout.addWidget(deselect_all_button)
         layout.addLayout(button_layout)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
+        buttons = create_standard_dialog_buttons(self)
         layout.addWidget(buttons)
 
     def on_dlc_item_clicked(self, item):
