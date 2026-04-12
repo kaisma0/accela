@@ -13,6 +13,7 @@ from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from core import steam_helpers
+from core.steam_manifest import write_appmanifest_acf
 from core.tasks.application_shortcuts import ApplicationShortcutsTask
 from core.tasks.download_depots_task import DownloadDepotsTask
 from core.tasks.download_slssteam_task import DownloadSLSsteamTask
@@ -681,134 +682,26 @@ class TaskManager:
             f"Generating .acf for {install_folder_name}"
         )
 
-        acf_path = (
-            Path(self.current_dest_path)
-            / "steamapps"
-            / f"appmanifest_{self.game_data['appid']}.acf"
-        )
+        steamapps_path = Path(self.current_dest_path) / "steamapps"
 
-        # Build depot string
         buildid = self.game_data.get("buildid", "0")
-        depots_content = ""
         selected_depots = self.game_data.get("selected_depots_list", [])
         all_manifests = self.game_data.get("manifests", {})
         all_depots = self.game_data.get("depots", {})
 
-        # Platform configuration logic
-        platform_config = ""
-        empty_platform_config = '\t"UserConfig"\n\t{\n\t}\n\t"MountedConfig"\n\t{\n\t}'
-
-        # Determine platform-specific configuration
-        downloading_proton_depots = False
-        downloading_linux_depots = False
-        depot_source_platform = "linux"
-
-        logger.info(
-            f"Checking depot platforms for {len(selected_depots)} selected depots..."
-        )
-
-        for depot_id in selected_depots:
-            depot_id_str = str(depot_id)  # Ensure it's a string lookup
-            depot_info = all_depots.get(depot_id_str, {})
-            try:
-                platform = (depot_info.get("oslist") or "").lower() or "unknown"
-            except Exception:
-                platform = "unknown"
-
-            logger.info(
-                f"Depot {depot_id_str}: platform='{platform}', config={depot_info.get('config', {})}"
-            )
-
-            # Linux-native depots do not need override config.
-            if platform == "linux":
-                downloading_linux_depots = True
-                logger.info("-> Identified as Linux depot")
-            elif platform and platform != "unknown":
-                downloading_proton_depots = True
-                depot_source_platform = platform
-                logger.info(f"-> Identified as non-Linux depot: {platform}")
-
-        logger.info(
-            f"Platform detection summary - Proton source: {downloading_proton_depots}, Linux: {downloading_linux_depots}"
-        )
-
-        # Configure based on depot types
-        if downloading_proton_depots:
-            logger.info(
-                f"Non-Linux depots detected - adding compatibility configuration (source: {depot_source_platform})"
-            )
-            platform_config = (
-                '\t"UserConfig"\n'
-                "\t{\n"
-                '\t\t"platform_override_dest"\t\t"linux"\n'
-                f'\t\t"platform_override_source"\t\t"{depot_source_platform}"\n'
-                "\t}\n"
-                '\t"MountedConfig"\n'
-                "\t{\n"
-                '\t\t"platform_override_dest"\t\t"linux"\n'
-                f'\t\t"platform_override_source"\t\t"{depot_source_platform}"\n'
-                "\t}"
-            )
-        elif downloading_linux_depots:
-            logger.info("Linux depots on Linux - adding empty platform config")
-            platform_config = empty_platform_config
-        else:
-            logger.info(
-                "No platform-specific depots detected - adding empty platform config"
-            )
-            platform_config = empty_platform_config
-
-        # Build depot content
-        if selected_depots and all_manifests:
-            for depot_id in selected_depots:
-                depot_id_str = str(depot_id)
-                manifest_gid = all_manifests.get(depot_id_str)
-                depot_info = all_depots.get(depot_id_str, {})
-                depot_size = depot_info.get("size", "0")
-
-                if manifest_gid:
-                    depots_content += (
-                        f'\t\t"{depot_id_str}"\n'
-                        f"\t\t{{\n"
-                        f'\t\t\t"manifest"\t\t"{manifest_gid}"\n'
-                        f'\t\t\t"size"\t\t"{depot_size}"\n'
-                        f"\t\t}}\n"
-                    )
-                else:
-                    logger.warning(
-                        f"Could not find manifest GID for selected depot {depot_id_str}"
-                    )
-
-        # Format installed depots section
-        if depots_content:
-            installed_depots_str = f'\t"InstalledDepots"\n\t{{\n{depots_content}\t}}'
-        else:
-            installed_depots_str = '\t"InstalledDepots"\n\t{\n\t}'
-
-        acf_content = (
-            f'"AppState"\n'
-            f"{{\n"
-            f'\t"appid"\t\t"{self.game_data["appid"]}"\n'
-            f'\t"Universe"\t\t"1"\n'
-            f'\t"name"\t\t"{self.game_data["game_name"]}"\n'
-            f'\t"StateFlags"\t\t"4"\n'
-            f'\t"installdir"\t\t"{install_folder_name}"\n'
-            f'\t"SizeOnDisk"\t\t"{size_on_disk}"\n'
-            f'\t"buildid"\t\t"{buildid}"\n'
-            f"{installed_depots_str}"
-        )
-
-        if platform_config:
-            acf_content += f"\n{platform_config}"
-
-        # Final bracket
-        acf_content += "\n}"
-
         try:
-            with open(acf_path, "w", encoding="utf-8") as f:
-                f.write(acf_content)
-            logger.info(f"Created .acf file at {acf_path}")
-        except IOError as e:
+            write_appmanifest_acf(
+                steamapps_path=steamapps_path,
+                appid=str(self.game_data["appid"]),
+                game_name=self.game_data["game_name"],
+                install_folder_name=install_folder_name,
+                size_on_disk=int(size_on_disk),
+                buildid=str(buildid),
+                selected_depots=selected_depots,
+                manifests=all_manifests,
+                depots=all_depots,
+            )
+        except (IOError, OSError, ValueError, TypeError) as e:
             logger.error(f"Error creating .acf file: {e}")
 
     def _move_manifests_to_depotcache(self):

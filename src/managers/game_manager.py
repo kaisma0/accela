@@ -19,6 +19,8 @@ from utils.yaml_config_manager import (
     get_user_config_path,
     add_list_item,
     remove_list_item,
+    get_dlc_data,
+    remove_dlc_data,
     get_map_items,
     set_map_item,
     is_slssteam_mode_enabled,
@@ -873,6 +875,13 @@ class GameManager(QObject):
                     and is_slssteam_config_management_enabled()
                 ):
                     confirm_msg += "• Library entry from SLSsteam config.yaml\n"
+                    if self._is_valid_appid(appid):
+                        config_path = get_user_config_path()
+                        dlc_count = 0
+                        if config_path.exists():
+                            dlc_count = len(get_dlc_data(config_path).get(str(appid), {}))
+                        if dlc_count > 0:
+                            confirm_msg += f"• {dlc_count} DLC entr{'y' if dlc_count == 1 else 'ies'} from SLSsteam DlcData\n"
                     confirm_msg += "• Depot data from SLSsteam config.yaml\n"
 
             if remove_shortcuts:
@@ -944,6 +953,7 @@ class GameManager(QObject):
                     config_path = get_user_config_path()
                     if config_path.exists():
                         remove_list_item(config_path, "AdditionalApps", str(appid))
+                        self._remove_slssteam_dlc_tracking(config_path, str(appid))
 
                 if (
                     not remove_game_data
@@ -967,6 +977,22 @@ class GameManager(QObject):
             error_msg = f"Error uninstalling game {game_name}: {e}"
             logger.error(error_msg)
             return False, str(e)
+
+    def _remove_slssteam_dlc_tracking(self, config_path, appid):
+        """Remove any DlcData entries tracked for the parent appid."""
+        dlc_entries = get_dlc_data(config_path).get(appid, {})
+        if not dlc_entries:
+            return
+
+        removed = 0
+        for dlc_id in list(dlc_entries.keys()):
+            if remove_dlc_data(config_path, appid, str(dlc_id)):
+                removed += 1
+
+        if removed > 0:
+            logger.info(
+                f"Removed {removed} SLSsteam DlcData entr{'y' if removed == 1 else 'ies'} for appid {appid}"
+            )
 
     def _remove_linux_game_data(self, appid, remove_compatdata, remove_saves):
         """
