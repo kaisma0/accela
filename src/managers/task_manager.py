@@ -38,6 +38,16 @@ from utils.task_runner import TaskRunner
 logger = logging.getLogger(__name__)
 
 
+class PostDownloadStage:
+    """Pipeline stages for deterministic post-download orchestration."""
+
+    FINALIZE = "finalize"
+    STEAMLESS = "steamless"
+    SHORTCUTS = "shortcuts"
+    ACHIEVEMENTS = "achievements"
+    FINISH = "finish"
+
+
 class TaskManager:
     def __init__(self, main_window):
         self.main_window = main_window
@@ -63,6 +73,7 @@ class TaskManager:
         self.application_shortcuts_task_runner = None
         self.slssteam_download_task = None
         self.slssteam_download_runner = None
+        self.post_finalize_runner = None
 
         # Processing state
         self.is_processing = False
@@ -112,6 +123,12 @@ class TaskManager:
         self._last_download_log_time = 0.0
         self._last_download_log_bucket = -1
         self._last_download_log_line = ""
+
+        # Post-download pipeline state
+        self._post_download_active = False
+        self._post_download_current_stage = None
+        self._post_download_completed_stages = set()
+        self._post_download_abort_remaining = False
 
         # Cancel cleanup preference
         self._delete_files_on_cancel: Optional[bool] = None
@@ -517,61 +534,103 @@ class TaskManager:
                 self.job_finished()
             return
 
-        # Get total size for ACF file
-        size_on_disk = 0
-        if self.download_task:
-            size_on_disk = self.download_task.total_download_size_for_this_job
-            logger.info(f"Retrieved SizeOnDisk from download task: {size_on_disk}")
-        else:
-            logger.warning("Download task object is gone, SizeOnDisk will be 0.")
-        self._create_acf_file(size_on_disk)
-        self._move_manifests_to_depotcache()
+        self._start_post_download_pipeline()
 
-        # Save main depot info to persistent file
-        if self.game_data:
-            selected_depots = self.game_data.get("selected_depots_list", [])
-            all_manifests = self.game_data.get("manifests", {})
-            if selected_depots and all_manifests:
-                self._save_main_depot_info(
-                    self.game_data, selected_depots, all_manifests
-                )
+    def _start_post_download_pipeline(self):
+        """Start the staged post-download pipeline from a clean state."""
+        self._post_download_active = True
+        self._post_download_current_stage = None
+        self._post_download_completed_stages = set()
+        self._post_download_abort_remaining = False
+        self._advance_post_download_pipeline()
 
-        # Set executable permissions for game binaries
-        self._set_linux_binary_permissions()
+    def _advance_post_download_pipeline(self):
+        """Advance to the next eligible post-download stage exactly once."""
+        if not self._post_download_active:
+            return
 
-        # Add AppIDs to SLSsteam config (before Steamless/SLScheevo)
-        if self.slssteam_mode_was_active:
-            self._add_appids_to_slssteam_config()
+        if self.is_cancelling:
+            self._run_post_download_stage(PostDownloadStage.FINISH)
+            return
 
-        # Auto-apply Goldberg after download completion
-        auto_apply_goldberg = self.settings.value(
-            "auto_apply_goldberg", False, type=bool
+        stage = self._determine_next_post_download_stage()
+        if stage is None:
+            self._post_download_active = False
+            return
+
+        self._run_post_download_stage(stage)
+
+    def _determine_next_post_download_stage(self):
+        """Resolve the next stage to execute according to settings and completion state."""
+        if PostDownloadStage.FINALIZE not in self._post_download_completed_stages:
+            return PostDownloadStage.FINALIZE
+
+        if self._post_download_abort_remaining:
+            if PostDownloadStage.FINISH not in self._post_download_completed_stages:
+                return PostDownloadStage.FINISH
+            return None
+
+        steamless_enabled = self.settings.value("use_steamless", False, type=bool)
+        if (
+            steamless_enabled
+            and not self.is_cancelling
+            and PostDownloadStage.STEAMLESS not in self._post_download_completed_stages
+        ):
+            return PostDownloadStage.STEAMLESS
+
+        shortcuts_enabled = self.settings.value(
+            "create_application_shortcuts", False, type=bool
+        )
+        slssteam_mode = self.settings.value("slssteam_mode", False, type=bool)
+        if shortcuts_enabled and not slssteam_mode:
+            logger.info(
+                "Application shortcuts creation is enabled but SLSsteam mode is disabled, skipping"
+            )
+        if (
+            shortcuts_enabled
+            and slssteam_mode
+            and not self.is_cancelling
+            and PostDownloadStage.SHORTCUTS not in self._post_download_completed_stages
+        ):
+            return PostDownloadStage.SHORTCUTS
+
+        achievements_enabled = self.settings.value(
+            "generate_achievements", False, type=bool
         )
         if (
-            auto_apply_goldberg
+            achievements_enabled
             and not self.is_cancelling
-            and self.game_data
-            and self.current_dest_path
+            and PostDownloadStage.ACHIEVEMENTS
+            not in self._post_download_completed_stages
         ):
-            install_folder_name = self._get_install_folder_name()
-            game_directory = str(
-                Path(self.current_dest_path)
-                / "steamapps"
-                / "common"
-                / install_folder_name
-            )
-            logger.info("Auto-application triggered post-download")
-            self.apply_goldberg_to_game(
-                game_directory=game_directory,
-                appid=str(self.game_data.get("appid", "")),
-                game_name=self.game_data.get("game_name", ""),
-                show_dialog=False,
-            )
+            return PostDownloadStage.ACHIEVEMENTS
 
-        # Check if Steamless is enabled - run before achievements
-        steamless_enabled = self.settings.value("use_steamless", False, type=bool)
+        if PostDownloadStage.FINISH not in self._post_download_completed_stages:
+            return PostDownloadStage.FINISH
 
-        if steamless_enabled and not self.is_cancelling:
+        return None
+
+    def _run_post_download_stage(self, stage):
+        """Execute one stage from the post-download pipeline."""
+        if stage in self._post_download_completed_stages:
+            logger.debug("Skipping already-completed post-download stage: %s", stage)
+            self._advance_post_download_pipeline()
+            return
+
+        if stage == self._post_download_current_stage:
+            logger.debug("Post-download stage already running: %s", stage)
+            return
+
+        self._post_download_current_stage = stage
+
+        if stage == PostDownloadStage.FINALIZE:
+            self.main_window.drop_text_label.setText(
+                f"Finalizing: {self.game_data.get('game_name', '')}"
+            )
+            self._start_post_download_finalization()
+            return
+
+        if stage == PostDownloadStage.STEAMLESS:
             logger.info("Feature enabled; preparing for DRM removal...")
             self.main_window.drop_text_label.setText(
                 f"Running Steamless: {self.game_data.get('game_name', '')}"
@@ -579,31 +638,17 @@ class TaskManager:
             self._start_steamless_processing()
             return
 
-        # Check if application shortcuts are enabled (SLSsteam mode required)
-        shortcuts_enabled = self.settings.value(
-            "create_application_shortcuts", False, type=bool
-        )
-        slssteam_mode = self.settings.value("slssteam_mode", False, type=bool)
-
-        if shortcuts_enabled and slssteam_mode and not self.is_cancelling:
+        if stage == PostDownloadStage.SHORTCUTS:
             logger.info("Generating application shortcuts...")
             self.main_window.drop_text_label.setText(
                 f"Creating Application Shortcuts: {self.game_data.get('game_name', '')}"
             )
             self._start_application_shortcuts_processing()
             return
-        elif shortcuts_enabled and not slssteam_mode:
-            logger.info(
-                "Application shortcuts creation is enabled but SLSsteam mode is disabled, skipping"
-            )
 
-        # Check if achievements are enabled
-        achievements_enabled = self.settings.value(
-            "generate_achievements", False, type=bool
-        )
-        if achievements_enabled and not self.is_cancelling:
+        if stage == PostDownloadStage.ACHIEVEMENTS:
             logger.info(
-                "Achievement generation is enabled, starting after download completion"
+                "Achievement generation is enabled, starting after previous stage completion"
             )
             self.main_window.drop_text_label.setText(
                 f"Generating Achievements: {self.game_data.get('game_name', '')}"
@@ -611,7 +656,128 @@ class TaskManager:
             self._start_achievement_generation()
             return
 
-        self._continue_after_download()
+        if stage == PostDownloadStage.FINISH:
+            self._complete_post_download_stage(PostDownloadStage.FINISH)
+            self._post_download_active = False
+            self._continue_after_download()
+
+    def _queue_post_download_advance(self):
+        """Queue the next pipeline transition on the event loop."""
+        QTimer.singleShot(0, self._advance_post_download_pipeline)
+
+    def _complete_post_download_stage(self, stage):
+        """Mark one stage complete and clear running marker if needed."""
+        self._post_download_completed_stages.add(stage)
+        if self._post_download_current_stage == stage:
+            self._post_download_current_stage = None
+
+    def _start_post_download_finalization(self):
+        """Run disk finalization operations in a worker thread."""
+        if not self.game_data or not self.current_dest_path:
+            logger.warning(
+                "Missing game data or destination path; skipping finalization stage."
+            )
+            self._complete_post_download_stage(PostDownloadStage.FINALIZE)
+            self._queue_post_download_advance()
+            return
+
+        size_on_disk = 0
+        if self.download_task:
+            size_on_disk = self.download_task.total_download_size_for_this_job
+            logger.info(f"Retrieved SizeOnDisk from download task: {size_on_disk}")
+        else:
+            logger.warning("Download task object is gone, SizeOnDisk will be 0.")
+
+        game_data_snapshot = dict(self.game_data)
+        current_dest_path = self.current_dest_path
+        slssteam_mode_was_active = self.slssteam_mode_was_active
+        auto_apply_goldberg = self.settings.value(
+            "auto_apply_goldberg", False, type=bool
+        )
+
+        self.post_finalize_runner = TaskRunner()
+        self.post_finalize_runner.cleanup_complete.connect(
+            self._on_post_finalize_task_cleanup
+        )
+        worker = self.post_finalize_runner.run(
+            self._run_post_download_finalization,
+            game_data_snapshot,
+            current_dest_path,
+            size_on_disk,
+            slssteam_mode_was_active,
+            auto_apply_goldberg,
+        )
+        worker.finished.connect(self._on_post_download_finalization_complete)
+        worker.error.connect(self._on_post_download_finalization_error)
+
+    def _run_post_download_finalization(
+        self,
+        game_data_snapshot,
+        current_dest_path,
+        size_on_disk,
+        slssteam_mode_was_active,
+        auto_apply_goldberg,
+    ):
+        """Worker-thread finalization implementation."""
+        self._create_acf_file(
+            size_on_disk,
+            game_data=game_data_snapshot,
+            dest_path=current_dest_path,
+            update_ui=False,
+        )
+        self._move_manifests_to_depotcache(
+            game_data=game_data_snapshot, dest_path=current_dest_path
+        )
+
+        selected_depots = game_data_snapshot.get("selected_depots_list", [])
+        all_manifests = game_data_snapshot.get("manifests", {})
+        if selected_depots and all_manifests:
+            self._save_main_depot_info(game_data_snapshot, selected_depots, all_manifests)
+
+        self._set_linux_binary_permissions(
+            game_data=game_data_snapshot, dest_path=current_dest_path
+        )
+
+        if slssteam_mode_was_active:
+            self._add_appids_to_slssteam_config(game_data=game_data_snapshot)
+
+        if auto_apply_goldberg and not self.is_cancelling:
+            install_folder_name = self._get_install_folder_name_from_data(game_data_snapshot)
+            game_directory = str(
+                Path(current_dest_path) / "steamapps" / "common" / install_folder_name
+            )
+            logger.info("Auto-application triggered post-download")
+            self.apply_goldberg_to_game(
+                game_directory=game_directory,
+                appid=str(game_data_snapshot.get("appid", "")),
+                game_name=game_data_snapshot.get("game_name", ""),
+                show_dialog=False,
+            )
+
+        return {"success": True}
+
+    def _on_post_download_finalization_complete(self, _result):
+        """Handle finalization completion and continue pipeline."""
+        self._complete_post_download_stage(PostDownloadStage.FINALIZE)
+        self._queue_post_download_advance()
+
+    def _on_post_download_finalization_error(self, error_info):
+        """Handle finalization errors and continue pipeline."""
+        _, error_value, error_traceback = error_info
+        logger.error(f"Post-download finalization failed: {error_value}")
+        if error_traceback:
+            logger.error("Traceback:\n%s", error_traceback)
+        self._last_ddm_status = "error"
+        self._last_ddm_status_text = "Finalization failed"
+        self._post_download_abort_remaining = True
+        self._complete_post_download_stage(PostDownloadStage.FINALIZE)
+        self._queue_post_download_advance()
+
+    def _on_post_finalize_task_cleanup(self):
+        """Handle post-finalization worker cleanup completion."""
+        logger.debug("Post-finalization worker cleanup complete.")
+        self.post_finalize_runner = None
+        self.main_window.job_queue._check_if_safe_to_start_next_job()
 
     def _save_main_depot_info(self, game_data, selected_depots, all_manifests):
         """
@@ -668,32 +834,42 @@ class TaskManager:
             # Log error but don't fail the download
             logger.error(f"Failed to save depot info: {e}")
 
-    def _create_acf_file(self, size_on_disk):
+    def _create_acf_file(
+        self,
+        size_on_disk,
+        game_data=None,
+        dest_path=None,
+        update_ui=True,
+    ):
         """Create Steam ACF manifest file"""
-        if not self.game_data or not self.current_dest_path:
+        game_data = game_data or self.game_data
+        dest_path = dest_path or self.current_dest_path
+
+        if not game_data or not dest_path:
             logger.warning("Missing game data or destination path. Cannot create .acf.")
             return
 
         logger.info("Generating Steam .acf manifest file...")
 
-        install_folder_name = self._get_install_folder_name()
+        install_folder_name = self._get_install_folder_name_from_data(game_data)
 
-        self.main_window.drop_text_label.setText(
-            f"Generating .acf for {install_folder_name}"
-        )
+        if update_ui:
+            self.main_window.drop_text_label.setText(
+                f"Generating .acf for {install_folder_name}"
+            )
 
-        steamapps_path = Path(self.current_dest_path) / "steamapps"
+        steamapps_path = Path(dest_path) / "steamapps"
 
-        buildid = self.game_data.get("buildid", "0")
-        selected_depots = self.game_data.get("selected_depots_list", [])
-        all_manifests = self.game_data.get("manifests", {})
-        all_depots = self.game_data.get("depots", {})
+        buildid = game_data.get("buildid", "0")
+        selected_depots = game_data.get("selected_depots_list", [])
+        all_manifests = game_data.get("manifests", {})
+        all_depots = game_data.get("depots", {})
 
         try:
             write_appmanifest_acf(
                 steamapps_path=steamapps_path,
-                appid=str(self.game_data["appid"]),
-                game_name=self.game_data["game_name"],
+                appid=str(game_data["appid"]),
+                game_name=game_data["game_name"],
                 install_folder_name=install_folder_name,
                 size_on_disk=int(size_on_disk),
                 buildid=str(buildid),
@@ -704,8 +880,11 @@ class TaskManager:
         except (IOError, OSError, ValueError, TypeError) as e:
             logger.error(f"Error creating .acf file: {e}")
 
-    def _move_manifests_to_depotcache(self):
-        if not self.game_data or not self.current_dest_path:
+    def _move_manifests_to_depotcache(self, game_data=None, dest_path=None):
+        game_data = game_data or self.game_data
+        dest_path = dest_path or self.current_dest_path
+
+        if not game_data or not dest_path:
             logger.error(
                 "Missing game data or destination path. Cannot move manifests."
             )
@@ -719,14 +898,14 @@ class TaskManager:
             )
             return
 
-        target_depotcache_dir = Path(self.current_dest_path) / "depotcache"
+        target_depotcache_dir = Path(dest_path) / "depotcache"
 
         try:
             target_depotcache_dir.mkdir(parents=True, exist_ok=True)
             logger.info(
                 f"Ensured depotcache directory exists at: {target_depotcache_dir}"
             )
-            manifests_map = self.game_data.get("manifests", {})
+            manifests_map = game_data.get("manifests", {})
 
             if not manifests_map:
                 logger.info("No manifest information found in game data.")
@@ -759,18 +938,19 @@ class TaskManager:
             logger.error(f"Failed to move manifests to depotcache: {e}", exc_info=True)
             logger.info(f"Error moving manifests: {e}")
 
-    def _set_linux_binary_permissions(self):
+    def _set_linux_binary_permissions(self, game_data=None, dest_path=None):
         """Set executable permissions for Linux binaries after download"""
-        if not self.game_data or not self.current_dest_path:
+        game_data = game_data or self.game_data
+        dest_path = dest_path or self.current_dest_path
+
+        if not game_data or not dest_path:
             logger.warning(
                 "Missing game data or destination path. Cannot set binary permissions."
             )
             return
 
-        install_folder_name = self._get_install_folder_name()
-        game_directory = str(
-            Path(self.current_dest_path) / "steamapps" / "common" / install_folder_name
-        )
+        install_folder_name = self._get_install_folder_name_from_data(game_data)
+        game_directory = str(Path(dest_path) / "steamapps" / "common" / install_folder_name)
 
         if not Path(game_directory).exists():
             logger.warning(
@@ -791,14 +971,9 @@ class TaskManager:
             logger.warning(
                 "No destination path or game data found, skipping Steamless processing"
             )
-            # Continue to achievements check
-            achievements_enabled = self.settings.value(
-                "generate_achievements", False, type=bool
-            )
-            if achievements_enabled and not self.is_cancelling:
-                self._start_achievement_generation()
-            else:
-                self._continue_after_download()
+            if self._post_download_active:
+                self._complete_post_download_stage(PostDownloadStage.STEAMLESS)
+                self._queue_post_download_advance()
             return
 
         install_folder_name = self._get_install_folder_name()
@@ -810,14 +985,9 @@ class TaskManager:
             logger.warning(
                 f"Game directory not found at {game_directory}, skipping Steamless processing"
             )
-            # Continue to achievements check
-            achievements_enabled = self.settings.value(
-                "generate_achievements", False, type=bool
-            )
-            if achievements_enabled and not self.is_cancelling:
-                self._start_achievement_generation()
-            else:
-                self._continue_after_download()
+            if self._post_download_active:
+                self._complete_post_download_stage(PostDownloadStage.STEAMLESS)
+                self._queue_post_download_advance()
             return
 
         logger.info("\n" + "=" * 40)
@@ -1301,44 +1471,17 @@ class TaskManager:
             # Keep _last_steamless_success for status dialog
             return
 
-        # Only continue to achievements if Steamless actually ran
-        # (prevents double-starting achievements)
-        if self._steamless_success is not None:
-            self._steamless_success = None  # Reset flag for next job
-            # Keep _last_steamless_success for status dialog
-
-            # Check if application shortcuts are enabled (SLSsteam mode required)
-            shortcuts_enabled = self.settings.value(
-                "create_application_shortcuts", False, type=bool
-            )
-            slssteam_mode = self.settings.value("slssteam_mode", False, type=bool)
-
-            if shortcuts_enabled and slssteam_mode and not self.is_cancelling:
-                logger.info("Generating application shortcuts...")
-                game_name = (
-                    self.game_data.get("game_name", "") if self.game_data else ""
-                )
-                self.main_window.drop_text_label.setText(
-                    f"Creating Application Shortcuts: {game_name}"
-                )
-                self._start_application_shortcuts_processing()
+        if self._post_download_active:
+            if PostDownloadStage.STEAMLESS in self._post_download_completed_stages:
                 return
-            elif shortcuts_enabled and not slssteam_mode:
-                logger.info(
-                    "Application shortcuts creation is enabled but SLSsteam mode is disabled, skipping"
-                )
+            self._complete_post_download_stage(PostDownloadStage.STEAMLESS)
+            self._steamless_success = None
+            self._queue_post_download_advance()
+            return
 
-            # Continue to achievement generation if enabled
-            achievements_enabled = self.settings.value(
-                "generate_achievements", False, type=bool
-            )
-            if achievements_enabled and not self.is_cancelling:
-                logger.info(
-                    "Starting achievement generation after Steamless completion"
-                )
-                self._start_achievement_generation()
-            else:
-                self._continue_after_download()
+        # Fallback for non-pipeline paths
+        if self._steamless_success is not None:
+            self._steamless_success = None
 
     def _clear_steamless_task(self):
         """Clear steamless task reference on next event loop tick"""
@@ -1436,26 +1579,34 @@ class TaskManager:
             self._steamless_success = None
             return
 
-        # Continue to achievement generation even if Steamless failed
-        achievements_enabled = self.settings.value(
-            "generate_achievements", False, type=bool
+        if self._post_download_active:
+            self._complete_post_download_stage(PostDownloadStage.STEAMLESS)
+            self._queue_post_download_advance()
+            return
+
+        logger.warning(
+            "Steamless error callback received outside post-download pipeline; ignoring transition."
         )
-        if achievements_enabled and not self.is_cancelling:
-            self._start_achievement_generation()
-        else:
-            self._continue_after_download()
 
     def _start_achievement_generation(self):
         """Start achievement generation task"""
         if not self.game_data:
             logger.warning("No game_data found, skipping achievement generation")
-            self._continue_after_download()
+            if self._post_download_active:
+                self._complete_post_download_stage(PostDownloadStage.ACHIEVEMENTS)
+                self._queue_post_download_advance()
+            else:
+                self._continue_after_download()
             return
 
         app_id = self.game_data.get("appid")
         if not app_id:
             logger.warning("No AppID found, skipping achievement generation")
-            self._continue_after_download()
+            if self._post_download_active:
+                self._complete_post_download_stage(PostDownloadStage.ACHIEVEMENTS)
+                self._queue_post_download_advance()
+            else:
+                self._continue_after_download()
             return
 
         logger.info("\n" + "=" * 40)
@@ -1511,7 +1662,13 @@ class TaskManager:
         logger.debug(
             "Achievement generation complete, waiting for TaskRunner cleanup..."
         )
-        self._continue_after_download()
+        if self._post_download_active:
+            self._complete_post_download_stage(PostDownloadStage.ACHIEVEMENTS)
+            self._queue_post_download_advance()
+            return
+        logger.warning(
+            "Achievements completion callback received outside post-download pipeline; ignoring transition."
+        )
 
     def _handle_achievement_error(self, error_info):
         """Handle achievement generation errors"""
@@ -1528,7 +1685,13 @@ class TaskManager:
         # Cleanup will happen via TaskRunner's cleanup_complete signal
         # Do NOT set to None here - wait for proper cleanup
         logger.debug("Achievement generation error, waiting for TaskRunner cleanup...")
-        self._continue_after_download()
+        if self._post_download_active:
+            self._complete_post_download_stage(PostDownloadStage.ACHIEVEMENTS)
+            self._queue_post_download_advance()
+            return
+        logger.warning(
+            "Achievements error callback received outside post-download pipeline; ignoring transition."
+        )
 
     def _on_achievement_task_cleanup(self):
         """Handle achievement task cleanup completion"""
@@ -1553,14 +1716,22 @@ class TaskManager:
             logger.warning(
                 "No game_data found, skipping application shortcuts creation"
             )
-            self._continue_after_download()
+            if self._post_download_active:
+                self._complete_post_download_stage(PostDownloadStage.SHORTCUTS)
+                self._queue_post_download_advance()
+            else:
+                self._continue_after_download()
             return
 
         app_id = self.game_data.get("appid")
         game_name = self.game_data.get("game_name")
         if not app_id:
             logger.warning("No AppID found, skipping application shortcuts creation")
-            self._continue_after_download()
+            if self._post_download_active:
+                self._complete_post_download_stage(PostDownloadStage.SHORTCUTS)
+                self._queue_post_download_advance()
+            else:
+                self._continue_after_download()
             return
 
         sgdb_api_key = self.settings.value("sgdb_api_key", "", type=str)
@@ -1568,7 +1739,11 @@ class TaskManager:
             logger.warning(
                 "No Steam Grid DB API key configured, skipping application shortcuts creation"
             )
-            self._continue_after_download()
+            if self._post_download_active:
+                self._complete_post_download_stage(PostDownloadStage.SHORTCUTS)
+                self._queue_post_download_advance()
+            else:
+                self._continue_after_download()
             return
 
         logger.info("\n" + "=" * 40)
@@ -1607,21 +1782,13 @@ class TaskManager:
             "Application shortcuts complete, waiting for TaskRunner cleanup..."
         )
 
-        # Continue to achievement generation if enabled
-        achievements_enabled = self.settings.value(
-            "generate_achievements", False, type=bool
+        if self._post_download_active:
+            self._complete_post_download_stage(PostDownloadStage.SHORTCUTS)
+            self._queue_post_download_advance()
+            return
+        logger.warning(
+            "Application shortcuts completion callback received outside post-download pipeline; ignoring transition."
         )
-        if achievements_enabled and not self.is_cancelling:
-            logger.info(
-                "Starting achievement generation after application shortcuts completion"
-            )
-            game_name = self.game_data.get("game_name", "") if self.game_data else ""
-            self.main_window.drop_text_label.setText(
-                f"Generating Achievements: {game_name}"
-            )
-            self._start_achievement_generation()
-        else:
-            self._continue_after_download()
 
     def _handle_application_shortcuts_error(self, error_info):
         """Handle application shortcuts creation errors"""
@@ -1635,21 +1802,13 @@ class TaskManager:
         # Do NOT set to None here - wait for proper cleanup
         logger.debug("Application shortcuts error, waiting for TaskRunner cleanup...")
 
-        # Continue to achievement generation even if shortcuts failed
-        achievements_enabled = self.settings.value(
-            "generate_achievements", False, type=bool
+        if self._post_download_active:
+            self._complete_post_download_stage(PostDownloadStage.SHORTCUTS)
+            self._queue_post_download_advance()
+            return
+        logger.warning(
+            "Application shortcuts error callback received outside post-download pipeline; ignoring transition."
         )
-        if achievements_enabled and not self.is_cancelling:
-            logger.info(
-                "Starting achievement generation after application shortcuts error"
-            )
-            game_name = self.game_data.get("game_name", "") if self.game_data else ""
-            self.main_window.drop_text_label.setText(
-                f"Generating Achievements: {game_name}"
-            )
-            self._start_achievement_generation()
-        else:
-            self._continue_after_download()
 
     def _continue_after_download(self):
         """Continue with the normal download completion flow"""
@@ -1665,9 +1824,11 @@ class TaskManager:
 
         self.job_finished()
 
-    def _add_appids_to_slssteam_config(self):
+    def _add_appids_to_slssteam_config(self, game_data=None):
         """Add downloaded AppIDs and DLCs to SLSsteam config.yaml on Linux."""
-        if not self.game_data:
+        game_data = game_data or self.game_data
+
+        if not game_data:
             logger.warning("No game_data available, skipping SLSsteam config update")
             return
 
@@ -1680,8 +1841,8 @@ class TaskManager:
                 return
 
             # Add main game AppID to AdditionalApps
-            main_appid = self.game_data.get("appid")
-            game_name = self.game_data.get("game_name", "")
+            main_appid = game_data.get("appid")
+            game_name = game_data.get("game_name", "")
             if main_appid:
                 added = add_list_item(
                     config_path, "AdditionalApps", str(main_appid), game_name
@@ -1692,8 +1853,8 @@ class TaskManager:
                     )
 
             # Add selected DLCs to DlcData only if > 64 DLCs (Steam limit)
-            selected_dlcs = self.game_data.get("selected_dlcs", [])
-            dlcs = self.game_data.get("dlcs", {})
+            selected_dlcs = game_data.get("selected_dlcs", [])
+            dlcs = game_data.get("dlcs", {})
 
             if main_appid and selected_dlcs and len(selected_dlcs) > 64:
                 logger.info(
@@ -1812,6 +1973,10 @@ class TaskManager:
         self.download_task = None
         self.is_cancelling = False
         self._delete_files_on_cancel = None
+        self._post_download_active = False
+        self._post_download_current_stage = None
+        self._post_download_completed_stages = set()
+        self._post_download_abort_remaining = False
         # Achievement and steamless clean up via their own signals/threads - don't clear here
 
         logger.info("\n" + "=" * 40 + "\n")
@@ -1948,6 +2113,10 @@ class TaskManager:
         if self.steamless_task:
             logger.info("Stopping Steamless task...")
             self.steamless_task.stop()
+
+        if self.application_shortcuts_task:
+            logger.info("Stopping application shortcuts task...")
+            self.application_shortcuts_task.stop()
 
     def _detect_existing_installation(self) -> bool:
         """Detect if there is an existing install for this job."""
@@ -2185,6 +2354,10 @@ class TaskManager:
             self.slssteam_download_runner = None
             self.slssteam_download_task = None
 
+        if self.post_finalize_runner:
+            self.post_finalize_runner.stop(wait_ms=0, terminate_on_timeout=True)
+            self.post_finalize_runner = None
+
         TaskRunner.stop_all_active()
 
     def get_component_status(self):
@@ -2211,6 +2384,12 @@ class TaskManager:
             if self.download_task or self.zip_task:
                 ddm_status = "in_progress"
                 ddm_status_text = "Downloading..."
+            elif (
+                self._post_download_active
+                and self._post_download_current_stage == PostDownloadStage.FINALIZE
+            ):
+                ddm_status = "in_progress"
+                ddm_status_text = "Finalizing..."
             elif self.steamless_task:
                 ddm_status = "ok"
                 ddm_status_text = "Completed"
@@ -2239,6 +2418,18 @@ class TaskManager:
             return "DRM removed"
         else:
             return "Completed (no DRM found)"
+
+    def _get_install_folder_name_from_data(self, game_data) -> str:
+        """Return a sanitized install folder name from provided game data."""
+        if not game_data:
+            return ""
+        safe_fallback = (
+            re.sub(r"[^\w\s-]", "", game_data.get("game_name", ""))
+            .strip()
+            .replace(" ", "_")
+        )
+        name = game_data.get("installdir") or safe_fallback
+        return name or f"App_{game_data['appid']}"
 
     def _update_status_for_job(self, ddm_ok=True, slscheevo_ok=None, steamless_ok=None):
         """Update status tracking after a job completes.
