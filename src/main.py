@@ -19,6 +19,7 @@ from ui.theme import update_appearance  # noqa: E402
 
 from utils.logger import setup_logging  # noqa: E402
 from utils.settings import get_settings  # noqa: E402
+from utils.task_runner import TaskRunner  # noqa: E402
 from utils.yaml_config_manager import (  # noqa: E402
     backup_config_on_startup,
     ensure_slssteam_api_enabled,
@@ -145,6 +146,8 @@ def launch_app(app, logger, app_version, command_line_appid, command_line_zips):
         main_win.show()
         logger.info("Main window displayed successfully.")
 
+        startup_task_runner_ref = [TaskRunner(main_win)]
+
         # Run update check after first paint so startup remains responsive.
         QTimer.singleShot(1200, lambda: main_win.check_for_startup_update(app_version))
 
@@ -159,12 +162,26 @@ def launch_app(app, logger, app_version, command_line_appid, command_line_zips):
                     logger.info(
                         f"Downloading manifest for AppID {command_line_appid} from Morrenus API"
                     )
-                    zip_path, error = download_manifest(command_line_appid)
-                    if error:
-                        logger.error(f"Failed to download manifest: {error}")
-                        return
-                    logger.info(f"Adding to queue: AppID {command_line_appid}")
-                    main_win.job_queue.add_job(zip_path)
+
+                    def on_manifest_download_finished(result):
+                        zip_path, error = result
+                        if error:
+                            logger.error(f"Failed to download manifest: {error}")
+                            return
+
+                        logger.info(f"Adding to queue: AppID {command_line_appid}")
+                        main_win.job_queue.add_job(zip_path)
+
+                    worker = startup_task_runner_ref[0].run(
+                        download_manifest, command_line_appid
+                    )
+                    worker.finished.connect(on_manifest_download_finished)
+                    worker.error.connect(
+                        lambda error_info: logger.error(
+                            f"Manifest download worker failed: {error_info[1]}",
+                            exc_info=error_info,
+                        )
+                    )
                 else:
                     logger.info(
                         f"Adding {len(command_line_zips)} ZIP file(s) from command line to queue"
@@ -190,7 +207,7 @@ def main():
     from utils.version import app_version
 
     logger.info("========================================")
-    logger.info(f"ACCELA {app_version} starting...")
+    logger.info("ACCELA %s starting...", app_version)
     logger.info("========================================")
 
     # People only have substance within the memories of other people.
