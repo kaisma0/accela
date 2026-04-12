@@ -35,6 +35,6 @@ class Paths:
     @classmethod
     def sound_path(cls, filename):
         """For use with audio_manager.
-        Returns the sound file path from the res/ folder.
+        Returns the sound file path from the res/sounds/ folder.
         """
-        return Paths.resource(filename)
+        return Paths.resource("sounds") / filename

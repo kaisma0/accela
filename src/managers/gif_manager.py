@@ -90,6 +90,7 @@ class GIFManager:
         # Store the current disable_color_gifs setting for comparison
         self._current_disable_color_gifs = self.disable_color_gifs
         self.regenerate_anyway = False
+        self._is_processing_batch = False
         # Don't create progress dialog here - create it when needed
         self.progress_dialog = None
 
@@ -107,6 +108,10 @@ class GIFManager:
         """
         Process all GIFs from multiple input directories in parallel
         """
+        if self._is_processing_batch:
+            logger.info("GIF processing already running; ignoring duplicate request.")
+            return
+
         output_dir.mkdir(exist_ok=True)
 
         # Clean up old hex files and non-standard colorized files
@@ -146,6 +151,8 @@ class GIFManager:
             self._update_color_symlinks(gif_list, color_subdir, output_dir)
             return
 
+        self._is_processing_batch = True
+
         # pt.r stop being stupid, it continues if regeneration_needed is false here
         QTimer.singleShot(
             100,
@@ -158,49 +165,52 @@ class GIFManager:
         self, gif_list, input_dirs, color_subdir, output_dir, accent_color
     ):
         """Process GIFs with progress updates"""
-        # Create and show progress dialog
-        self._create_progress_dialog()
-        self.progress_dialog.show()
+        try:
+            # Create and show progress dialog
+            self._create_progress_dialog()
+            self.progress_dialog.show()
 
-        # Process events to ensure dialog is displayed
-        QApplication.processEvents()
+            # Process events to ensure dialog is displayed
+            QApplication.processEvents()
 
-        message = f"{'Copying' if self.disable_color_gifs else 'Colorizing'} {len(gif_list)} GIFs"
-        logger.info(message)
-        start_time = time.time()
+            message = f"{'Copying' if self.disable_color_gifs else 'Colorizing'} {len(gif_list)} GIFs"
+            logger.info(message)
+            start_time = time.time()
 
-        # Update progress dialog
-        self.progress_dialog.update_progress(0, len(gif_list), message)
+            # Update progress dialog
+            self.progress_dialog.update_progress(0, len(gif_list), message)
 
-        # Process events to update the dialog
-        QApplication.processEvents()
+            # Process events to update the dialog
+            QApplication.processEvents()
 
-        # Use parallel processing
-        completed_count = self._process_gifs_parallel_with_progress(
-            gif_list, input_dirs, color_subdir, accent_color
-        )
+            # Use parallel processing
+            completed_count = self._process_gifs_parallel_with_progress(
+                gif_list, input_dirs, color_subdir, accent_color
+            )
 
-        total_time = time.time() - start_time
-        logger.info(
-            f"Completed processing {completed_count}/{len(gif_list)} GIFs in {total_time:.2f}s "
-            f"({total_time / max(completed_count, 1):.2f}s per GIF)"
-        )
+            total_time = time.time() - start_time
+            logger.info(
+                f"Completed processing {completed_count}/{len(gif_list)} GIFs in {total_time:.2f}s "
+                f"({total_time / max(completed_count, 1):.2f}s per GIF)"
+            )
 
-        self._write_hashes_file(color_subdir)
+            self._write_hashes_file(color_subdir)
 
-        # Update the disable_color_gifs setting file after processing
-        self._update_disable_color_gifs_setting(color_subdir)
+            # Update the disable_color_gifs setting file after processing
+            self._update_disable_color_gifs_setting(color_subdir)
 
-        self._update_color_symlinks(gif_list, color_subdir, output_dir)
+            self._update_color_symlinks(gif_list, color_subdir, output_dir)
 
-        self.regenerate_anyway = False
+            self.regenerate_anyway = False
 
-        # Close progress dialog
-        self.progress_dialog.accept()
+            # Close progress dialog
+            if self.progress_dialog:
+                self.progress_dialog.accept()
 
-        # Only reload movies if main window exists and is visible
-        if self.main_window and hasattr(self.main_window.ui_state, "_reload_movies"):
-            self.main_window.ui_state._reload_movies()
+            if self.main_window and hasattr(self.main_window.ui_state, "reload_movies"):
+                self.main_window.ui_state.reload_movies()
+        finally:
+            self._is_processing_batch = False
 
     def _process_gifs_parallel_with_progress(
         self, gif_list, input_dirs, color_subdir, accent_color

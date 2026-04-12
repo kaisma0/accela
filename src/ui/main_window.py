@@ -64,8 +64,8 @@ class MainWindow(QMainWindow):
         self.ui_state.apply_style_settings()
         self._apply_audio_settings()
         self._setup_key_sequence_detector()
-<<<<<<< HEAD
-        self._setup_exit_shortcut()
+        QTimer.singleShot(1500, self._run_morrenus_api_key_startup_check)
+
     def check_for_startup_update(self, current_version: str) -> None:
         if self._update_prompt_shown:
             return
@@ -84,10 +84,6 @@ class MainWindow(QMainWindow):
     def _show_update_prompt(self, update_info: UpdateInfo) -> None:
         dialog = UpdateDialog(update_info, parent=self)
         dialog.exec()
-
-=======
->>>>>>> 67dae35 (fix: resolve various bugs and optimize build process)
-        QTimer.singleShot(1500, self._run_morrenus_api_key_startup_check)
 
     def _run_morrenus_api_key_startup_check(self):
         if self._morrenus_refresh_started:

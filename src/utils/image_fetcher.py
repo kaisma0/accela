@@ -194,8 +194,7 @@ class ImageFetcher(QObject):
             if app_data.get("success"):
                 header_url = app_data.get("data", {}).get("header_image")
                 if header_url:
-                    # Remove query string for cleaner URL
-                    return header_url.split("?")[0]
+                    return header_url
         except Exception as e:
             logger.debug(f"Web API fetch failed for app {app_id}: {e}")
         return None

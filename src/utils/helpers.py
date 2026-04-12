@@ -260,7 +260,7 @@ def create_slider_setting(
     slider.setTickPosition(QSlider.TickPosition.TicksBothSides)
 
     current_value = default_value
-    if parent_widget:
+    if parent_widget and hasattr(parent_widget, "settings"):
         current_value = parent_widget.settings.value(
             setting_key, default_value, type=int
         )
@@ -311,7 +311,7 @@ class CheckboxSetting(QWidget):
         self.checkbox = QCheckBox(text)
 
         # Initialize checked state from settings when parent_widget provided
-        if parent_widget:
+        if parent_widget and hasattr(parent_widget, "settings"):
             current_value = parent_widget.settings.value(
                 setting_key, default_value, type=bool
             )
@@ -380,7 +380,7 @@ def create_text_setting(
         lineedit.setPlaceholderText(placeholder)
 
     current_value = default_value
-    if parent_widget:
+    if parent_widget and hasattr(parent_widget, "settings"):
         current_value = parent_widget.settings.value(
             setting_key, default_value, type=str
         )
@@ -404,7 +404,7 @@ def create_color_setting(
     label = QLabel(f"{name}:")
 
     color_button = QPushButton()
-    if parent_widget:
+    if parent_widget and hasattr(parent_widget, "settings"):
         current_color = parent_widget.settings.value(
             setting_key, default_color, type=str
         )
@@ -430,7 +430,7 @@ def create_font_setting(parent_widget=None):
 
     font_button = QPushButton("Choose Font")
 
-    if parent_widget:
+    if parent_widget and hasattr(parent_widget, "settings"):
         # Load current font settings
         current_font = QFont()
         current_font.setFamily(parent_widget.settings.value("font", "TrixieCyrG-Plain"))

@@ -181,9 +181,9 @@ class UIStateManager:
         self.main_window.gif_manager.process_gif_batch(
             output_dir, self.main_window.accent_color
         )
-        self._reload_movies()
+        self.reload_movies()
 
-    def _reload_movies(self):
+    def reload_movies(self):
         """Reload movie objects with current GIFs"""
         if not hasattr(self.main_window, "drop_zone_gif"):
             return

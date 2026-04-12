@@ -1,20 +1,27 @@
 import logging
+import threading
 from pathlib import Path
 from PyQt6.QtWidgets import QMessageBox, QFileDialog
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QObject, pyqtSignal, QThread
 
 from core import steam_helpers
 
 logger = logging.getLogger(__name__)
 
 
-class JobQueueManager:
+class JobQueueManager(QObject):
+    _queue_add_requested = pyqtSignal(str, object)
+    _steam_restart_finished = pyqtSignal(str)
+
     def __init__(self, main_window):
+        super().__init__(main_window)
         self.main_window = main_window
         self.job_queue = []  # List of dicts: {"path": file_path, "metadata": {...}}
         self.jobs_completed_count = 0
         self.slssteam_prompt_pending = False
         self.is_showing_completion_dialog = False
+        self._queue_add_requested.connect(self.add_job)
+        self._steam_restart_finished.connect(self._handle_steam_restart_result)
 
     def add_job(self, file_path, metadata=None):
         """Add a job to the queue
@@ -23,6 +30,10 @@ class JobQueueManager:
             file_path: Path to the manifest file
             metadata: Optional dict with job metadata (appid, library_path, install_path)
         """
+        if QThread.currentThread() != self.thread():
+            self._queue_add_requested.emit(str(file_path), metadata)
+            return
+
         if not Path(file_path).exists():
             logger.error(f"Failed to add job: file {file_path} does not exist.")
             QMessageBox.critical(
@@ -140,11 +151,17 @@ class JobQueueManager:
         has_jobs = len(self.job_queue) > 0
         is_processing = self.main_window.task_manager.is_processing
 
+        if not self.main_window.isVisible():
+            return
+
         self.main_window.ui_state.update_queue_visibility(is_processing, has_jobs)
         self._update_queue_display()
 
     def _update_queue_display(self):
         """Update the queue list widget"""
+        if not self.main_window.isVisible():
+            return
+
         self.main_window.ui_state.queue_list_widget.clear()
         self.main_window.ui_state.queue_list_widget.addItems(
             [Path(job["path"]).name for job in self.job_queue]
@@ -197,59 +214,65 @@ class JobQueueManager:
             logger.info("User agreed to restart Steam.")
 
             self.main_window.setEnabled(False)
+            threading.Thread(target=self._restart_steam_worker, daemon=True).start()
 
-            # First, kill Steam if it's running
+    def _restart_steam_worker(self):
+        """Kill and restart Steam in a worker thread, then report result to the UI thread."""
+        try:
             logger.info("Attempting to kill Steam process...")
             steam_helpers.kill_steam_process()
+            result = steam_helpers.start_steam()
+        except Exception as e:
+            logger.error(f"Steam restart worker failed: {e}", exc_info=True)
+            result = "ERROR"
+        self._steam_restart_finished.emit(result)
 
-            QTimer.singleShot(1000, self._resume_steam_restart)
-
-    def _resume_steam_restart(self):
-        """Resumes the Steam restart process after a non-blocking delay"""
+    def _handle_steam_restart_result(self, result: str):
+        """Handle steam restart result on the UI thread."""
         self.main_window.setEnabled(True)
-
-        result = steam_helpers.start_steam()
 
         if result == "NEEDS_USER_PATH":
             logger.warning("SLSsteam libraries not found. Please locate them manually.")
-
-            file_path_1 = self._get_library_path(
-                "Select SLSsteam.so", "SLSsteam.so (SLSsteam.so libSLSsteam.so)"
-            )
-            if not file_path_1:
-                logger.info("User cancelled file selection for SLSsteam.so")
-                return
-
-            file_path_2 = self._get_library_path(
-                "Select library-inject.so",
-                "library-inject.so (library-inject.so libSLS-library-inject.so)",
-            )
-            if not file_path_2:
-                logger.info("User cancelled file selection for library-inject.so")
-                return
-
-            # Try to start Steam with both libraries
-            result = steam_helpers.start_steam_with_slssteam(file_path_1, file_path_2)
-            if result == "SUCCESS":
-                logger.info("Started Steam with SLSsteam.so and library-inject.so")
-            elif result == "NEEDS_USER_PATH":
-                QMessageBox.warning(
-                    self.main_window,
-                    "Execution Failed",
-                    "One or both of the selected library files are invalid or don't exist.",
-                )
-            else:
-                QMessageBox.warning(
-                    self.main_window,
-                    "Execution Failed",
-                    "Could not start Steam with the selected libraries.",
-                )
+            self.handle_linux_steam_path_selection()
         elif result == "SUCCESS":
             logger.info("Steam started successfully with cached libraries.")
         else:
             logger.warning("Failed to start Steam.")
             QMessageBox.warning(
                 self.main_window, "Execution Failed", "Could not start Steam."
+            )
+
+    def handle_linux_steam_path_selection(self):
+        """Prompt for Linux SLSsteam library paths and retry Steam startup."""
+        file_path_1 = self._get_library_path(
+            "Select SLSsteam.so", "SLSsteam.so (SLSsteam.so libSLSsteam.so)"
+        )
+        if not file_path_1:
+            logger.info("User cancelled file selection for SLSsteam.so")
+            return
+
+        file_path_2 = self._get_library_path(
+            "Select library-inject.so",
+            "library-inject.so (library-inject.so libSLS-library-inject.so)",
+        )
+        if not file_path_2:
+            logger.info("User cancelled file selection for library-inject.so")
+            return
+
+        result = steam_helpers.start_steam_with_slssteam(file_path_1, file_path_2)
+        if result == "SUCCESS":
+            logger.info("Started Steam with SLSsteam.so and library-inject.so")
+        elif result == "NEEDS_USER_PATH":
+            QMessageBox.warning(
+                self.main_window,
+                "Execution Failed",
+                "One or both of the selected library files are invalid or don't exist.",
+            )
+        else:
+            QMessageBox.warning(
+                self.main_window,
+                "Execution Failed",
+                "Could not start Steam with the selected libraries.",
             )
 
     def clear(self):

@@ -248,6 +248,7 @@ class DownloadDepotsTask(QObject):
             temp_dir = tempfile.gettempdir()
             items_to_clean = {
                 "mistwalker_keys.vdf": Path(temp_dir) / "mistwalker_keys.vdf",
+                "mistwalker_manifests": Path(temp_dir) / "mistwalker_manifests",
             }
 
             for name, path in items_to_clean.items():
